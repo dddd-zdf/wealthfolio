@@ -3,6 +3,7 @@
 import argparse
 import base64
 import http.client
+import http.cookiejar
 import json
 import pathlib
 import subprocess
@@ -80,6 +81,12 @@ def main():
         try:
             port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8088/tcp"][0]["HostPort"]
             origin = f"http://127.0.0.1:{port}"
+            # The server scopes export jobs to a browser session carried in a
+            # cookie; persist cookies like a real browser so multi-step flows
+            # keep one session.
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+            )
 
             def request(path, data=None, method=None, *, content_type="application/json",
                         timeout=3, expected=200):
@@ -89,7 +96,7 @@ def main():
                     headers={"Content-Type": content_type, "X-Wealthfolio-Backup": "1"},
                     method=method or ("GET" if data is None else "PUT"),
                 )
-                with urllib.request.urlopen(req, timeout=timeout) as response:
+                with opener.open(req, timeout=timeout) as response:
                     assert response.status == expected, (path, response.status)
                     return response.read()
 
