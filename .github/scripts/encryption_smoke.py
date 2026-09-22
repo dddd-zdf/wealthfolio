@@ -170,11 +170,39 @@ def main():
             ))
         restore(boot(True, seed=True), True)
         boot(True)
-        # A wrong key must cause an actual startup failure, not a health timeout.
-        docker("run", "-d", *command(True, base64.b64encode(b"b" * 32).decode()), image, binary)
+        # A wrong key must never unlock the data. The database opens lazily
+        # per profile, so the server still boots; the rejection surfaces as a
+        # failed data access instead of a startup exit. (Fail-fast with a
+        # non-zero exit is accepted too.)
+        docker("run", "-d", *command(True, base64.b64encode(b"b" * 32).decode()),
+               "-p", "127.0.0.1::8088", image, binary)
         try:
-            code = docker("wait", name)
-            assert code != "0", "Wrong key unexpectedly accepted"
+            port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8088/tcp"][0]["HostPort"]
+            origin = f"http://127.0.0.1:{port}"
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+            )
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline:
+                if docker("inspect", "--format", "{{.State.Running}}", name) != "true":
+                    code = docker("wait", name)
+                    assert code != "0", "Wrong key unexpectedly accepted"
+                    break
+                try:
+                    with opener.open(origin + "/api/v1/healthz", timeout=3):
+                        pass
+                except (OSError, urllib.error.URLError, http.client.HTTPException):
+                    time.sleep(0.5)
+                    continue
+                try:
+                    with opener.open(origin + "/api/v1/settings", timeout=10) as response:
+                        body = response.read()
+                except urllib.error.HTTPError as e:
+                    assert e.code >= 400, f"Unexpected status with wrong key: {e.code}"
+                    break
+                raise AssertionError(f"Wrong key unexpectedly served data: {body[:80]!r}")
+            else:
+                raise RuntimeError("Server health timeout")
             print("PASS wrong key rejected", flush=True)
         finally:
             remove()
