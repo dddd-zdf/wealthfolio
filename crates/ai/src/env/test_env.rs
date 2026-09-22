@@ -1578,6 +1578,14 @@ impl CashActivityServiceTrait for MockCashActivityService {
             .cloned()
             .collect())
     }
+
+    async fn bulk_assign_categories(
+        &self,
+        _items: &[wealthfolio_spending::activity_assignments::BulkCategoryAssignment],
+    ) -> anyhow::Result<Vec<wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignment>>
+    {
+        Ok(Vec::new())
+    }
 }
 
 /// Mock categorization-rules service for testing.

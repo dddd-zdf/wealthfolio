@@ -1391,6 +1391,10 @@
       "classification_write": {
         "label": "Classification — apply/write",
         "description": "Apply reviewed classification drafts. Requires the suggest scope."
+      },
+      "categorization_write": {
+        "label": "Categorization \u2014 apply/write",
+        "description": "Apply reviewed transaction category assignments."
       }
     },
     "preset": {

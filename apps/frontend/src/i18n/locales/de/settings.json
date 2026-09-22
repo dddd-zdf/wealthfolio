@@ -1431,6 +1431,10 @@
       "classification_write": {
         "label": "Klassifizierung — anwenden/schreiben",
         "description": "Geprüfte Klassifizierungsentwürfe anwenden. Erfordert die Vorschlags-Berechtigung."
+      },
+      "categorization_write": {
+        "label": "Categorization \u2014 apply/write",
+        "description": "Apply reviewed transaction category assignments."
       }
     },
     "preset": {

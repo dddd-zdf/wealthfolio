@@ -1414,6 +1414,10 @@
       "classification_write": {
         "label": "分類 — 適用/書き込み",
         "description": "確認済みの分類の下書きを適用します。提案のスコープが必要です。"
+      },
+      "categorization_write": {
+        "label": "Categorization \u2014 apply/write",
+        "description": "Apply reviewed transaction category assignments."
       }
     },
     "preset": {

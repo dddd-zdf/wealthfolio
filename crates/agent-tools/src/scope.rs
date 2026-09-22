@@ -23,6 +23,7 @@ pub enum AgentScope {
     ActivitiesWrite,
     ClassificationSuggest,
     ClassificationWrite,
+    CategorizationWrite,
 }
 
 impl AgentScope {
@@ -40,6 +41,7 @@ impl AgentScope {
         AgentScope::ActivitiesWrite,
         AgentScope::ClassificationSuggest,
         AgentScope::ClassificationWrite,
+        AgentScope::CategorizationWrite,
     ];
 
     /// The read-only scopes — what the `read-only` preset grants. Kept
@@ -69,6 +71,7 @@ impl AgentScope {
             AgentScope::ActivitiesWrite => "activities:write",
             AgentScope::ClassificationSuggest => "classification:suggest",
             AgentScope::ClassificationWrite => "classification:write",
+            AgentScope::CategorizationWrite => "categorization:write",
         }
     }
 
@@ -129,11 +132,13 @@ impl AgentScopeSet {
         set
     }
 
-    /// Read-only + activity writes + classification suggestions/writes.
+    /// Read-only + activity writes + classification suggestions/writes +
+    /// transaction-category commits.
     pub fn read_activity_write_classification_suggest() -> Self {
         let mut set = Self::read_activity_write();
         set.insert(AgentScope::ClassificationSuggest);
         set.insert(AgentScope::ClassificationWrite);
+        set.insert(AgentScope::CategorizationWrite);
         set
     }
 
@@ -242,6 +247,7 @@ mod tests {
         let full = AgentScopeSet::read_activity_write_classification_suggest();
         assert!(full.contains(AgentScope::ClassificationSuggest));
         assert!(full.contains(AgentScope::ClassificationWrite));
+        assert!(full.contains(AgentScope::CategorizationWrite));
     }
 
     #[test]

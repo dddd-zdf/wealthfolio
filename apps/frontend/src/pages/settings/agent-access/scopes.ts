@@ -16,7 +16,8 @@ export type ScopeKey =
   | "activities:draft"
   | "activities:write"
   | "classification:suggest"
-  | "classification:write";
+  | "classification:write"
+  | "categorization:write";
 
 export type ScopeGroup = "read" | "write";
 
@@ -27,7 +28,7 @@ export interface ScopeMeta {
   group: ScopeGroup;
 }
 
-/** Ordered list of all 11 scopes, grouped reads first then write/suggest. */
+/** Ordered list of all 12 scopes, grouped reads first then write/suggest. */
 export const SCOPES: ScopeMeta[] = [
   { key: "accounts:read", i18n: "accounts_read", group: "read" },
   { key: "holdings:read", i18n: "holdings_read", group: "read" },
@@ -40,6 +41,7 @@ export const SCOPES: ScopeMeta[] = [
   { key: "activities:write", i18n: "activities_write", group: "write" },
   { key: "classification:suggest", i18n: "classification_suggest", group: "write" },
   { key: "classification:write", i18n: "classification_write", group: "write" },
+  { key: "categorization:write", i18n: "categorization_write", group: "write" },
 ];
 
 /** The 7 read scopes, in canonical order. */
@@ -80,6 +82,7 @@ export const SCOPE_PRESETS: ScopePreset[] = [
       "activities:write",
       "classification:suggest",
       "classification:write",
+      "categorization:write",
     ],
   },
 ];

@@ -1431,6 +1431,10 @@
       "classification_write": {
         "label": "分類 — 套用／寫入",
         "description": "套用已審核的分類草稿。需要建議範圍。"
+      },
+      "categorization_write": {
+        "label": "Categorization \u2014 apply/write",
+        "description": "Apply reviewed transaction category assignments."
       }
     },
     "preset": {

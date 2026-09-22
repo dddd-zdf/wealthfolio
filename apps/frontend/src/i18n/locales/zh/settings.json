@@ -1414,6 +1414,10 @@
       "classification_write": {
         "label": "分类——应用/写入",
         "description": "应用已审核的分类草稿。需要建议作用域。"
+      },
+      "categorization_write": {
+        "label": "Categorization \u2014 apply/write",
+        "description": "Apply reviewed transaction category assignments."
       }
     },
     "preset": {
