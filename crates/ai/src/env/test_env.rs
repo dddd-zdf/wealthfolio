@@ -1601,6 +1601,41 @@ impl CategorizationRulesServiceTrait for MockCategorizationRulesService {
     ) -> anyhow::Result<Vec<wealthfolio_spending::categorization_rules::CategorizationRule>> {
         Ok(self.rules.clone())
     }
+
+    async fn create(
+        &self,
+        new_rule: wealthfolio_spending::categorization_rules::NewCategorizationRule,
+    ) -> anyhow::Result<wealthfolio_spending::categorization_rules::CategorizationRule> {
+        // The mock has no repository; emulate the service's persistence by
+        // assigning an id and returning the rule as-saved.
+        let id = new_rule
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        Ok(
+            wealthfolio_spending::categorization_rules::CategorizationRule {
+                id,
+                name: new_rule.name,
+                pattern: new_rule.pattern,
+                match_type: new_rule.match_type,
+                taxonomy_id: new_rule.taxonomy_id,
+                category_id: new_rule.category_id,
+                activity_type: new_rule.activity_type,
+                amount_op: new_rule.amount_op,
+                amount_value: new_rule.amount_value,
+                amount_value2: new_rule.amount_value2,
+                priority: new_rule.priority,
+                is_global: new_rule.is_global,
+                account_id: new_rule.account_id,
+                preset_id: new_rule.preset_id,
+                preset_rule_key: new_rule.preset_rule_key,
+                preset_version: new_rule.preset_version,
+                preset_modified: false,
+                created_at: chrono::Utc::now().naive_utc(),
+                updated_at: chrono::Utc::now().naive_utc(),
+            },
+        )
+    }
 }
 
 impl Default for MockEnvironment {

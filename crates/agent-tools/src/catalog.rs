@@ -206,6 +206,9 @@ mod tests {
         assert!(!names.contains(&"commit_activity_draft"));
         assert!(!names.contains(&"commit_activity_drafts"));
         assert!(!names.contains(&"commit_asset_classification_draft"));
+        assert!(!names.contains(&"commit_category_assignments"));
+        assert!(!names.contains(&"commit_categorization_rule"));
+        assert!(!names.contains(&"create_account"));
         assert!(!names.contains(&"prepare_activity_import"));
         assert!(!names.contains(&"commit_activity_import"));
         assert!(!names.contains(&"get_import_mapping"));
@@ -218,6 +221,9 @@ mod tests {
         assert!(names.contains(&"commit_activity_draft"));
         assert!(names.contains(&"commit_activity_drafts"));
         assert!(names.contains(&"commit_asset_classification_draft"));
+        assert!(names.contains(&"commit_category_assignments"));
+        assert!(names.contains(&"commit_categorization_rule"));
+        assert!(names.contains(&"create_account"));
         assert!(names.contains(&"get_import_mapping"));
         assert!(names.contains(&"prepare_activity_import"));
         assert!(names.contains(&"commit_activity_import"));
@@ -233,6 +239,9 @@ mod tests {
             "commit_activity_draft",
             "commit_activity_drafts",
             "commit_asset_classification_draft",
+            "commit_category_assignments",
+            "commit_categorization_rule",
+            "create_account",
         ] {
             let err = catalog
                 .execute(Arc::new(PanicEnv), &granted, name, serde_json::json!({}))

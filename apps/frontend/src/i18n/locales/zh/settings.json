@@ -1418,6 +1418,10 @@
       "categorization_write": {
         "label": "Categorization \u2014 apply/write",
         "description": "Apply reviewed transaction category assignments."
+      },
+      "accounts_write": {
+        "label": "Accounts \u2014 create",
+        "description": "Create new accounts."
       }
     },
     "preset": {

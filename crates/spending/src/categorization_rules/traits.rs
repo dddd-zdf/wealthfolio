@@ -10,12 +10,18 @@ use super::service::CategorizationRulesService;
 #[async_trait]
 pub trait CategorizationRulesServiceTrait: Send + Sync {
     async fn list(&self) -> Result<Vec<CategorizationRule>>;
+    /// Persist a new rule (validates scope, pattern, and amount condition).
+    async fn create(&self, new_rule: NewCategorizationRule) -> Result<CategorizationRule>;
 }
 
 #[async_trait]
 impl CategorizationRulesServiceTrait for CategorizationRulesService {
     async fn list(&self) -> Result<Vec<CategorizationRule>> {
         CategorizationRulesService::list(self).await
+    }
+
+    async fn create(&self, new_rule: NewCategorizationRule) -> Result<CategorizationRule> {
+        CategorizationRulesService::create(self, new_rule).await
     }
 }
 

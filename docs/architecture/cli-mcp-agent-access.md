@@ -450,6 +450,8 @@ commit_activity_draft              -- persist one reviewed draft
 commit_activity_drafts             -- persist a batch
 commit_asset_classification_draft  -- persist one reviewed classification draft
 commit_category_assignments        -- persist reviewed transaction category assignments
+commit_categorization_rule         -- persist a categorization rule directly (no widget)
+create_account                     -- create an account through the account service
 ```
 
 ### MCP-only CSV Import Tools
@@ -468,8 +470,9 @@ Rules:
 - Draft and import-preview tools never mutate data; activity commits require
   `activities:write` (which itself requires `activities:draft`),
   classification commits require `classification:write` (which itself requires
-  `classification:suggest`), and category commits require `categorization:write`
-  (standalone — no prerequisite).
+  `classification:suggest`), category commits require `categorization:write`
+  (standalone — no prerequisite), and account creation requires
+  `accounts:write` (standalone — no prerequisite).
 - CSV / activity-row content must not be persisted in raw audit logs: the
   write/import tools redact their `activities`/row arguments to a count
   (`"[N rows]"`) via per-tool audit sanitization.
@@ -525,8 +528,11 @@ classification:suggest   propose_transaction_categories,
                          prepare_asset_classification
 classification:write     commit_asset_classification_draft
                          (also requires classification:suggest)
-categorization:write     commit_category_assignments
+categorization:write     commit_category_assignments,
+                         commit_categorization_rule
                          (standalone — no draft/suggest prerequisite)
+accounts:write           create_account
+                         (standalone — no prerequisite)
 ```
 
 Dependency rules: `activities:write` requires `activities:draft`, and
@@ -539,7 +545,8 @@ Presets (`AgentScopeSet` constructors):
 - `read-activity-draft` — read + `activities:draft`.
 - `read-activity-write` — read + `activities:draft` + `activities:write`.
 - `read-activity-write-classification-suggest` — the above plus
-  `classification:suggest`, `classification:write`, and `categorization:write`.
+  `classification:suggest`, `classification:write`, `categorization:write`,
+  and `accounts:write`.
 
 Scope strings are parsed with `AgentScope::parse`, which rejects unknown scopes
 (including the removed `portfolio:read`). Token creation rejects unknown scopes;

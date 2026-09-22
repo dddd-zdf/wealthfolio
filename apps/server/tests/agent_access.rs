@@ -448,7 +448,7 @@ async fn mcp_pat_lifecycle() {
 /// A write/suggest-scoped token sees the draft, suggest, commit, AND import
 /// tools via `tools/list` — proving scope-gated visibility extends past the
 /// read-only catalog. (Read-only tokens see 17; the full MCP catalog is
-/// 16 read + get_import_mapping + 5 draft/suggest + 4 commit + 2 import = 28.)
+/// 16 read + get_import_mapping + 5 draft/suggest + 6 commit + 2 import = 30.)
 #[tokio::test]
 async fn mcp_write_scoped_token_sees_write_tools() {
     let server = spawn_server(true, false).await;
@@ -463,6 +463,7 @@ async fn mcp_write_scoped_token_sees_write_tools() {
             "classification:suggest",
             "classification:write",
             "categorization:write",
+            "accounts:write",
         ])
         .collect();
     let (status, created) = create_pat(
@@ -472,7 +473,7 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     )
     .await;
     assert_eq!(status, 201);
-    assert_eq!(created["scopes"].as_array().unwrap().len(), 12);
+    assert_eq!(created["scopes"].as_array().unwrap().len(), 13);
     let pat = created["token"].as_str().unwrap().to_string();
 
     let session = mcp_initialize(&server, &pat).await;
@@ -489,8 +490,8 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools.len(),
-        28,
-        "full-scope token must see all 28 tools: {names:?}"
+        30,
+        "full-scope token must see all 30 tools: {names:?}"
     );
     assert!(
         names.contains(&"commit_activity_import"),
@@ -513,6 +514,11 @@ async fn mcp_write_scoped_token_sees_write_tools() {
         names.contains(&"commit_asset_classification_draft"),
         "classification commit tool visible"
     );
+    assert!(
+        names.contains(&"commit_categorization_rule"),
+        "rule commit tool visible"
+    );
+    assert!(names.contains(&"create_account"), "account tool visible");
 }
 
 #[tokio::test]
@@ -650,4 +656,192 @@ async fn profile_deletion_closes_initialized_mcp_sessions() {
     )
     .await;
     assert!(!response.status().is_success());
+}
+
+/// Calls an MCP tool over the stateful session; returns the parsed `result`.
+async fn mcp_call(
+    server: &TestServer,
+    pat: &str,
+    session: &str,
+    id: u64,
+    tool: &str,
+    args: serde_json::Value,
+) -> serde_json::Value {
+    let response = mcp_post(
+        server,
+        Some(pat),
+        Some(session),
+        serde_json::json!({
+            "jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": { "name": tool, "arguments": args },
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    parse_sse_data(&response.text().await.unwrap())["result"].clone()
+}
+
+/// Scopes for a token that may use every write tool.
+fn full_write_scopes() -> Vec<&'static str> {
+    READ_ONLY_SCOPES
+        .iter()
+        .copied()
+        .chain([
+            "activities:draft",
+            "activities:write",
+            "classification:suggest",
+            "classification:write",
+            "categorization:write",
+            "accounts:write",
+        ])
+        .collect()
+}
+
+/// End-to-end `tools/call` for the two new MCP-only write tools:
+/// `create_account` persists an account through the account service, and
+/// `commit_categorization_rule` persists a rule through the rules service.
+/// Rejection cases (unknown category key, missing scope) return `isError`
+/// results without persisting anything.
+#[tokio::test]
+async fn mcp_create_account_and_commit_rule_roundtrip() {
+    let server = spawn_server(true, false).await;
+    let cookie = login(&server).await;
+    let (status, created) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({ "name": "writer", "scopes": full_write_scopes() }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let pat = created["token"].as_str().unwrap().to_string();
+    let session = mcp_initialize(&server, &pat).await;
+
+    // create_account persists through the account service.
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        10,
+        "create_account",
+        serde_json::json!({ "name": "Test Cash", "accountType": "CASH", "currency": "CAD" }),
+    )
+    .await;
+    assert_ne!(result["isError"], true);
+    let account = &result["structuredContent"]["account"];
+    assert_eq!(account["name"], "Test Cash");
+    assert_eq!(account["accountType"], "CASH");
+    assert_eq!(account["currency"], "CAD");
+    assert!(account["id"].as_str().unwrap().len() > 8);
+
+    // The new account shows up in get_accounts.
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        11,
+        "get_accounts",
+        serde_json::json!({}),
+    )
+    .await;
+    let names: Vec<&str> = result["structuredContent"]["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"Test Cash"), "{names:?}");
+
+    // Unknown account type is rejected before anything is persisted.
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        12,
+        "create_account",
+        serde_json::json!({ "name": "Bogus", "accountType": "SAVINGS", "currency": "CAD" }),
+    )
+    .await;
+    assert_eq!(result["isError"], true);
+    assert!(
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("SAVINGS"),
+        "{}",
+        result["content"][0]["text"]
+    );
+
+    // commit_categorization_rule persists a rule against the live taxonomy.
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        13,
+        "commit_categorization_rule",
+        serde_json::json!({
+            "pattern": "T&T",
+            "taxonomyId": "spending_categories",
+            "categoryKey": "groceries",
+        }),
+    )
+    .await;
+    assert_ne!(result["isError"], true);
+    let rule = &result["structuredContent"]["rule"];
+    assert_eq!(rule["pattern"], "T&T");
+    assert_eq!(rule["categoryPath"], "Groceries");
+    assert!(rule["id"].as_str().unwrap().len() > 8);
+
+    // Unknown category key fails before persistence.
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        14,
+        "commit_categorization_rule",
+        serde_json::json!({
+            "pattern": "T&T",
+            "taxonomyId": "spending_categories",
+            "categoryKey": "nope-not-a-key",
+        }),
+    )
+    .await;
+    assert_eq!(result["isError"], true);
+    assert!(
+        result["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("nope-not-a-key"),
+        "{}",
+        result["content"][0]["text"]
+    );
+
+    // A read-only token is scope-denied on both write tools (nothing runs).
+    let (status, created) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({ "name": "reader", "scopes": READ_ONLY_SCOPES }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let reader_pat = created["token"].as_str().unwrap().to_string();
+    let reader_session = mcp_initialize(&server, &reader_pat).await;
+    for tool in ["create_account", "commit_categorization_rule"] {
+        let result = mcp_call(
+            &server,
+            &reader_pat,
+            &reader_session,
+            20,
+            tool,
+            serde_json::json!({ "name": "X", "accountType": "CASH", "currency": "CAD",
+                                "pattern": "X", "taxonomyId": "spending_categories",
+                                "categoryKey": "groceries" }),
+        )
+        .await;
+        assert_eq!(result["isError"], true, "{tool}");
+        let text = result["content"][0]["text"].as_str().unwrap();
+        assert!(
+            text.contains("scope") || text.contains("denied"),
+            "{tool}: {text}"
+        );
+    }
 }

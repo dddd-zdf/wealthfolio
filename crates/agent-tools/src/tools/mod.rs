@@ -15,7 +15,9 @@ pub mod categorization_context;
 pub mod commit_activity;
 pub mod commit_asset_classification;
 pub mod commit_categories;
+pub mod commit_categorization_rule;
 pub mod contribution_limits;
+pub mod create_account;
 pub mod create_categorization_rule;
 pub mod goals;
 pub mod health;
@@ -106,6 +108,12 @@ pub use commit_categories::{
     CategoryAssignmentInput, CommitCategoryAssignments, CommitCategoryAssignmentsArgs,
     CommitCategoryAssignmentsOutput, CommittedCategoryAssignment,
 };
+pub use commit_categorization_rule::{
+    CommitCategorizationRule, CommitCategorizationRuleOutput, CommittedRuleDto,
+};
+pub use create_account::{
+    CreateAccount, CreateAccountArgs, CreateAccountOutput, CreatedAccountDto,
+};
 
 // MCP-only CSV import tools (validate + dedup-safe import pipeline).
 pub use activity_import::{
@@ -163,6 +171,8 @@ pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
         Arc::new(CommitActivityDrafts),
         Arc::new(CommitAssetClassificationDraft),
         Arc::new(CommitCategoryAssignments),
+        Arc::new(CommitCategorizationRule),
+        Arc::new(CreateAccount),
     ]
 }
 
