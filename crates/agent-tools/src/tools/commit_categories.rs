@@ -90,10 +90,7 @@ fn build_key_lookup(
     let mut lookup = HashMap::new();
     for entry in taxonomies.iter().filter(|t| t.taxonomy.scope == "activity") {
         for cat in &entry.categories {
-            lookup.insert(
-                (entry.taxonomy.id.clone(), cat.key.clone()),
-                cat.id.clone(),
-            );
+            lookup.insert((entry.taxonomy.id.clone(), cat.key.clone()), cat.id.clone());
         }
     }
     Ok(lookup)
@@ -122,10 +119,7 @@ fn resolve_assignments(
                 taxonomy_id: input.taxonomy_id.clone(),
                 category_id: category_id.clone(),
             }),
-            None => unknown.push(format!(
-                "{} / {}",
-                input.taxonomy_id, input.category_key
-            )),
+            None => unknown.push(format!("{} / {}", input.taxonomy_id, input.category_key)),
         }
     }
     if !unknown.is_empty() {
@@ -250,7 +244,10 @@ mod tests {
             ("tax1".to_string(), "groceries".to_string()),
             "cat-g".to_string(),
         );
-        m.insert(("tax1".to_string(), "coffee".to_string()), "cat-c".to_string());
+        m.insert(
+            ("tax1".to_string(), "coffee".to_string()),
+            "cat-c".to_string(),
+        );
         m
     }
 
