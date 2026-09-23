@@ -4182,6 +4182,8 @@ impl PerformanceService {
                 Self::add_attribution(&mut attribution, &component.attribution);
             }
 
+            let zero_value_zero_gain =
+                component.amount == Some(Decimal::ZERO) && !component.contributes_to_scope;
             match component.denominator {
                 Some(value) if amount_available => denominator += value,
                 Some(_) => {
@@ -4191,6 +4193,7 @@ impl PerformanceService {
                         component.account_id
                     ));
                 }
+                None if zero_value_zero_gain => {}
                 None if amount_available => {
                     percent_coverage_complete = false;
                     warnings.push(format!(
@@ -11392,6 +11395,81 @@ mod tests {
             .not_applicable_reasons
             .iter()
             .any(|reason| reason.contains("basis is incomplete")));
+    }
+
+    #[test]
+    fn mixed_scope_ignores_zero_value_zero_gain_account_for_combined_percent() {
+        let zero_account = [
+            account_valuation(
+                "zero-account",
+                "2026-06-12",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            account_valuation(
+                "zero-account",
+                "2026-06-19",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        let holdings = [
+            account_valuation(
+                "holdings",
+                "2026-06-12",
+                dec!(1000),
+                dec!(1000),
+                dec!(1000),
+                dec!(1000),
+            ),
+            account_valuation(
+                "holdings",
+                "2026-06-19",
+                dec!(1100),
+                dec!(1000),
+                dec!(1100),
+                dec!(1000),
+            ),
+        ];
+        let components = vec![
+            MixedScopeAccountHistory {
+                account_id: "zero-account",
+                tracking_mode: TrackingMode::Transactions,
+                account_type: Some(account_types::CASH),
+                history: &zero_account,
+            },
+            MixedScopeAccountHistory {
+                account_id: "holdings",
+                tracking_mode: TrackingMode::Holdings,
+                account_type: None,
+                history: &holdings,
+            },
+        ];
+
+        let result = PerformanceService::compute_mixed_scope_performance_from_account_histories(
+            &components,
+            "CAD",
+            Some(date("2026-06-12")),
+            true,
+            PerformanceSummaryProfile::Dashboard,
+        )
+        .expect("mixed scope should compute with a zero-value account");
+
+        assert_eq!(attribution_pnl(&result), dec!(100));
+        assert_eq!(result.summary.amount, Some(dec!(100)));
+        assert_eq!(result.returns.value_return, Some(dec!(0.1)));
+        assert_eq!(result.summary.percent, Some(dec!(0.1)));
+        assert_eq!(
+            result.summary.percent_status,
+            PerformanceSummaryStatus::Complete
+        );
+        assert!(!result.data_quality.warnings.iter().any(|warning| {
+            warning.contains("zero-account") && warning.contains("no valid return denominator")
+        }));
     }
 
     #[test]
