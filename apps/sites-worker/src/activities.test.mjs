@@ -76,6 +76,7 @@ test("activity search is owner-scoped, paginated, and maps stored import payload
     assert.equal(result.meta.totalRowCount, 2);
     assert.equal(result.data.length, 1);
     assert.equal(result.data[0].id, "activity-new");
+    assert.equal(result.data[0].date, "2026-09-03");
     assert.equal(result.data[0].accountName, "Synthetic account");
     assert.equal(result.data[0].assetSymbol, "SYNTH");
     assert.equal(result.data[0].needsReview, true);
@@ -128,6 +129,34 @@ test("asset preview resolves prior symbols and prepares new assets without remot
       env,
     );
     assert.equal((await createA.json()).id, (await createB.json()).id);
+  } finally {
+    env.close();
+  }
+});
+
+test("asset profiles are reconstructed only from the signed-in owner's activities", async () => {
+  const env = makeDb();
+  try {
+    const response = await handleAssetRoute(
+      request("/assets/profile?assetId=asset-synth", undefined, "GET"),
+      "/assets/profile",
+      owner,
+      env,
+    );
+    assert.equal(response.status, 200);
+    const profile = await response.json();
+    assert.equal(profile.id, "asset-synth");
+    assert.equal(profile.displayCode, "SYNTH");
+    assert.equal(profile.instrumentSymbol, "SYNTH");
+    assert.equal(profile.instrumentType, "EQUITY");
+
+    const otherOwner = await handleAssetRoute(
+      request("/assets/profile?assetId=asset-secret", undefined, "GET"),
+      "/assets/profile",
+      owner,
+      env,
+    );
+    assert.equal(await otherOwner.json(), null);
   } finally {
     env.close();
   }

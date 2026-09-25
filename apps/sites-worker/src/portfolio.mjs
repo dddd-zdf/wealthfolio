@@ -387,9 +387,10 @@ function portfolioSummary(positions, quotes, warnings = []) {
 
 function performanceResult(summary, filter, body, warnings) {
   const endDate = filter.endDate || summary.asOfDate;
-  const amount = decimal(summary.unrealizedGain);
+  const quoteUnavailable = warnings.some((warning) => warning.includes("no owner-scoped quote"));
+  const amount = quoteUnavailable ? null : decimal(summary.unrealizedGain);
   const basis = decimal(summary.costBasis);
-  const percent = basis.isZero() ? (amount.isZero() ? ZERO : null) : amount.div(basis.abs());
+  const percent = quoteUnavailable ? null : basis.isZero() ? (amount.isZero() ? ZERO : null) : amount.div(basis.abs());
   const partial = warnings.length > 0;
   const quality = partial ? "partial" : "ok";
   const scopeId = text(body?.itemId) || (filter.accountIds.length ? `accounts:${filter.accountIds.join(",")}` : "owner");
@@ -399,22 +400,22 @@ function performanceResult(summary, filter, body, warnings) {
     period: { startDate: filter.startDate || null, endDate: endDate || null },
     mode: "valueReturn",
     returns: { twr: null, annualizedTwr: null, irr: null, annualizedIrr: null, valueReturn: percent?.toNumber() ?? null, annualizedValueReturn: null },
-    attribution: { contributions: 0, distributions: 0, income: 0, realizedPnl: 0, unrealizedPnlChange: amount.toNumber(), fxEffect: 0, fees: 0, taxes: 0, residual: 0 },
+    attribution: { contributions: 0, distributions: 0, income: 0, realizedPnl: 0, unrealizedPnlChange: amount?.toNumber() ?? 0, fxEffect: 0, fees: 0, taxes: 0, residual: 0 },
     risk: { volatility: null, maxDrawdown: null, peakDate: null, troughDate: null, recoveryDate: null, drawdownDurationDays: null },
     dataQuality: { status: quality, warnings: [...new Set(warnings)], notApplicableReasons: ["D1 worker has no FX, lots, snapshot, or account metadata tables."] },
     basisStatus: partial ? "partialUnknown" : "complete",
     summary: {
-      amount: amount.toNumber(),
+      amount: amount?.toNumber() ?? null,
       percent: percent?.toNumber() ?? null,
       method: "valueReturn",
       basis: "bookBasis",
       quality,
-      amountStatus: "complete",
-      percentStatus: percent == null ? "unavailable" : "complete",
+      amountStatus: quoteUnavailable ? "unavailable" : "complete",
+      percentStatus: quoteUnavailable || percent == null ? "unavailable" : "complete",
       basisStatus: partial ? "partialUnknown" : "complete",
       reasons: [...new Set(warnings)],
     },
-    series: endDate ? [{ date: endDate, value: percent?.toNumber() ?? 0 }] : [],
+    series: endDate && !quoteUnavailable ? [{ date: endDate, value: percent?.toNumber() ?? 0 }] : [],
     isHoldingsMode: false,
     isMixedTrackingMode: false,
   };
@@ -424,8 +425,12 @@ function routeKind(pathname) {
   const path = text(pathname).split("?")[0].replace(/\/$/, "") || "/";
   if (path === "/holdings/query") return "holdings";
   if (path === "/holdings/list/query") return "holdings-list";
+  if (path === "/holdings/by-asset") return "holdings-by-asset";
+  if (path === "/holdings/lots") return "lots";
   if (path === "/performance/summary") return "performance";
+  if (path === "/performance/summaries") return "performance-summaries";
   if (path === "/sites/portfolio/summary") return "portfolio";
+  if (path === "/market-data/quotes/history") return "quote-history";
   if (path === "/valuations/current/query") return "current-valuation";
   if (path === "/valuations/history/query" || path === "/valuations/history") return "history";
   if (path === "/portfolio/update" || path === "/portfolio/recalculate") return "update";
@@ -550,6 +555,13 @@ export async function handlePortfolioRoute(request, pathname, ownerId, env) {
     // must not be presented as a historical series.
     return json([]);
   }
+  if (kind === "lots" || kind === "quote-history") {
+    if (request.method !== "GET") return errorResponse(405, "Method not allowed.");
+    if (!text(ownerId)) return errorResponse(401, "Authenticated user is required.");
+    // Sites has no transaction-lot, quote-history, or snapshot tables. Return
+    // an empty collection rather than fabricate history from today's value.
+    return json([]);
+  }
   if (request.method !== "GET" && request.method !== "POST") return errorResponse(405, "Method not allowed.");
   if (!text(ownerId)) return errorResponse(401, "Authenticated user is required.");
   let body = {};
@@ -586,10 +598,31 @@ export async function handlePortfolioRoute(request, pathname, ownerId, env) {
       const total = views.reduce((sum, view) => sum + (view.marketValue?.base ?? 0), 0);
       return json(views.map((view) => ({ ...view, weight: total ? view.marketValue.base / total : 0 })));
     }
+    if (kind === "holdings-by-asset") {
+      const views = positions.map((position) => positionView(position, quotes));
+      return json(views);
+    }
     if (kind === "current-valuation") {
       const accounts = await accountsFor(env, ownerId, filter.accountIds);
       const baseCurrency = await baseCurrencyFor(env, ownerId);
       return json(currentValuation(positions, quotes, accounts, baseCurrency, body, filter));
+    }
+    if (kind === "performance-summaries") {
+      const scopes = Array.isArray(body.scopes) ? body.scopes : [];
+      const summaries = {};
+      for (const scope of scopes) {
+        const accountIds = [...new Set((Array.isArray(scope?.accountIds) ? scope.accountIds : []).map(text).filter(Boolean))].sort();
+        const scopeFilter = { ...filter, accountIds };
+        const scopedPositions = calculatePositions(filterRows(activityRows, scopeFilter));
+        const scopedQuotes = latestQuotes(quoteRows, scopeFilter.endDate);
+        const scopeWarnings = scopedPositions.some((position) => !quoteFor(position, scopedQuotes))
+          ? ["Current value is unavailable for one or more positions because no owner-scoped quote was found."]
+          : [];
+        const scopedSummary = portfolioSummary(scopedPositions, scopedQuotes, scopeWarnings);
+        const key = `accounts:${accountIds.join(",")}`;
+        summaries[key] = performanceResult(scopedSummary, scopeFilter, { ...body, itemId: key }, scopedSummary.warnings);
+      }
+      return json(summaries);
     }
     const summary = portfolioSummary(positions, quotes, warnings);
     if (kind === "portfolio") return json(summary);

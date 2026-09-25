@@ -39,7 +39,9 @@ function parsePayload(row) {
 function dateValue(value) {
   const date = text(value);
   if (!date) return null;
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date}T00:00:00.000Z` : date;
+  // Keep date-only CSV values as calendar dates. Turning them into UTC
+  // midnight shifts the displayed day for owners west of UTC.
+  return date;
 }
 
 function mapActivity(row) {

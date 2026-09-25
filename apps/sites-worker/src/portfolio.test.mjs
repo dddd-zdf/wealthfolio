@@ -135,6 +135,64 @@ test("holdings list query is an exact supported alias", async () => {
   assert.equal((await response.json())[0].instrument.symbol, "AAPL");
 });
 
+test("asset holdings are returned from owner-scoped activity calculations", async () => {
+  const db = fakeDb(
+    [activity(), activity({ owner_id: "other-owner", account_id: "other-account", asset_id: "asset-secret", symbol: "SECRET" })],
+    [{ owner_id: owner, asset_id: "asset-aapl", symbol: "AAPL", quote_date: "2026-09-12", price: "110", currency: "USD" }],
+  );
+  const response = await handlePortfolioRoute(
+    request("/holdings/by-asset?assetId=asset-aapl"),
+    "/holdings/by-asset",
+    owner,
+    db,
+  );
+  assert.equal(response.status, 200);
+  const [holding] = await response.json();
+  assert.equal(holding.instrument.id, "asset-aapl");
+  assert.equal(holding.quantity, 10);
+  assert.equal(holding.costBasis.base, 1000);
+  assert.equal(holding.marketValue.base, 1100);
+});
+
+test("batch performance summaries use the existing account-scope keys", async () => {
+  const db = fakeDb(
+    [activity()],
+    [{ owner_id: owner, asset_id: "asset-aapl", quote_date: "2026-09-12", price: "125", currency: "USD" }],
+  );
+  const response = await handlePortfolioRoute(
+    request("/performance/summaries", {
+      scopes: [{ accountIds: ["account-1"] }],
+      startDate: "2026-09-01",
+      endDate: "2026-09-12",
+      profile: "dashboard",
+    }),
+    "/performance/summaries",
+    owner,
+    db,
+  );
+  assert.equal(response.status, 200);
+  const summaries = await response.json();
+  assert.equal(summaries["accounts:account-1"].scope.id, "accounts:account-1");
+  assert.equal(summaries["accounts:account-1"].summary.amount, 250);
+  assert.equal(summaries["accounts:account-1"].dataQuality.status, "ok");
+});
+
+test("performance summaries do not report a zero return when the quote is missing", async () => {
+  const db = fakeDb([activity()], []);
+  const response = await handlePortfolioRoute(
+    request("/performance/summaries", { scopes: [{ accountIds: ["account-1"] }] }),
+    "/performance/summaries",
+    owner,
+    db,
+  );
+  const result = (await response.json())["accounts:account-1"];
+  assert.equal(result.dataQuality.status, "partial");
+  assert.equal(result.summary.amount, null);
+  assert.equal(result.summary.amountStatus, "unavailable");
+  assert.equal(result.returns.valueReturn, null);
+  assert.deepEqual(result.series, []);
+});
+
 test("current valuation returns owner-scoped D1 totals and account values", async () => {
   const db = fakeDb(
     [activity()],

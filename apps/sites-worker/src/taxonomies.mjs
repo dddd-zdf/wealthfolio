@@ -116,6 +116,10 @@ export async function handleTaxonomyRoute(request, route, ownerId, env) {
     const all = await getActivityTaxonomies(ownerId, env);
     return json(all.filter((taxonomy) => !url.searchParams.get("scope") || taxonomy.scope === url.searchParams.get("scope")));
   }
+  if (route === "/taxonomies/assignments/asset" || route.startsWith("/taxonomies/assignments/asset/")) {
+    // The Sites D1 profile does not include asset classification assignments.
+    return json([]);
+  }
   const id = decodeURIComponent(route.slice("/taxonomies/".length).split("/")[0]);
   const taxonomy = (await getActivityTaxonomies(ownerId, env)).find((item) => item.id === id);
   if (!taxonomy) return json(null);

@@ -55,6 +55,13 @@ async function handleApi(request, env, pathname) {
   if (request.method === "GET" && route === "/spending/settings") {
     return json({ enabled: false, accountIds: [], excludedCategoryIds: [] });
   }
+  if (request.method === "GET" && ["/providers", "/exchanges", "/custom-providers"].includes(route)) {
+    // Sites has no market-data provider registry or exchange catalog.
+    return json([]);
+  }
+  if (request.method === "GET" && route === "/health/status") {
+    return json({ overallSeverity: "INFO", issueCounts: {}, issues: [], checkedAt: new Date().toISOString(), isStale: true });
+  }
   if (route === "/auth/status" && request.method === "GET") {
     return json({ requiresPassword: false, oidcEnabled: false });
   }

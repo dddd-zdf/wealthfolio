@@ -39,6 +39,57 @@ function assetDraft(candidate) {
   };
 }
 
+function parsePayload(value) {
+  try {
+    const parsed = JSON.parse(value ?? "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function assetView(row) {
+  const payload = parsePayload(row.payload_json);
+  const nested = payload.asset && typeof payload.asset === "object" ? payload.asset : {};
+  const symbol = text(row.symbol ?? payload.symbol ?? nested.symbol ?? nested.instrumentSymbol);
+  const assetId = text(row.asset_id ?? payload.assetId ?? nested.id);
+  const now = row.created_at ?? new Date(0).toISOString();
+  return {
+    id: assetId,
+    kind: text(payload.kind ?? nested.kind) || "INVESTMENT",
+    name: text(payload.assetName ?? nested.name) || symbol || assetId,
+    displayCode: text(payload.displayCode ?? nested.displayCode) || symbol,
+    notes: text(payload.notes ?? nested.notes) || null,
+    isActive: true,
+    quoteMode: text(payload.quoteMode ?? nested.quoteMode).toUpperCase() === "MANUAL" ? "MANUAL" : "MARKET",
+    quoteCcy: text(payload.quoteCcy ?? nested.quoteCcy ?? row.currency) || "USD",
+    instrumentType: text(payload.instrumentType ?? nested.instrumentType).toUpperCase() || null,
+    instrumentSymbol: text(payload.instrumentSymbol ?? nested.instrumentSymbol) || symbol,
+    instrumentExchangeMic: text(payload.instrumentExchangeMic ?? payload.exchangeMic ?? nested.instrumentExchangeMic ?? nested.exchangeMic) || null,
+    metadata: payload.metadata && typeof payload.metadata === "object" ? payload.metadata : {},
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+async function listActivityAssets(env, ownerId, assetId = "") {
+  const statement = env?.DB?.prepare?.(
+    "SELECT asset_id, symbol, currency, payload_json, created_at FROM activity_records WHERE owner_id = ? AND asset_id IS NOT NULL ORDER BY activity_date DESC",
+  );
+  if (!statement?.bind) throw new Error("Database unavailable");
+  const result = await statement.bind(ownerId).all();
+  const rows = result?.results ?? result?.rows ?? [];
+  const seen = new Set();
+  const assets = [];
+  for (const row of rows) {
+    const view = assetView(row);
+    if (!view.id || (assetId && view.id !== assetId) || seen.has(view.id)) continue;
+    seen.add(view.id);
+    assets.push(view);
+  }
+  return assets;
+}
+
 async function ownedAccount(env, ownerId, accountId) {
   const statement = env?.DB?.prepare?.("SELECT id FROM accounts WHERE owner_id = ? AND is_archived = 0 AND id = ? LIMIT 1");
   if (!statement?.bind) throw new Error("Database unavailable");
@@ -126,7 +177,17 @@ export async function handleAssetRoute(request, route, ownerId, env) {
     if (request.method !== "POST") return json({ message: "Method not allowed." }, 405);
     return previewImportAssets(request, ownerId, env);
   }
+  if (route === "/assets/profile") {
+    if (request.method !== "GET") return json({ message: "Method not allowed." }, 405);
+    const assetId = text(new URL(request.url).searchParams.get("assetId"));
+    if (!assetId) return json({ message: "An asset ID is required." }, 400);
+    const assets = await listActivityAssets(env, ownerId, assetId);
+    return json(assets[0] ?? null);
+  }
   if (route !== "/assets") return null;
+  if (request.method === "GET") {
+    return json(await listActivityAssets(env, ownerId));
+  }
   if (request.method !== "POST") return json({ message: "Method not allowed." }, 405);
   let input;
   try {

@@ -1146,7 +1146,7 @@
       "createManually": "Create manually",
       "searchPlaceholder": "Search by ticker, name or ISIN…",
       "newAssets": "New Assets",
-      "newAssetsDescription": "Auto-resolved from market data. Review and edit if anything looks off before importing.",
+      "newAssetsDescription": "Automatically resolved. Review the symbols and details before importing.",
       "existingAssets": "Existing Assets",
       "existingAssetsDescription": "Already in your portfolio. No action needed, but you can still remap if required.",
       "custom": "Custom",
