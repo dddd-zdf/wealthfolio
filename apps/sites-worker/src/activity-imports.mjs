@@ -211,7 +211,7 @@ function duplicateObject(map) {
   return Object.fromEntries(map.entries());
 }
 
-function parseCsvRecords(source, delimiter, quote) {
+function parseCsvRecords(source, delimiter, quote, escapeChar = null) {
   const rows = [];
   let row = [];
   let cell = "";
@@ -222,7 +222,10 @@ function parseCsvRecords(source, delimiter, quote) {
   for (let i = 0; i < source.length; i += 1) {
     const char = source[i];
     if (quoted) {
-      if (char === quote) {
+      if (escapeChar && char === escapeChar && i + 1 < source.length) {
+        cell += source[i + 1];
+        i += 1;
+      } else if (char === quote) {
         if (source[i + 1] === quote) {
           cell += quote;
           i += 1;
@@ -273,11 +276,14 @@ function delimiterFor(source, config) {
   }, { candidate: ",", score: 0 }).candidate;
 }
 
-function parseCsv(source, rawConfig = {}) {
+export function parseCsv(source, rawConfig = {}) {
   const config = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
   const delimiter = delimiterFor(source, config);
   const quote = text(config.quoteChar || "\"").charAt(0) || "\"";
-  const parsed = parseCsvRecords(source, delimiter, quote);
+  const escapeChar = typeof config.escapeChar === "string" && config.escapeChar.length === 1
+    ? config.escapeChar
+    : null;
+  const parsed = parseCsvRecords(source, delimiter, quote, escapeChar);
   const errors = parsed.malformed ? [{ rowIndex: null, columnIndex: null, message: "CSV contains an unmatched quote.", errorType: "parse" }] : [];
   const skipTop = Number.isInteger(config.skipTopRows) ? Math.max(0, config.skipTopRows) : 0;
   const skipBottom = Number.isInteger(config.skipBottomRows) ? Math.max(0, config.skipBottomRows) : 0;
@@ -309,6 +315,7 @@ function parseCsv(source, rawConfig = {}) {
       skipBottomRows: skipBottom,
       skipEmptyRows: skipEmpty,
       quoteChar: quote,
+      ...(escapeChar ? { escapeChar } : {}),
     },
     errors,
     rowCount: rows.length,

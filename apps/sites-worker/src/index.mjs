@@ -12,6 +12,7 @@ import { handleMcpRoute, handleSpendingCategoryRoute } from "./mcp.mjs";
 import { handlePortfolioRoute } from "./portfolio.mjs";
 import { handleSettingsRoute } from "./settings.mjs";
 import { handleTaxonomyRoute } from "./taxonomies.mjs";
+import { handleWealthfolioMigrationRoute } from "./wealthfolio-migration.mjs";
 
 const API_PREFIX = "/api/v1";
 
@@ -98,6 +99,10 @@ async function handleApi(request, env, pathname) {
   }
   if (route === "/activities/import/check-duplicates" && request.method === "POST") {
     return handleCheckExistingDuplicates(request, env);
+  }
+  if (route.startsWith("/sites/migration/")) {
+    const response = await handleWealthfolioMigrationRoute(request, route, ownerId, env);
+    if (response) return response;
   }
   if (route.startsWith("/sites/mcp/")) {
     const response = await handleMcpRoute(request, route, ownerId, env);
