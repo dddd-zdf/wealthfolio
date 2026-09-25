@@ -1,10 +1,13 @@
 import { handleAccountRoute } from "./accounts.mjs";
+import { handleActivitySearchRoute } from "./activities.mjs";
+import { handleActivityImportMappingRoute } from "./activity-import-mappings.mjs";
 import {
   handleCheckActivitiesImport,
   handleCheckExistingDuplicates,
   handleImportActivities,
   handleParseCsv,
 } from "./activity-imports.mjs";
+import { handleAssetRoute } from "./assets.mjs";
 import { handleMcpRoute, handleSpendingCategoryRoute } from "./mcp.mjs";
 import { handlePortfolioRoute } from "./portfolio.mjs";
 import { handleSettingsRoute } from "./settings.mjs";
@@ -43,6 +46,15 @@ async function handleApi(request, env, pathname) {
   if (!ownerId) return json({ message: "A private signed-in Sites session is required." }, 401);
 
   const route = pathname.slice(API_PREFIX.length) || "/";
+  // These empty read models have no corresponding tables or provider services
+  // in the Sites profile. Returning their actual empty state keeps the shared
+  // frontend from treating absent optional features as server failures.
+  if (request.method === "GET" && ["/goals", "/portfolios", "/assets/logos", "/platforms"].includes(route)) {
+    return json([]);
+  }
+  if (request.method === "GET" && route === "/spending/settings") {
+    return json({ enabled: false, accountIds: [], excludedCategoryIds: [] });
+  }
   if (route === "/auth/status" && request.method === "GET") {
     return json({ requiresPassword: false, oidcEnabled: false });
   }
@@ -57,6 +69,12 @@ async function handleApi(request, env, pathname) {
     const response = await handleAccountRoute(request, route, ownerId, env);
     if (response) return response;
   }
+  const activitySearchResponse = await handleActivitySearchRoute(request, route, ownerId, env);
+  if (activitySearchResponse) return activitySearchResponse;
+  const importMappingResponse = await handleActivityImportMappingRoute(request, route, ownerId, env);
+  if (importMappingResponse) return importMappingResponse;
+  const assetResponse = await handleAssetRoute(request, route, ownerId, env);
+  if (assetResponse) return assetResponse;
   if (route.startsWith("/taxonomies")) {
     const response = await handleTaxonomyRoute(request, route, ownerId, env);
     if (response) return response;

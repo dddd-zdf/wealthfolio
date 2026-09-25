@@ -1,4 +1,4 @@
-import { profileScope, matchesProfileScope } from "@/features/profiles/session";
+import { isSitesRuntime, profileScope, matchesProfileScope } from "@/features/profiles/session";
 // Web adapter - SSE Bridge and Event Listeners
 
 import { logger, EVENTS_ENDPOINT } from "./core";
@@ -23,6 +23,9 @@ class ServerEventBridge {
   }
 
   listen<T>(eventName: string, handler: EventCallback<T>): Promise<UnlistenFn> {
+    if (isSitesRuntime) {
+      return Promise.resolve(() => Promise.resolve());
+    }
     if (typeof window === "undefined" || typeof EventSource === "undefined") {
       return Promise.reject(new Error("EventSource is not available in this environment."));
     }

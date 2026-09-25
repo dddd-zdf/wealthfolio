@@ -13,7 +13,7 @@ function request(path, body, init = {}) {
   });
 }
 
-function fakeDb(activityRecords, assetQuotes) {
+function fakeDb(activityRecords, assetQuotes, accounts = [], settings = { baseCurrency: "USD" }) {
   const calls = [];
   return {
     calls,
@@ -23,12 +23,17 @@ function fakeDb(activityRecords, assetQuotes) {
           bind(ownerId) {
             calls.push({ sql, ownerId });
             const isActivities = sql.includes("FROM activity_records");
+            const isQuotes = sql.includes("FROM asset_quotes");
+            const isAccounts = sql.includes("FROM accounts");
             return {
               async all() {
-                const source = isActivities ? activityRecords : assetQuotes;
+                const source = isActivities ? activityRecords : isQuotes ? assetQuotes : isAccounts ? accounts : [];
                 // Return all fixture rows so portfolio.mjs's defensive owner
                 // check is exercised in addition to the SQL owner predicate.
                 return { results: source };
+              },
+              async first() {
+                return sql.includes("FROM user_settings") ? { settings_json: JSON.stringify(settings) } : null;
               },
             };
           },
@@ -128,4 +133,33 @@ test("holdings list query is an exact supported alias", async () => {
   const response = await handlePortfolioRoute(request("/holdings/list/query", { filter: { type: "all" } }), "/holdings/list/query", owner, db);
   assert.equal(response.status, 200);
   assert.equal((await response.json())[0].instrument.symbol, "AAPL");
+});
+
+test("current valuation returns owner-scoped D1 totals and account values", async () => {
+  const db = fakeDb(
+    [activity()],
+    [{ owner_id: owner, asset_id: "asset-aapl", symbol: "AAPL", quote_date: "2026-09-12", price: "130", currency: "USD" }],
+    [{ owner_id: owner, id: "account-1", currency: "USD" }],
+    { baseCurrency: "USD" },
+  );
+  const response = await handlePortfolioRoute(
+    request("/valuations/current/query", { filter: { type: "all" }, includeAccounts: true }),
+    "/valuations/current/query",
+    owner,
+    db,
+  );
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.summary.totalValueBase, 1300);
+  assert.equal(result.summary.investmentMarketValueBase, 1300);
+  assert.equal(result.summary.accountCount, 1);
+  assert.equal(result.accounts[0].accountId, "account-1");
+  assert.equal(result.accounts[0].totalValueBase, 1300);
+  assert.deepEqual(result.summary.warnings, []);
+});
+
+test("portfolio refresh acknowledges on-demand D1 calculation without a cache write", async () => {
+  const response = await handlePortfolioRoute(request("/portfolio/update", {}), "/portfolio/update", owner, {});
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { success: true, source: "d1-read-through" });
 });

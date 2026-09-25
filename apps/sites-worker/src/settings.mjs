@@ -26,7 +26,9 @@ async function getSettings(ownerId, env) {
   if (!row?.settings_json) return { ...DEFAULT_SETTINGS };
   try {
     const parsed = JSON.parse(row.settings_json);
-    return { ...DEFAULT_SETTINGS, ...parsed, syncEnabled: false };
+    const publicSettings = { ...parsed };
+    delete publicSettings.sitesImportMappings;
+    return { ...DEFAULT_SETTINGS, ...publicSettings, syncEnabled: false };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -48,7 +50,20 @@ export async function handleSettingsRoute(request, route, ownerId, env) {
     }
     const allowed = new Set(Object.keys(DEFAULT_SETTINGS).filter((key) => key !== "syncEnabled" && key !== "restoreReconnectRequired"));
     const safeUpdate = Object.fromEntries(Object.entries(update).filter(([key]) => allowed.has(key)));
-    const settings = { ...(await getSettings(ownerId, env)), ...safeUpdate, syncEnabled: false, restoreReconnectRequired: false };
+    const current = await env.DB.prepare("SELECT settings_json FROM user_settings WHERE owner_id = ? LIMIT 1").bind(ownerId).first();
+    let privateSettings = {};
+    try {
+      privateSettings = JSON.parse(current?.settings_json ?? "{}");
+    } catch {
+      privateSettings = {};
+    }
+    const settings = {
+      ...(await getSettings(ownerId, env)),
+      ...safeUpdate,
+      ...(privateSettings.sitesImportMappings ? { sitesImportMappings: privateSettings.sitesImportMappings } : {}),
+      syncEnabled: false,
+      restoreReconnectRequired: false,
+    };
     await env.DB.prepare(
       "INSERT INTO user_settings (owner_id, settings_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(owner_id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = CURRENT_TIMESTAMP",
     )

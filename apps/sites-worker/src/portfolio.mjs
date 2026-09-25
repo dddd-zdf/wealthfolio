@@ -426,13 +426,130 @@ function routeKind(pathname) {
   if (path === "/holdings/list/query") return "holdings-list";
   if (path === "/performance/summary") return "performance";
   if (path === "/sites/portfolio/summary") return "portfolio";
+  if (path === "/valuations/current/query") return "current-valuation";
+  if (path === "/valuations/history/query" || path === "/valuations/history") return "history";
+  if (path === "/portfolio/update" || path === "/portfolio/recalculate") return "update";
   return null;
+}
+
+async function accountsFor(env, ownerId, accountIds) {
+  const statement = env?.DB?.prepare?.(
+    "SELECT id, currency FROM accounts WHERE owner_id = ? AND is_archived = 0 ORDER BY name COLLATE NOCASE",
+  );
+  if (!statement?.bind) throw new Error("Database unavailable");
+  const result = await statement.bind(ownerId).all();
+  const allowed = new Set(accountIds);
+  return (result?.results ?? result?.rows ?? [])
+    .filter((row) => row?.owner_id == null || String(row.owner_id) === String(ownerId))
+    .filter((row) => !allowed.size || allowed.has(String(row.id)));
+}
+
+async function baseCurrencyFor(env, ownerId) {
+  const statement = env?.DB?.prepare?.("SELECT settings_json FROM user_settings WHERE owner_id = ? LIMIT 1");
+  if (!statement?.bind) return "USD";
+  const row = await statement.bind(ownerId).first();
+  try {
+    const settings = JSON.parse(row?.settings_json ?? "{}");
+    const currency = text(settings.baseCurrency).toUpperCase();
+    return /^[A-Z]{3}$/.test(currency) ? currency : "USD";
+  } catch {
+    return "USD";
+  }
+}
+
+function currentValuation(positions, quotes, accounts, baseCurrency, body, filter) {
+  const views = positions.map((position) => positionView(position, quotes));
+  const currencyValues = new Map();
+  const accountValues = new Map();
+  let total = ZERO;
+  for (const view of views) {
+    if (view.price == null) continue;
+    const value = decimal(view.marketValue?.base);
+    const currency = text(view.baseCurrency).toUpperCase() || baseCurrency;
+    total = total.add(value);
+    currencyValues.set(currency, (currencyValues.get(currency) ?? ZERO).add(value));
+    accountValues.set(view.accountId, (accountValues.get(view.accountId) ?? ZERO).add(value));
+  }
+  const warnings = [];
+  if (positions.some((position) => !quoteFor(position, quotes))) {
+    warnings.push("Current value is unavailable for one or more positions because no owner-scoped quote was found.");
+  }
+  if ([...currencyValues.keys()].some((currency) => currency !== baseCurrency)) {
+    warnings.push("Exchange rates are not available in the Sites profile; values in other currencies are shown without conversion.");
+  }
+  const totalValue = total.toNumber() ?? 0;
+  const summary = {
+    scopeId: filter.accountIds.length === 1 ? filter.accountIds[0] : text(body?.filter?.portfolioId) || "owner",
+    baseCurrency,
+    cashBalanceBase: 0,
+    investmentMarketValueBase: totalValue,
+    totalValueBase: totalValue,
+    holdingsCount: positions.filter((position) => !position.quantity.isZero()).length,
+    accountCount: accounts.length,
+    currencySplit: [...currencyValues.entries()].map(([currency, value]) => ({
+      currency,
+      valueBase: value.toNumber() ?? 0,
+      valueLocal: value.toNumber() ?? 0,
+      percentage: total.isZero() ? 0 : value.div(total)?.toNumber() ?? 0,
+    })),
+    cashCurrencySplit: [],
+    sourceDataAsOf: views.map((view) => view.asOfDate).filter(Boolean).sort().at(-1) ?? null,
+    calculatedAt: new Date().toISOString(),
+    warnings,
+  };
+  const accountValuations = accounts.map((account) => {
+    const id = String(account.id);
+    const positionsForAccount = positions.filter((position) => position.accountId === id);
+    const accountWarnings = positionsForAccount.some((position) => !quoteFor(position, quotes))
+      ? ["Current value is unavailable for one or more positions because no owner-scoped quote was found."]
+      : [];
+    const currency = text(account.currency).toUpperCase() || baseCurrency;
+    if (currency !== baseCurrency) {
+      accountWarnings.push("Exchange rates are not available in the Sites profile; this value is shown without conversion.");
+    }
+    const amount = (accountValues.get(id) ?? ZERO).toNumber() ?? 0;
+    const sourceDataAsOf = positionsForAccount
+      .map((position) => quoteFor(position, quotes)?.date || position.lastActivityDate)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? null;
+    return {
+      accountId: id,
+      accountCurrency: currency,
+      baseCurrency,
+      fxRateToBase: currency === baseCurrency ? 1 : null,
+      cashBalance: 0,
+      investmentMarketValue: amount,
+      totalValue: amount,
+      cashBalanceBase: 0,
+      investmentMarketValueBase: amount,
+      totalValueBase: amount,
+      sourceDataAsOf,
+      calculatedAt: summary.calculatedAt,
+      warnings: accountWarnings,
+    };
+  });
+  return { summary, accounts: body?.includeAccounts === true ? accountValuations : [] };
 }
 
 /** Handle the read-only portfolio routes; return null when the dispatcher owns the route. */
 export async function handlePortfolioRoute(request, pathname, ownerId, env) {
   const kind = routeKind(pathname);
   if (!kind) return null;
+  if (kind === "update") {
+    if (request.method !== "POST") return errorResponse(405, "Method not allowed.");
+    if (!text(ownerId)) return errorResponse(401, "Authenticated user is required.");
+    // Sites calculations are derived from D1 reads on demand; there is no
+    // SQLite portfolio cache or snapshot to refresh.
+    return json({ success: true, source: "d1-read-through" });
+  }
+  if (kind === "history") {
+    if (request.method !== "GET" && request.method !== "POST") return errorResponse(405, "Method not allowed.");
+    if (!text(ownerId)) return errorResponse(401, "Authenticated user is required.");
+    // The Sites schema has no valuation snapshot table, so a current point
+    // must not be presented as a historical series.
+    return json([]);
+  }
   if (request.method !== "GET" && request.method !== "POST") return errorResponse(405, "Method not allowed.");
   if (!text(ownerId)) return errorResponse(401, "Authenticated user is required.");
   let body = {};
@@ -468,6 +585,11 @@ export async function handlePortfolioRoute(request, pathname, ownerId, env) {
         .map((position) => positionView(position, quotes));
       const total = views.reduce((sum, view) => sum + (view.marketValue?.base ?? 0), 0);
       return json(views.map((view) => ({ ...view, weight: total ? view.marketValue.base / total : 0 })));
+    }
+    if (kind === "current-valuation") {
+      const accounts = await accountsFor(env, ownerId, filter.accountIds);
+      const baseCurrency = await baseCurrencyFor(env, ownerId);
+      return json(currentValuation(positions, quotes, accounts, baseCurrency, body, filter));
     }
     const summary = portfolioSummary(positions, quotes, warnings);
     if (kind === "portfolio") return json(summary);
