@@ -1,5 +1,6 @@
 packages:
   - "apps/frontend"
+  - "apps/sites-worker"
   - "packages/*"
 
 ignoredBuiltDependencies:

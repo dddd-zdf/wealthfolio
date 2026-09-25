@@ -1,0 +1,14 @@
+{
+  "name": "@wealthfolio/sites-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:generate": "drizzle-kit generate --config ../../drizzle.config.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10"
+  }
+}

@@ -1,5 +1,7 @@
 import { deferApplicationReload, reloadApplication } from "@/lib/reload-application";
 
+export const isSitesRuntime = import.meta.env.VITE_SITES_RUNTIME === "true";
+
 // Immutable for the lifetime of a financial application load. Old async work
 // must never acquire a subsequently selected profile's authority.
 export interface ProfileSession {
@@ -25,6 +27,7 @@ export function installProfileSession(session: ProfileSession, isLegacy = false)
   return true;
 }
 export function profileScope(): string {
+  if (isSitesRuntime) return "sites-owner";
   if (!admitted || revoked) throw new Error("PROFILE_LOCKED");
   return admitted.scopeId;
 }
@@ -41,6 +44,7 @@ export async function profileFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
 ): Promise<Response> {
+  if (isSitesRuntime) return fetch(input, init);
   const headers = new Headers(init.headers);
   headers.set("x-wf-profile-scope", profileScope());
   const response = await fetch(input, { ...init, headers });

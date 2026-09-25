@@ -1,4 +1,4 @@
-import { revokeProfileSession } from "@/features/profiles/session";
+import { isSitesRuntime, revokeProfileSession } from "@/features/profiles/session";
 import { isWeb } from "@/adapters";
 import { setUnauthorizedHandler } from "@/lib/auth-token";
 import {
@@ -82,6 +82,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [cookieSession]);
 
   useEffect(() => {
+    if (isSitesRuntime) {
+      setRequiresPassword(false);
+      setOidcEnabled(false);
+      setStatusLoading(false);
+      return;
+    }
     if (!isWeb) {
       setStatusLoading(false);
       return;
