@@ -476,11 +476,11 @@ existing transactions.
 Rules:
 
 - Draft and import-preview tools never mutate data; activity commits require
-  `activities:write` (which itself requires `activities:draft`),
-  classification commits require `classification:write` (which itself requires
+  `activities:write` (which itself requires `activities:draft`), classification
+  commits require `classification:write` (which itself requires
   `classification:suggest`), category commits require `categorization:write`
-  (standalone — no prerequisite), and account creation requires
-  `accounts:write` (standalone — no prerequisite).
+  (standalone — no prerequisite), and account creation requires `accounts:write`
+  (standalone — no prerequisite).
 - CSV / activity-row content must not be persisted in raw audit logs: the
   write/import tools redact their `activities`/row arguments to a count
   (`"[N rows]"`) via per-tool audit sanitization.
@@ -553,8 +553,8 @@ Presets (`AgentScopeSet` constructors):
 - `read-activity-draft` — read + `activities:draft`.
 - `read-activity-write` — read + `activities:draft` + `activities:write`.
 - `read-activity-write-classification-suggest` — the above plus
-  `classification:suggest`, `classification:write`, `categorization:write`,
-  and `accounts:write`.
+  `classification:suggest`, `classification:write`, `categorization:write`, and
+  `accounts:write`.
 
 Scope strings are parsed with `AgentScope::parse`, which rejects unknown scopes
 (including the removed `portfolio:read`). Token creation rejects unknown scopes;
