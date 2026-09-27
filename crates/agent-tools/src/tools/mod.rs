@@ -16,6 +16,7 @@ pub mod commit_activity;
 pub mod commit_asset_classification;
 pub mod commit_categories;
 pub mod commit_categorization_rule;
+pub mod commit_reviewed_categorization_rule;
 pub mod contribution_limits;
 pub mod create_account;
 pub mod create_categorization_rule;
@@ -109,7 +110,11 @@ pub use commit_categories::{
     CommitCategoryAssignmentsOutput, CommittedCategoryAssignment,
 };
 pub use commit_categorization_rule::{
-    CommitCategorizationRule, CommitCategorizationRuleArgs, CommitCategorizationRuleOutput,
+    CommitCategorizationRule, CommitCategorizationRuleOutput, CommittedRuleDto,
+};
+pub use commit_reviewed_categorization_rule::{
+    CommitReviewedCategorizationRule, CommitReviewedCategorizationRuleArgs,
+    CommitReviewedCategorizationRuleOutput,
 };
 pub use create_account::{
     CreateAccount, CreateAccountArgs, CreateAccountOutput, CreatedAccountDto,
@@ -172,6 +177,7 @@ pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
         Arc::new(CommitAssetClassificationDraft),
         Arc::new(CommitCategoryAssignments),
         Arc::new(CommitCategorizationRule),
+        Arc::new(CommitReviewedCategorizationRule),
         Arc::new(CreateAccount),
     ]
 }

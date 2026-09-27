@@ -1,80 +1,53 @@
 //! Commit Categorization Rule tool (MCP-only).
 //!
-//! `create_categorization_rule` returns a rule draft; the in-app assistant saves
-//! it through its confirmation widget. External MCP clients use this tool after
-//! the user reviews that draft.
+//! `commit_categorization_rule` persists a categorization rule directly,
+//! without the in-app assistant's confirmation widget. It reuses the draft
+//! tool's validation wholesale — `CreateCategorizationRule::build_output`
+//! resolves `(taxonomy_id, category_key)` against the live taxonomy,
+//! validates the pattern/match type, and (for account-scoped rules) the
+//! account — then the validated `NewCategorizationRule` is saved through
+//! `CategorizationRulesService::create`, the same service method the widget
+//! confirmation path uses.
+//!
+//! Like the other commit tools, this MUTATES data: there is no second
+//! confirmation step. Audit args redact the pattern/name, mirroring the
+//! draft tool.
 
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use wealthfolio_spending::categorization_rules::{
-    compile_regex_pattern, CategorizationRule, NewCategorizationRule, RuleMatchType,
-    MAX_REGEX_PATTERN_LEN,
-};
 
 use crate::env::AgentEnvironment;
 use crate::scope::AgentScope;
 use crate::tool::{AgentTool, AgentToolAccess, AgentToolError, AgentToolResult};
+use crate::tools::create_categorization_rule::{
+    CreateCategorizationRule, CreateCategorizationRuleArgs,
+};
 
-#[derive(Debug, Deserialize)]
+/// DTO for the persisted rule.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CommitCategorizationRuleArgs {
-    pub rule: NewCategorizationRule,
+pub struct CommittedRuleDto {
+    pub id: String,
+    pub name: String,
+    pub pattern: String,
+    pub match_type: String,
+    pub taxonomy_id: Option<String>,
+    pub category_id: Option<String>,
+    pub category_path: String,
+    pub is_global: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitCategorizationRuleOutput {
-    pub created: CategorizationRule,
+    pub rule: CommittedRuleDto,
+    pub message: String,
 }
 
-fn validate_draft(rule: &NewCategorizationRule) -> Result<(), AgentToolError> {
-    // The draft tool always assigns an ID. Requiring it here makes a retry
-    // fail with a duplicate-ID error instead of silently creating two rules.
-    if rule.id.as_deref().is_none_or(|id| id.trim().is_empty()) {
-        return Err(AgentToolError::InvalidInput(
-            "rule.id from create_categorization_rule is required".to_string(),
-        ));
-    }
-    if rule.pattern.trim().is_empty() {
-        return Err(AgentToolError::InvalidInput(
-            "rule.pattern cannot be empty".to_string(),
-        ));
-    }
-    if rule.pattern.len() > MAX_REGEX_PATTERN_LEN {
-        return Err(AgentToolError::InvalidInput(format!(
-            "rule.pattern must be {MAX_REGEX_PATTERN_LEN} characters or fewer"
-        )));
-    }
-    if matches!(rule.match_type, RuleMatchType::Regex) {
-        compile_regex_pattern(&rule.pattern).map_err(|_| {
-            AgentToolError::InvalidInput("rule.pattern is not a valid regex".to_string())
-        })?;
-    }
-    if rule
-        .taxonomy_id
-        .as_deref()
-        .is_none_or(|id| id.trim().is_empty())
-        || rule
-            .category_id
-            .as_deref()
-            .is_none_or(|id| id.trim().is_empty())
-    {
-        return Err(AgentToolError::InvalidInput(
-            "rule.taxonomyId and rule.categoryId are required".to_string(),
-        ));
-    }
-    // Drafts are user-created rules, never preset imports. Do not let an MCP
-    // caller mark a new rule as owned by a bundled preset.
-    if rule.preset_id.is_some() || rule.preset_rule_key.is_some() || rule.preset_version.is_some() {
-        return Err(AgentToolError::InvalidInput(
-            "preset provenance is not allowed on a rule draft".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-/// Commit one reviewed categorization rule draft.
+/// Persist a categorization rule without widget confirmation.
 pub struct CommitCategorizationRule;
 
 #[async_trait::async_trait]
@@ -84,49 +57,54 @@ impl AgentTool for CommitCategorizationRule {
     }
 
     fn description(&self) -> &'static str {
-        "Persist a reviewed rule draft from create_categorization_rule. Pass the \
-         returned rule object as `rule`. This MUTATES data — call it only after \
-         the user has reviewed and confirmed the draft. A successful call \
-         returns the saved rule."
+        "Persist a categorization rule directly (no confirmation widget). \
+         Pass pattern, taxonomyId, and categoryKey — e.g. pattern \"T&T\" \
+         with categoryKey \"groceries\" categorizes future matching \
+         transactions as Groceries. matchType defaults to \"contains\"; \
+         accountId optionally scopes the rule to one account. This MUTATES \
+         data — the rule is saved immediately."
     }
 
     fn input_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "rule": {
-                    "type": "object",
-                    "description": "The rule object returned by create_categorization_rule, after user review. Copy its fields unchanged unless the user requests an edit.",
-                    "properties": {
-                        "id": { "type": "string" },
-                        "name": { "type": "string" },
-                        "pattern": { "type": "string", "minLength": 1, "maxLength": MAX_REGEX_PATTERN_LEN },
-                        "matchType": { "type": "string", "enum": ["contains", "starts_with", "exact", "regex"] },
-                        "taxonomyId": { "type": ["string", "null"] },
-                        "categoryId": { "type": ["string", "null"] },
-                        "activityType": { "type": ["string", "null"] },
-                        "amountOp": { "type": ["string", "null"], "enum": ["eq", "gt", "gte", "lt", "lte", "between", null] },
-                        "amountValue": { "type": ["string", "number", "null"] },
-                        "amountValue2": { "type": ["string", "number", "null"] },
-                        "priority": { "type": "integer" },
-                        "isGlobal": { "type": "boolean" },
-                        "accountId": { "type": ["string", "null"] },
-                        "presetId": { "type": "null" },
-                        "presetRuleKey": { "type": "null" },
-                        "presetVersion": { "type": "null" }
-                    },
-                    "required": ["id", "name", "pattern", "taxonomyId", "categoryId", "activityType", "amountOp", "amountValue", "amountValue2", "accountId", "presetId", "presetRuleKey", "presetVersion"]
+                "name": {
+                    "type": "string",
+                    "description": "Short rule name shown in settings. Default: derive from pattern, e.g. \"T&T → Groceries\"."
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Substring/pattern matched against transaction notes. contains/starts_with/exact are case-insensitive; regex is a Rust regex and is case-sensitive unless it uses an inline flag like (?i)."
+                },
+                "matchType": {
+                    "type": "string",
+                    "enum": ["contains", "starts_with", "exact", "regex"],
+                    "description": "Default \"contains\". Use stricter modes only if needed."
+                },
+                "categoryKey": {
+                    "type": "string",
+                    "description": "Category key from the activity-scope taxonomies (e.g. \"groceries\")."
+                },
+                "taxonomyId": {
+                    "type": "string",
+                    "description": "Taxonomy ID containing categoryKey. Required because category keys are taxonomy-scoped."
+                },
+                "activityType": {
+                    "type": "string",
+                    "description": "Optional activity-type narrowing (e.g. WITHDRAWAL). Usually omit."
+                },
+                "accountId": {
+                    "type": "string",
+                    "description": "Optional account ID to scope the rule to one account. Omit for a global rule."
                 }
             },
-            "required": ["rule"]
+            "required": ["pattern", "taxonomyId", "categoryKey"]
         })
     }
 
     fn required_scopes(&self) -> &'static [AgentScope] {
-        &[
-            AgentScope::ClassificationSuggest,
-            AgentScope::ClassificationWrite,
-        ]
+        &[AgentScope::CategorizationWrite]
     }
 
     fn access_level(&self) -> AgentToolAccess {
@@ -134,11 +112,23 @@ impl AgentTool for CommitCategorizationRule {
     }
 
     fn sanitize_args_for_audit(&self, args: &serde_json::Value) -> serde_json::Value {
-        if args.get("rule").is_some() {
-            serde_json::json!({ "rule": "[redacted]" })
-        } else {
-            serde_json::json!({})
+        // Same redaction as the draft tool: `pattern` and `name` echo real
+        // merchant/transaction text, so they never land in the audit log.
+        let mut redacted = serde_json::Map::new();
+        if let Some(obj) = args.as_object() {
+            for key in ["matchType", "categoryKey", "taxonomyId", "activityType"] {
+                if let Some(value) = obj.get(key) {
+                    redacted.insert(key.to_string(), value.clone());
+                }
+            }
+            if obj.contains_key("pattern") {
+                redacted.insert("pattern".to_string(), serde_json::json!("[redacted]"));
+            }
+            if obj.contains_key("name") {
+                redacted.insert("name".to_string(), serde_json::json!("[redacted]"));
+            }
         }
+        serde_json::Value::Object(redacted)
     }
 
     async fn call(
@@ -146,16 +136,42 @@ impl AgentTool for CommitCategorizationRule {
         env: Arc<dyn AgentEnvironment>,
         args: serde_json::Value,
     ) -> Result<AgentToolResult, AgentToolError> {
-        let args: CommitCategorizationRuleArgs = serde_json::from_value(args)?;
-        validate_draft(&args.rule)?;
+        let args: CreateCategorizationRuleArgs = serde_json::from_value(args)?;
 
-        let created = env
+        // Reuse the draft tool's full validation: live-taxonomy key
+        // resolution, pattern/match-type checks, and account existence for
+        // account-scoped rules. Unknown category keys fail here, before
+        // anything is persisted.
+        let draft = CreateCategorizationRule::build_output(env.as_ref(), args).await?;
+
+        // The widget confirmation path saves through this same service
+        // method (which re-validates scope, pattern, and amount conditions).
+        let saved = env
             .categorization_rules_service()
-            .create(args.rule)
+            .create(draft.rule)
             .await
             .map_err(|e| AgentToolError::ExecutionFailed(e.to_string()))?;
+
+        let message = format!(
+            "Saved rule: anything matching \"{}\" will be {}.",
+            saved.pattern, draft.category_path
+        );
+        let output = CommitCategorizationRuleOutput {
+            rule: CommittedRuleDto {
+                id: saved.id,
+                name: saved.name,
+                pattern: saved.pattern,
+                match_type: saved.match_type.as_str().to_string(),
+                taxonomy_id: saved.taxonomy_id,
+                category_id: saved.category_id,
+                category_path: draft.category_path,
+                is_global: saved.is_global,
+                account_id: saved.account_id,
+            },
+            message,
+        };
         Ok(AgentToolResult {
-            content: serde_json::to_value(CommitCategorizationRuleOutput { created })?,
+            content: serde_json::to_value(output)?,
         })
     }
 }
@@ -165,108 +181,58 @@ mod tests {
     use super::*;
 
     #[test]
-    fn draft_payload_matches_commit_schema() {
-        let draft = NewCategorizationRule {
-            id: Some("rule-1".to_string()),
-            name: "Coffee".to_string(),
-            pattern: "CAFE".to_string(),
-            match_type: wealthfolio_spending::categorization_rules::RuleMatchType::Contains,
-            taxonomy_id: Some("spending_categories".to_string()),
-            category_id: Some("food".to_string()),
-            activity_type: None,
-            amount_op: None,
-            amount_value: None,
-            amount_value2: None,
-            priority: 0,
-            is_global: true,
-            account_id: None,
-            preset_id: None,
-            preset_rule_key: None,
-            preset_version: None,
-        };
-        let draft_json = serde_json::to_value(&draft).unwrap();
+    fn commit_rule_schema_requires_pattern_taxonomy_key() {
         let schema = CommitCategorizationRule.input_schema();
-        for key in draft_json.as_object().unwrap().keys() {
-            assert!(
-                schema["properties"]["rule"]["properties"]
-                    .get(key)
-                    .is_some(),
-                "commit schema is missing draft field {key}"
-            );
-        }
-        let args: CommitCategorizationRuleArgs =
-            serde_json::from_value(serde_json::json!({ "rule": draft_json })).unwrap();
-        validate_draft(&args.rule).unwrap();
-        assert_eq!(args.rule.id.as_deref(), Some("rule-1"));
-        assert_eq!(args.rule.pattern, "CAFE");
+        assert_eq!(
+            schema["required"],
+            serde_json::json!(["pattern", "taxonomyId", "categoryKey"])
+        );
+        assert_eq!(
+            schema["properties"]["matchType"]["enum"],
+            serde_json::json!(["contains", "starts_with", "exact", "regex"])
+        );
     }
 
     #[test]
-    fn rejects_missing_id_and_preset_provenance() {
-        let mut rule: NewCategorizationRule = serde_json::from_value(serde_json::json!({
-            "id": null, "name": "Coffee", "pattern": "CAFE", "matchType": "contains",
-            "taxonomyId": "spending_categories", "categoryId": "food", "activityType": null,
-            "amountOp": null, "amountValue": null, "amountValue2": null,
-            "priority": 0, "isGlobal": true, "accountId": null,
-            "presetId": null, "presetRuleKey": null, "presetVersion": null
+    fn commit_rule_requires_categorization_write_scope() {
+        assert_eq!(
+            CommitCategorizationRule.required_scopes(),
+            &[AgentScope::CategorizationWrite]
+        );
+        assert_eq!(
+            CommitCategorizationRule.access_level(),
+            AgentToolAccess::Write
+        );
+    }
+
+    #[test]
+    fn audit_redaction_drops_pattern_and_name() {
+        let args = serde_json::json!({
+            "pattern": "T&T",
+            "name": "T&T -> Groceries",
+            "matchType": "contains",
+            "categoryKey": "groceries",
+            "taxonomyId": "spending_categories",
+        });
+        let redacted = CommitCategorizationRule.sanitize_args_for_audit(&args);
+        assert_eq!(redacted["pattern"], serde_json::json!("[redacted]"));
+        assert_eq!(redacted["name"], serde_json::json!("[redacted]"));
+        assert_eq!(redacted["categoryKey"], serde_json::json!("groceries"));
+        assert!(redacted.get("accountId").is_none());
+    }
+
+    #[test]
+    fn args_deserialize_from_camel_case() {
+        let args: CreateCategorizationRuleArgs = serde_json::from_value(serde_json::json!({
+            "pattern": "T&T",
+            "taxonomyId": "spending_categories",
+            "categoryKey": "groceries",
+            "matchType": "exact",
+            "accountId": "acc-1",
         }))
         .unwrap();
-        assert!(matches!(
-            validate_draft(&rule),
-            Err(AgentToolError::InvalidInput(_))
-        ));
-        rule.id = Some("rule-1".to_string());
-        rule.preset_id = Some("preset".to_string());
-        assert!(matches!(
-            validate_draft(&rule),
-            Err(AgentToolError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn rejects_empty_and_oversized_patterns() {
-        let mut rule: NewCategorizationRule = serde_json::from_value(serde_json::json!({
-            "id": "rule-1", "name": "Coffee", "pattern": "CAFE", "matchType": "contains",
-            "taxonomyId": "spending_categories", "categoryId": "food", "activityType": null,
-            "amountOp": null, "amountValue": null, "amountValue2": null,
-            "priority": 0, "isGlobal": true, "accountId": null,
-            "presetId": null, "presetRuleKey": null, "presetVersion": null
-        }))
-        .unwrap();
-
-        rule.pattern = "  ".to_string();
-        assert!(matches!(
-            validate_draft(&rule),
-            Err(AgentToolError::InvalidInput(_))
-        ));
-        rule.pattern = "x".repeat(MAX_REGEX_PATTERN_LEN + 1);
-        assert!(matches!(
-            validate_draft(&rule),
-            Err(AgentToolError::InvalidInput(_))
-        ));
-    }
-
-    #[test]
-    fn invalid_regex_error_does_not_echo_pattern() {
-        let mut rule: NewCategorizationRule = serde_json::from_value(serde_json::json!({
-            "id": "rule-1", "name": "Coffee", "pattern": "CAFE", "matchType": "regex",
-            "taxonomyId": "spending_categories", "categoryId": "food", "activityType": null,
-            "amountOp": null, "amountValue": null, "amountValue2": null,
-            "priority": 0, "isGlobal": true, "accountId": null,
-            "presetId": null, "presetRuleKey": null, "presetVersion": null
-        }))
-        .unwrap();
-        rule.pattern = "PRIVATE-MERCHANT-(".to_string();
-        let error = validate_draft(&rule).unwrap_err().to_string();
-        assert!(!error.contains("PRIVATE-MERCHANT"));
-    }
-
-    #[test]
-    fn audit_payload_redacts_merchant_and_account() {
-        let sanitized = CommitCategorizationRule.sanitize_args_for_audit(&serde_json::json!({
-            "rule": { "name": "Coffee", "pattern": "CAFE", "accountId": "account-1" },
-            "extra": "sensitive"
-        }));
-        assert_eq!(sanitized, serde_json::json!({ "rule": "[redacted]" }));
+        assert_eq!(args.pattern, "T&T");
+        assert_eq!(args.match_type.as_deref(), Some("exact"));
+        assert_eq!(args.account_id.as_deref(), Some("acc-1"));
     }
 }

@@ -259,6 +259,7 @@ mod tests {
         assert!(!names.contains(&"commit_asset_classification_draft"));
         assert!(!names.contains(&"commit_category_assignments"));
         assert!(!names.contains(&"commit_categorization_rule"));
+        assert!(!names.contains(&"commit_reviewed_categorization_rule"));
         assert!(!names.contains(&"create_account"));
         assert!(!names.contains(&"prepare_activity_import"));
         assert!(!names.contains(&"commit_activity_import"));
@@ -274,6 +275,7 @@ mod tests {
         assert!(names.contains(&"commit_asset_classification_draft"));
         assert!(names.contains(&"commit_category_assignments"));
         assert!(names.contains(&"commit_categorization_rule"));
+        assert!(names.contains(&"commit_reviewed_categorization_rule"));
         assert!(names.contains(&"create_account"));
         assert!(names.contains(&"get_import_mapping"));
         assert!(names.contains(&"prepare_activity_import"));
@@ -292,6 +294,7 @@ mod tests {
             "commit_asset_classification_draft",
             "commit_category_assignments",
             "commit_categorization_rule",
+            "commit_reviewed_categorization_rule",
             "create_account",
         ] {
             let err = catalog
@@ -311,7 +314,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn categorization_rule_commit_requires_write_scope_and_saves_reviewed_rule() {
+    async fn reviewed_categorization_rule_commit_requires_write_scope_and_saves_rule() {
         let catalog = AgentToolCatalog::mcp_catalog();
         let rules = Arc::new(TestRuleService::default());
         let env = Arc::new(PanicEnv {
@@ -333,7 +336,7 @@ mod tests {
             .execute(
                 env.clone(),
                 &suggest_only,
-                "commit_categorization_rule",
+                "commit_reviewed_categorization_rule",
                 input.clone(),
             )
             .await
@@ -343,7 +346,7 @@ mod tests {
 
         let writable = AgentScopeSet::from_strs(["classification:suggest", "classification:write"]);
         let result = catalog
-            .execute(env, &writable, "commit_categorization_rule", input)
+            .execute(env, &writable, "commit_reviewed_categorization_rule", input)
             .await
             .unwrap();
         assert_eq!(result.content["created"]["id"], "draft-1");

@@ -449,7 +449,7 @@ async fn mcp_pat_lifecycle() {
 /// A write/suggest-scoped token sees the draft, suggest, commit, AND import
 /// tools via `tools/list` — proving scope-gated visibility extends past the
 /// read-only catalog. (Read-only tokens see 17; the full MCP catalog is
-/// 16 read + get_import_mapping + 5 draft/suggest + 6 commit + 2 import = 30.)
+/// 16 read + get_import_mapping + 5 draft/suggest + 7 commit + 2 import = 31.)
 #[tokio::test]
 async fn mcp_write_scoped_token_sees_write_tools() {
     let server = spawn_server(true, false).await;
@@ -491,8 +491,8 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools.len(),
-        30,
-        "full-scope token must see all 30 tools: {names:?}"
+        31,
+        "full-scope token must see all 31 tools: {names:?}"
     );
     assert!(
         names.contains(&"commit_activity_import"),
@@ -502,6 +502,10 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     assert!(
         names.contains(&"commit_categorization_rule"),
         "categorization rule commit tool visible"
+    );
+    assert!(
+        names.contains(&"commit_reviewed_categorization_rule"),
+        "reviewed categorization rule commit tool visible"
     );
     assert!(
         names.contains(&"prepare_asset_classification"),
@@ -871,7 +875,7 @@ fn full_write_scopes() -> Vec<&'static str> {
         .collect()
 }
 
-/// End-to-end `tools/call` for the two new MCP-only write tools:
+/// End-to-end `tools/call` for the MCP-only write tools:
 /// `create_account` persists an account through the account service, and
 /// `commit_categorization_rule` persists a rule through the rules service.
 /// Rejection cases (unknown category key, missing scope) return `isError`
@@ -945,13 +949,14 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         result["content"][0]["text"]
     );
 
-    // Draft and commit the categorization rule through the reviewed-draft path.
-    let draft = mcp_call(
+    // The deployed commit_categorization_rule contract resolves a category key
+    // and saves immediately through the live taxonomy.
+    let result = mcp_call(
         &server,
         &pat,
         &session,
         13,
-        "create_categorization_rule",
+        "commit_categorization_rule",
         serde_json::json!({
             "pattern": "T&T",
             "taxonomyId": "spending_categories",
@@ -959,51 +964,23 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         }),
     )
     .await;
-    assert_ne!(draft["isError"], true);
-    let draft_rule = draft["structuredContent"]["rule"].clone();
-    assert_eq!(draft_rule["pattern"], "T&T");
+    assert_ne!(result["isError"], true);
+    let rule = &result["structuredContent"]["rule"];
+    assert_eq!(rule["pattern"], "T&T");
+    assert_eq!(rule["categoryPath"], "Groceries");
+    assert!(rule["id"].as_str().unwrap().len() > 8);
 
+    // Unknown category keys fail before persistence.
     let result = mcp_call(
         &server,
         &pat,
         &session,
         14,
         "commit_categorization_rule",
-        serde_json::json!({ "rule": draft_rule }),
-    )
-    .await;
-    assert_ne!(result["isError"], true);
-    let rule = &result["structuredContent"]["created"];
-    assert_eq!(rule["pattern"], "T&T");
-    assert_eq!(rule["categoryId"], draft_rule["categoryId"]);
-    assert!(rule["id"].as_str().unwrap().len() > 8);
-
-    // A malformed reviewed draft fails before persistence.
-    let result = mcp_call(
-        &server,
-        &pat,
-        &session,
-        15,
-        "commit_categorization_rule",
         serde_json::json!({
-            "rule": {
-                "id": null,
-                "name": "T&T",
-                "pattern": "T&T",
-                "matchType": "contains",
-                "taxonomyId": "spending_categories",
-                "categoryId": "nope-not-a-key",
-                "activityType": null,
-                "amountOp": null,
-                "amountValue": null,
-                "amountValue2": null,
-                "priority": 0,
-                "isGlobal": true,
-                "accountId": null,
-                "presetId": null,
-                "presetRuleKey": null,
-                "presetVersion": null
-            }
+            "pattern": "T&T",
+            "taxonomyId": "spending_categories",
+            "categoryKey": "nope-not-a-key",
         }),
     )
     .await;
@@ -1012,10 +989,41 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         result["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("rule.id"),
+            .contains("nope-not-a-key"),
         "{}",
         result["content"][0]["text"]
     );
+
+    // The reviewed-draft path has a separate name and classification scopes.
+    let draft = mcp_call(
+        &server,
+        &pat,
+        &session,
+        15,
+        "create_categorization_rule",
+        serde_json::json!({
+            "pattern": "Coffee",
+            "taxonomyId": "spending_categories",
+            "categoryKey": "groceries",
+        }),
+    )
+    .await;
+    assert_ne!(draft["isError"], true);
+    let draft_rule = draft["structuredContent"]["rule"].clone();
+
+    let result = mcp_call(
+        &server,
+        &pat,
+        &session,
+        16,
+        "commit_reviewed_categorization_rule",
+        serde_json::json!({ "rule": draft_rule }),
+    )
+    .await;
+    assert_ne!(result["isError"], true);
+    let reviewed_rule = &result["structuredContent"]["created"];
+    assert_eq!(reviewed_rule["pattern"], "Coffee");
+    assert_eq!(reviewed_rule["categoryId"], draft["structuredContent"]["rule"]["categoryId"]);
 
     // A read-only token is scope-denied on both write tools (nothing runs).
     let (status, created) = create_pat(
@@ -1027,7 +1035,11 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
     assert_eq!(status, 201);
     let reader_pat = created["token"].as_str().unwrap().to_string();
     let reader_session = mcp_initialize(&server, &reader_pat).await;
-    for tool in ["create_account", "commit_categorization_rule"] {
+    for tool in [
+        "create_account",
+        "commit_categorization_rule",
+        "commit_reviewed_categorization_rule",
+    ] {
         let result = mcp_call(
             &server,
             &reader_pat,

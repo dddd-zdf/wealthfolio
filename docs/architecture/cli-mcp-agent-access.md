@@ -450,7 +450,8 @@ commit_activity_draft              -- persist one reviewed draft
 commit_activity_drafts             -- persist a batch
 commit_asset_classification_draft  -- persist one reviewed classification draft
 commit_category_assignments        -- persist reviewed transaction category assignments
-commit_categorization_rule         -- persist one reviewed categorization rule draft
+commit_categorization_rule         -- persist a categorization rule directly
+commit_reviewed_categorization_rule -- persist one reviewed categorization rule draft
 create_account                     -- create an account through the account service
 ```
 
@@ -465,22 +466,25 @@ commit_activity_import             -- import through the real pipeline
 `import_csv` remains **assistant/UI-only** — it is not exposed over MCP; the
 agent-facing CSV path is the three import tools above.
 
-For categorization rules, `create_categorization_rule` returns an in-memory
-draft and does not save it. After showing that draft to the user and receiving
-confirmation, an MCP client passes the returned `rule` object to
-`commit_categorization_rule`. The commit calls the same rule service as the
-in-app confirmation widget; there is no server-side pending-draft queue. The
-commit saves the rule for future categorization; it does not rerun rules over
-existing transactions.
+For direct categorization-rule writes, `commit_categorization_rule` accepts
+`pattern`, `taxonomyId`, and `categoryKey`, resolves the live taxonomy, and
+saves immediately under `categorization:write`. For the reviewed-draft path,
+`create_categorization_rule` returns an in-memory draft and does not save it.
+After showing that draft to the user and receiving confirmation, an MCP client
+passes the returned `rule` object to `commit_reviewed_categorization_rule`. Both
+commits call the same rule service as the in-app confirmation widget; there is
+no server-side pending-draft queue. A commit saves the rule for future
+categorization; it does not rerun rules over existing transactions.
 
 Rules:
 
 - Draft and import-preview tools never mutate data; activity commits require
   `activities:write` (which itself requires `activities:draft`), classification
   commits require `classification:write` (which itself requires
-  `classification:suggest`), category commits require `categorization:write`
-  (standalone — no prerequisite), and account creation requires `accounts:write`
-  (standalone — no prerequisite).
+  `classification:suggest`), reviewed categorization-rule commits require the
+  same classification scopes, direct categorization-rule and category commits
+  require `categorization:write` (standalone — no prerequisite), and account
+  creation requires `accounts:write` (standalone — no prerequisite).
 - CSV / activity-row content must not be persisted in raw audit logs: the
   write/import tools redact their `activities`/row arguments to a count
   (`"[N rows]"`) via per-tool audit sanitization.
@@ -535,9 +539,10 @@ classification:suggest   propose_transaction_categories,
                          create_categorization_rule,
                          prepare_asset_classification
 classification:write     commit_asset_classification_draft,
-                         commit_categorization_rule
+                         commit_reviewed_categorization_rule
                          (also requires classification:suggest)
-categorization:write     commit_category_assignments
+categorization:write     commit_category_assignments,
+                         commit_categorization_rule
                          (standalone — no draft/suggest prerequisite)
 accounts:write           create_account
                          (standalone — no prerequisite)

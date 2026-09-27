@@ -70,7 +70,7 @@ const CREATE_CATEGORIZATION_RULE_DESCRIPTION: &str =
      \n\nWORKFLOW: In the in-app assistant, render the confirmation widget and stop; \
      the widget saves the rule when confirmed. In an external MCP client, show \
      the returned draft to the user and, after confirmation, pass its `rule` \
-     object to `commit_categorization_rule`. \
+     object to `commit_reviewed_categorization_rule`. \
      \n\nUse `pattern: \"T&T\"` with default `matchType: \"contains\"` for typical \
      merchant-name hints. Get both `taxonomyId` and `categoryKey` from the `taxonomies` \
      list returned by `list_categorization_context`. If the user scopes the hint to an \
