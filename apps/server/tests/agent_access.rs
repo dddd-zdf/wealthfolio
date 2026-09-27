@@ -1023,7 +1023,10 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
     assert_ne!(result["isError"], true);
     let reviewed_rule = &result["structuredContent"]["created"];
     assert_eq!(reviewed_rule["pattern"], "Coffee");
-    assert_eq!(reviewed_rule["categoryId"], draft["structuredContent"]["rule"]["categoryId"]);
+    assert_eq!(
+        reviewed_rule["categoryId"],
+        draft["structuredContent"]["rule"]["categoryId"]
+    );
 
     // A read-only token is scope-denied on both write tools (nothing runs).
     let (status, created) = create_pat(

@@ -263,10 +263,11 @@ mod tests {
 
     #[test]
     fn audit_payload_redacts_merchant_and_account() {
-        let sanitized = CommitReviewedCategorizationRule.sanitize_args_for_audit(&serde_json::json!({
-            "rule": { "name": "Coffee", "pattern": "CAFE", "accountId": "account-1" },
-            "extra": "sensitive"
-        }));
+        let sanitized =
+            CommitReviewedCategorizationRule.sanitize_args_for_audit(&serde_json::json!({
+                "rule": { "name": "Coffee", "pattern": "CAFE", "accountId": "account-1" },
+                "extra": "sensitive"
+            }));
         assert_eq!(sanitized, serde_json::json!({ "rule": "[redacted]" }));
     }
 }
