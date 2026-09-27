@@ -14,6 +14,27 @@ import urllib.request
 import uuid
 
 
+def make_request(origin):
+    # Export tickets belong to the browser session that created them.
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+    )
+
+    def request(path, data=None, method=None, *, content_type="application/json",
+                timeout=3, expected=200):
+        req = urllib.request.Request(
+            origin + path,
+            data=data if isinstance(data, bytes) or data is None else json.dumps(data).encode(),
+            headers={"Content-Type": content_type, "X-Wealthfolio-Backup": "1"},
+            method=method or ("GET" if data is None else "PUT"),
+        )
+        with opener.open(req, timeout=timeout) as response:
+            assert response.status == expected, (path, response.status)
+            return response.read()
+
+    return request
+
+
 def portable_export(request, encrypted):
     """A small shipped-artifact check; large/fault tests belong in the storage suite."""
     started = time.monotonic()
@@ -76,33 +97,21 @@ def main():
     def remove():
         docker("rm", "-f", name, check=False)
 
-    def boot(encrypted, seed=False):
-        docker("run", "-d", *command(encrypted), "-p", "127.0.0.1::8088", image, binary)
+    def boot(encrypted, seed=False, wrong_key=False):
+        secret = base64.b64encode(b"b" * 32).decode() if wrong_key else key
+        docker("run", "-d", *command(encrypted, secret), "-p", "127.0.0.1::8088", image, binary)
         try:
             port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8088/tcp"][0]["HostPort"]
-            origin = f"http://127.0.0.1:{port}"
-            # The server scopes export jobs to a browser session carried in a
-            # cookie; persist cookies like a real browser so multi-step flows
-            # keep one session.
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
-            )
-
-            def request(path, data=None, method=None, *, content_type="application/json",
-                        timeout=3, expected=200):
-                req = urllib.request.Request(
-                    origin + path,
-                    data=data if isinstance(data, bytes) or data is None else json.dumps(data).encode(),
-                    headers={"Content-Type": content_type, "X-Wealthfolio-Backup": "1"},
-                    method=method or ("GET" if data is None else "PUT"),
-                )
-                with opener.open(req, timeout=timeout) as response:
-                    assert response.status == expected, (path, response.status)
-                    return response.read()
+            request = make_request(f"http://127.0.0.1:{port}")
 
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline:
                 if docker("inspect", "--format", "{{.State.Running}}", name) != "true":
+                    if wrong_key:
+                        code = docker("wait", name)
+                        assert code != "0", "Wrong key unexpectedly accepted"
+                        print("PASS wrong key rejected at startup", flush=True)
+                        return
                     raise RuntimeError("Server exited before becoming healthy")
                 try:
                     request("/api/v1/healthz")
@@ -111,6 +120,19 @@ def main():
                     time.sleep(0.5)
             else:
                 raise RuntimeError("Server health timeout")
+            if wrong_key:
+                # Profiles open lazily: health can succeed before the database is read.
+                try:
+                    request("/api/v1/settings")
+                except urllib.error.HTTPError as error:
+                    with error:
+                        assert error.code == 500, ("Wrong-key response", error.code)
+                        body = error.read()
+                        assert b"PROFILE_STARTUP_FAILED" in body, "Expected profile startup failure"
+                        assert b"key did not open it" in body, "Expected database key rejection"
+                    print("PASS wrong key rejected on profile access", flush=True)
+                    return
+                raise AssertionError("Wrong key unexpectedly allowed database access")
             assert b"<html" in request("/").lower(), "Packaged frontend missing"
             status = json.loads(request("/api/v1/utilities/database/encryption"))
             assert status["enabled"] == encrypted, status
@@ -170,42 +192,7 @@ def main():
             ))
         restore(boot(True, seed=True), True)
         boot(True)
-        # A wrong key must never unlock the data. The database opens lazily
-        # per profile, so the server still boots; the rejection surfaces as a
-        # failed data access instead of a startup exit. (Fail-fast with a
-        # non-zero exit is accepted too.)
-        docker("run", "-d", *command(True, base64.b64encode(b"b" * 32).decode()),
-               "-p", "127.0.0.1::8088", image, binary)
-        try:
-            port = json.loads(docker("inspect", name))[0]["NetworkSettings"]["Ports"]["8088/tcp"][0]["HostPort"]
-            origin = f"http://127.0.0.1:{port}"
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
-            )
-            deadline = time.monotonic() + 60
-            while time.monotonic() < deadline:
-                if docker("inspect", "--format", "{{.State.Running}}", name) != "true":
-                    code = docker("wait", name)
-                    assert code != "0", "Wrong key unexpectedly accepted"
-                    break
-                try:
-                    with opener.open(origin + "/api/v1/healthz", timeout=3):
-                        pass
-                except (OSError, urllib.error.URLError, http.client.HTTPException):
-                    time.sleep(0.5)
-                    continue
-                try:
-                    with opener.open(origin + "/api/v1/settings", timeout=10) as response:
-                        body = response.read()
-                except urllib.error.HTTPError as e:
-                    assert e.code >= 400, f"Unexpected status with wrong key: {e.code}"
-                    break
-                raise AssertionError(f"Wrong key unexpectedly served data: {body[:80]!r}")
-            else:
-                raise RuntimeError("Server health timeout")
-            print("PASS wrong key rejected", flush=True)
-        finally:
-            remove()
+        boot(True, wrong_key=True)
         convert("decrypt")
         restore(boot(False), False)
         convert("encrypt")

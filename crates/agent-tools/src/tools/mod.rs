@@ -109,7 +109,7 @@ pub use commit_categories::{
     CommitCategoryAssignmentsOutput, CommittedCategoryAssignment,
 };
 pub use commit_categorization_rule::{
-    CommitCategorizationRule, CommitCategorizationRuleOutput, CommittedRuleDto,
+    CommitCategorizationRule, CommitCategorizationRuleArgs, CommitCategorizationRuleOutput,
 };
 pub use create_account::{
     CreateAccount, CreateAccountArgs, CreateAccountOutput, CreatedAccountDto,
