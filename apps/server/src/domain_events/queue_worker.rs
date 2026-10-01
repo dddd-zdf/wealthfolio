@@ -553,7 +553,7 @@ async fn run_portfolio_job(
     }
 
     deps.health_service.clear_cache().await;
-    crate::perf_cache::invalidate();
+    crate::perf_cache::invalidate_and_warm();
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
 }
 
