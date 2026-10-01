@@ -85,13 +85,19 @@ pub fn current_generation() -> u64 {
     GENERATION.load(Ordering::SeqCst)
 }
 
-/// Drop every cached result (call after valuations change) and schedule a
-/// warm-up of the standard dashboard requests.
+/// Drop every cached result (call after valuations change).
 pub fn invalidate() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut entries) = ENTRIES.lock() {
         entries.clear();
     }
+}
+
+/// Invalidate and schedule a warm-up of the standard dashboard requests.
+/// Used after data edits only: the update job that runs on every app open
+/// would otherwise recompute every period each time, which saturates small hosts.
+pub fn invalidate_and_warm() {
+    invalidate();
     schedule_warm_up();
 }
 

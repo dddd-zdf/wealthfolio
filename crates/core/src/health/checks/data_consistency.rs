@@ -779,6 +779,21 @@ impl DataConsistencyCheck {
             let record_ids: Vec<String> =
                 review_issues.iter().map(|i| i.record_id.clone()).collect();
             let data_hash = compute_data_hash(&record_ids);
+            // One entry per flagged transaction; the detail sheet needs at least
+            // one evidence row to render.
+            let affected_items: Vec<AffectedItem> = review_issues
+                .iter()
+                .map(|i| {
+                    let date = i
+                        .activity_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| "unknown date".to_string());
+                    AffectedItem::activity(
+                        i.record_id.clone(),
+                        format!("{} — {}", i.description, date),
+                    )
+                })
+                .collect();
 
             health_issues.push(
                 HealthIssue::builder()
@@ -796,6 +811,7 @@ impl DataConsistencyCheck {
                         "Some imported or synced transactions are waiting for your review.                          Drafts aren't counted in balances or performance until you approve                          them. Approve, edit, or delete them in the review list.",
                     )
                     .affected_count(count as u32)
+                    .affected_items(affected_items)
                     .navigate_action(NavigateAction {
                         route: "/activities".to_string(),
                         query: Some(serde_json::json!({ "needsReview": "true" })),
@@ -1735,6 +1751,9 @@ mod tests {
         assert_eq!(issues[0].severity, Severity::Warning);
         assert_eq!(issues[0].affected_count, 2);
         assert_eq!(issues[0].title, "2 transactions need review");
+        // The detail sheet reads diagnostic evidence; it must not be empty.
+        let diagnostics = issues[0].diagnostics.as_ref().unwrap();
+        assert_eq!(diagnostics[0].evidence.len(), 2);
         let action = issues[0].navigate_action.as_ref().unwrap();
         assert_eq!(action.route, "/activities");
         assert_eq!(
