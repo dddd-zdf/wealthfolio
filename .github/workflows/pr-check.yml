@@ -23,8 +23,9 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       rust: ${{ steps.filter.outputs.rust }}
       formatting: ${{ steps.filter.outputs.formatting }}
-      android: ${{ steps.filter.outputs.android }}
-      ios: ${{ steps.filter.outputs.ios }}
+      # Fork: mobile apps are not used, so skip the Android/iOS compile checks.
+      android: "false"
+      ios: "false"
     steps:
       - uses: actions/checkout@v4
         with:
