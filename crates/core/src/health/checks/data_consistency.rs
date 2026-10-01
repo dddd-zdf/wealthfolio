@@ -44,6 +44,8 @@ pub enum ConsistencyIssueType {
     MissingActivityCurrency,
     /// A stored snapshot falls outside the supported date policy.
     InvalidSnapshotDate,
+    /// Activity is flagged for user review (imported/synced, not yet approved).
+    ActivityNeedsReview,
 }
 
 /// Root cause classification for valuation-quality issues (incomplete value /
@@ -770,6 +772,38 @@ impl DataConsistencyCheck {
                 builder = builder.details(details);
             }
             health_issues.push(builder.build());
+        }
+
+        if let Some(review_issues) = by_type.get(&ConsistencyIssueType::ActivityNeedsReview) {
+            let count = review_issues.len();
+            let record_ids: Vec<String> =
+                review_issues.iter().map(|i| i.record_id.clone()).collect();
+            let data_hash = compute_data_hash(&record_ids);
+
+            health_issues.push(
+                HealthIssue::builder()
+                    .id(format!("activities_need_review:{}", data_hash))
+                    .severity(Severity::Warning)
+                    .category(HealthCategory::DataConsistency)
+                    .code("data_activities_need_review")
+                    .param("count", count as u32)
+                    .title(if count == 1 {
+                        "Transaction needs review".to_string()
+                    } else {
+                        format!("{} transactions need review", count)
+                    })
+                    .message(
+                        "Some imported or synced transactions are waiting for your review.                          Drafts aren't counted in balances or performance until you approve                          them. Approve, edit, or delete them in the review list.",
+                    )
+                    .affected_count(count as u32)
+                    .navigate_action(NavigateAction {
+                        route: "/activities".to_string(),
+                        query: Some(serde_json::json!({ "needsReview": "true" })),
+                        label: "Review Transactions".to_string(),
+                    })
+                    .data_hash(data_hash)
+                    .build(),
+            );
         }
 
         if let Some(missing_issues) = by_type.get(&ConsistencyIssueType::MissingGeneratedValuation)
@@ -1659,6 +1693,53 @@ mod tests {
         assert_eq!(
             query.get("snapshotDate"),
             Some(&serde_json::json!("not-a-date"))
+        );
+    }
+
+    #[test]
+    fn activities_needing_review_link_to_review_list() {
+        let check = DataConsistencyCheck::new();
+        let ctx = HealthContext::new(HealthConfig::default(), "USD", 100_000.0);
+        let first = ConsistencyIssueInfo {
+            issue_type: ConsistencyIssueType::ActivityNeedsReview,
+            record_id: "activity-1".to_string(),
+            description: "TD Invest".to_string(),
+            account_id: Some("acc-1".to_string()),
+            asset_id: None,
+            first_negative_date: None,
+            cash_balance: None,
+            total_value_at_date: None,
+            account_currency: None,
+            activity_date: None,
+            asset_symbol: None,
+            asset_name: None,
+            quantity: None,
+            proceeds: None,
+            reason: None,
+            activity_id: Some("activity-1".to_string()),
+            snapshot_date_raw: None,
+            snapshot_source: None,
+            snapshot_min_date: None,
+            snapshot_max_date: None,
+        };
+        let mut second = first.clone();
+        second.record_id = "activity-2".to_string();
+
+        let issues = check.analyze(&[first, second], &ctx);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0].code.as_deref(),
+            Some("data_activities_need_review")
+        );
+        assert_eq!(issues[0].severity, Severity::Warning);
+        assert_eq!(issues[0].affected_count, 2);
+        assert_eq!(issues[0].title, "2 transactions need review");
+        let action = issues[0].navigate_action.as_ref().unwrap();
+        assert_eq!(action.route, "/activities");
+        assert_eq!(
+            action.query,
+            Some(serde_json::json!({ "needsReview": "true" }))
         );
     }
 

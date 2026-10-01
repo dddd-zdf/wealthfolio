@@ -54,6 +54,12 @@
       "title_other": "{{count}} asset hanno dati di classificazione obsoleti",
       "message": "Alcuni asset hanno dati di settore/paese nel vecchio formato. Esegui la migrazione al nuovo sistema di tassonomie per un tracciamento dell'allocazione migliore."
     },
+    "data_activities_need_review": {
+      "title_one": "Una transazione richiede revisione",
+      "title_other": "{{count}} transazioni richiedono revisione",
+      "title_many": "{{count}} transazioni richiedono revisione",
+      "message": "Alcune transazioni importate o sincronizzate attendono la tua revisione. Le bozze non vengono conteggiate nei saldi né nel rendimento finché non le approvi. Approvale, modificale o eliminale nell'elenco di revisione."
+    },
     "data_orphan_activity_account": {
       "title_one": "Una transazione fa riferimento a un conto inesistente",
       "title_many": "{{count}} transazioni fanno riferimento a conti inesistenti",

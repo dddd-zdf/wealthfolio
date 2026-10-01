@@ -45,6 +45,11 @@
       "title_other": "{{count}} 項資產含有舊版分類資料",
       "message": "部分資產的產業／國家資料來自舊格式。請移轉至新的分類系統，以便更準確地追蹤資產配置。"
     },
+    "data_activities_need_review": {
+      "title_one": "有交易需要審核",
+      "title_other": "{{count}} 筆交易需要審核",
+      "message": "部分匯入或同步的交易正在等待你審核。草稿在你核准之前不會計入餘額和績效。請在審核清單中核准、編輯或刪除它們。"
+    },
     "data_orphan_activity_account": {
       "title_one": "交易引用了不存在的帳戶",
       "title_other": "{{count}} 筆交易引用了不存在的帳戶",

@@ -608,6 +608,10 @@ impl HealthService {
             &health_activities,
             effective_timezone,
         ));
+        consistency_issues.extend(needs_review_activities_from_data(
+            &health_activities,
+            &account_name_map,
+        ));
 
         // Run checks with gathered data
         self.run_checks_with_data(
@@ -1192,6 +1196,43 @@ fn missing_currency_activities_from_data(
                 snapshot_min_date: None,
                 snapshot_max_date: None,
             })
+        })
+        .collect()
+}
+
+/// Activities flagged for review (imported or synced rows waiting for approval).
+/// Surfaced in Health so the review queue is visible outside the Activities page.
+fn needs_review_activities_from_data(
+    activities: &[Activity],
+    account_name_map: &HashMap<String, String>,
+) -> Vec<ConsistencyIssueInfo> {
+    activities
+        .iter()
+        .filter(|activity| activity.needs_review)
+        .map(|activity| ConsistencyIssueInfo {
+            issue_type: super::checks::ConsistencyIssueType::ActivityNeedsReview,
+            record_id: activity.id.clone(),
+            description: account_name_map
+                .get(&activity.account_id)
+                .cloned()
+                .unwrap_or_else(|| activity.account_id.clone()),
+            account_id: Some(activity.account_id.clone()),
+            asset_id: activity.asset_id.clone(),
+            first_negative_date: None,
+            cash_balance: None,
+            total_value_at_date: None,
+            account_currency: None,
+            activity_date: None,
+            asset_symbol: None,
+            asset_name: None,
+            quantity: None,
+            proceeds: None,
+            reason: None,
+            activity_id: Some(activity.id.clone()),
+            snapshot_date_raw: None,
+            snapshot_source: None,
+            snapshot_min_date: None,
+            snapshot_max_date: None,
         })
         .collect()
 }

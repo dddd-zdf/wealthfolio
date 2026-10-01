@@ -54,6 +54,12 @@
       "title_many": "{{count}} ativos possuem dados de classificação herdados",
       "message": "Alguns ativos têm dados de setor/país no formato antigo. Migre para o novo sistema de taxonomia para um melhor acompanhamento de alocação."
     },
+    "data_activities_need_review": {
+      "title_one": "Uma transação precisa de revisão",
+      "title_other": "{{count}} transações precisam de revisão",
+      "title_many": "{{count}} transações precisam de revisão",
+      "message": "Algumas transações importadas ou sincronizadas aguardam a sua revisão. Os rascunhos não entram nos saldos nem no desempenho até que você os aprove. Aprove, edite ou exclua-os na lista de revisão."
+    },
     "data_orphan_activity_account": {
       "title_one": "Uma transação faz referência a uma conta inexistente",
       "title_other": "{{count}} transações fazem referência a contas inexistentes",

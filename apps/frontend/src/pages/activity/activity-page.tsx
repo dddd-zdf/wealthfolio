@@ -259,6 +259,12 @@ const ActivityPage = () => {
     setStatusFilter("pending");
   }, [setStatusFilter, setViewMode]);
 
+  // Review deep-links (e.g. from Health) open the editable grid, where rows can be approved.
+  const isNeedsReviewLink = searchParams.get("needsReview") === "true";
+  useEffect(() => {
+    if (isNeedsReviewLink) setViewMode("datagrid");
+  }, [isNeedsReviewLink, setViewMode]);
+
   const setInvestmentDateRange = useCallback(
     (range: DateRange | undefined) => {
       materializeInvestmentFilters({ dateRange: fromDateRange(range) });

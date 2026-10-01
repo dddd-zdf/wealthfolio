@@ -45,6 +45,11 @@
       "title_other": "{{count}} assets have legacy classification data",
       "message": "Some assets have sector/country data from the old format. Migrate to the new taxonomy system for better allocation tracking."
     },
+    "data_activities_need_review": {
+      "title_one": "Transaction needs review",
+      "title_other": "{{count}} transactions need review",
+      "message": "Some imported or synced transactions are waiting for your review. Drafts aren't counted in balances or performance until you approve them. Approve, edit, or delete them in the review list."
+    },
     "data_orphan_activity_account": {
       "title_one": "Transaction references missing account",
       "title_other": "{{count}} transactions reference missing accounts",

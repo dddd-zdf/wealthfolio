@@ -45,6 +45,11 @@
       "title_other": "{{count}} 项资产存在旧版分类数据",
       "message": "部分资产的行业/国家数据来自旧格式。请迁移到新的分类系统，以更好地追踪资产配置。"
     },
+    "data_activities_need_review": {
+      "title_one": "有交易需要审核",
+      "title_other": "{{count}} 笔交易需要审核",
+      "message": "部分导入或同步的交易正在等待你审核。草稿在你批准之前不会计入余额和业绩。请在审核列表中批准、编辑或删除它们。"
+    },
     "data_orphan_activity_account": {
       "title_one": "交易引用了缺失的账户",
       "title_other": "{{count}} 笔交易引用了缺失的账户",

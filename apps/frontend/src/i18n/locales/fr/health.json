@@ -54,6 +54,12 @@
       "title_many": "{{count}} actifs possèdent des données de classification héritées",
       "message": "Certains actifs possèdent des données de secteur/pays de l'ancien format. Migrez vers le nouveau système de taxonomie pour un meilleur suivi de l'allocation."
     },
+    "data_activities_need_review": {
+      "title_one": "Une transaction est à vérifier",
+      "title_other": "{{count}} transactions sont à vérifier",
+      "title_many": "{{count}} transactions sont à vérifier",
+      "message": "Certaines transactions importées ou synchronisées attendent votre vérification. Les brouillons ne sont pas pris en compte dans les soldes ni la performance tant que vous ne les avez pas approuvés. Approuvez-les, modifiez-les ou supprimez-les dans la liste de vérification."
+    },
     "data_orphan_activity_account": {
       "title_one": "Une transaction référence un compte manquant",
       "title_other": "{{count}} transactions référencent des comptes manquants",
