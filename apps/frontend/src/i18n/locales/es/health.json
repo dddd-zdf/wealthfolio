@@ -54,6 +54,12 @@
       "title_many": "{{count}} activos tienen datos de clasificación heredados",
       "message": "Algunos activos tienen datos de sector/país del formato antiguo. Migra al nuevo sistema de taxonomía para un mejor seguimiento de la asignación."
     },
+    "data_activities_need_review": {
+      "title_one": "Una transacción requiere revisión",
+      "title_other": "{{count}} transacciones requieren revisión",
+      "title_many": "{{count}} transacciones requieren revisión",
+      "message": "Algunas transacciones importadas o sincronizadas esperan tu revisión. Los borradores no se cuentan en los saldos ni en el rendimiento hasta que los apruebes. Apruébalas, edítalas o elimínalas en la lista de revisión."
+    },
     "data_orphan_activity_account": {
       "title_one": "Una transacción hace referencia a una cuenta inexistente",
       "title_other": "{{count}} transacciones hacen referencia a cuentas inexistentes",

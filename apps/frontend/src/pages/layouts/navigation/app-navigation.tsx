@@ -1,4 +1,5 @@
 import { getDynamicNavItems, subscribeToNavigationUpdates } from "@/addons/addons-runtime-context";
+import { useActivitySearch } from "@/pages/activity/hooks/use-activity-search";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,6 +12,8 @@ export interface NavLink {
   icon?: ReactNode;
   keywords?: string[];
   label?: string; // Optional descriptive label for launcher/search
+  badge?: number; // Optional count shown on the nav icon
+  badgeLabel?: string; // Accessible description of the badge
 }
 
 export interface NavigationProps {
@@ -108,7 +111,23 @@ export function useNavigation() {
 
   // Spending lives entirely on the dashboard tab (and its deep-linked pages);
   // no top-level nav entry. Combine static navigation items with addons.
-  const primary = [...staticNavigation.primary];
+  const { totalRowCount: needsReviewCount } = useActivitySearch({
+    mode: "paginated",
+    filters: { activityTypes: [], status: "pending" },
+    searchQuery: "",
+    sorting: [],
+    pageIndex: 0,
+    pageSize: 1,
+  });
+  const primary = staticNavigation.primary.map((item) =>
+    item.href === "/activities" && needsReviewCount > 0
+      ? {
+          ...item,
+          badge: needsReviewCount,
+          badgeLabel: t("activity:needs_review_alert.title", { count: needsReviewCount }),
+        }
+      : item,
+  );
   const addons = useMemo(() => dynamicItems ?? [], [dynamicItems]);
 
   useEffect(() => {

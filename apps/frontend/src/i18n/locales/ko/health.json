@@ -45,6 +45,11 @@
       "title_other": "자산 {{count}}개에 레거시 분류 데이터가 있음",
       "message": "일부 자산에 이전 형식의 업종/국가 데이터가 있습니다. 배분 추적을 개선하려면 새 분류 체계로 마이그레이션하세요."
     },
+    "data_activities_need_review": {
+      "title_one": "검토가 필요한 거래가 있습니다",
+      "title_other": "거래 {{count}}건의 검토가 필요합니다",
+      "message": "가져오거나 동기화한 일부 거래가 검토를 기다리고 있습니다. 초안은 승인하기 전까지 잔액과 성과에 반영되지 않습니다. 검토 목록에서 승인, 수정 또는 삭제하세요."
+    },
     "data_orphan_activity_account": {
       "title_one": "거래가 존재하지 않는 계좌를 참조함",
       "title_other": "거래 {{count}}건이 존재하지 않는 계좌를 참조함",

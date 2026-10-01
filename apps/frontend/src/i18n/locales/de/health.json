@@ -45,6 +45,11 @@
       "title_other": "{{count}} Anlagen besitzen veraltete Klassifizierungsdaten",
       "message": "Einige Anlagen besitzen Sektor-/Länderdaten aus dem alten Format. Migrieren Sie zum neuen Taxonomiesystem für eine bessere Allokationsverfolgung."
     },
+    "data_activities_need_review": {
+      "title_one": "Transaktion muss geprüft werden",
+      "title_other": "{{count}} Transaktionen müssen geprüft werden",
+      "message": "Einige importierte oder synchronisierte Transaktionen warten auf deine Prüfung. Entwürfe werden erst nach deiner Freigabe in Salden und Performance berücksichtigt. Gib sie in der Prüfliste frei, bearbeite oder lösche sie."
+    },
     "data_orphan_activity_account": {
       "title_one": "Transaktion verweist auf fehlendes Konto",
       "title_other": "{{count}} Transaktionen verweisen auf fehlende Konten",

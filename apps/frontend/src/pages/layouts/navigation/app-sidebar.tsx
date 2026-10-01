@@ -276,11 +276,19 @@ function NavItem({ item, collapsed, className, ...props }: NavItemProps) {
       <Link
         key={item.title}
         to={item.href}
-        title={item.title}
+        title={item.badgeLabel ? `${item.title} · ${item.badgeLabel}` : item.title}
         aria-current={isActive ? "page" : undefined}
         {...props}
       >
-        <span aria-hidden="true">{resolveNavigationIcon(item.icon, "h-5 w-5")}</span>
+        <span aria-hidden="true" className="relative">
+          {resolveNavigationIcon(item.icon, "h-5 w-5")}
+          {item.badge ? (
+            <span className="bg-warning text-warning-foreground absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none">
+              {item.badge > 99 ? "99+" : item.badge}
+            </span>
+          ) : null}
+        </span>
+        {item.badgeLabel && <span className="sr-only">{item.badgeLabel}</span>}
 
         <span
           className={cn({
