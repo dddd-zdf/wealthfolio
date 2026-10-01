@@ -40,6 +40,27 @@ export function performanceSummaryReturn(
   return numberOrNull(result.summary.percent);
 }
 
+export interface MoneyWeightedReturnDisplay {
+  value: number;
+  annualized: boolean;
+}
+
+/**
+ * Money-weighted return for a headline: the period figure for ranges under a
+ * year, the annualized figure for longer ones (a multi-year total is hard to read).
+ */
+export function performanceMoneyWeightedReturn(
+  result: PerformanceResult | null | undefined,
+): MoneyWeightedReturnDisplay | null {
+  if (!result) return null;
+  if (shouldDisplayAnnualizedPerformanceReturn(result)) {
+    const annualized = numberOrNull(result.returns?.annualizedIrr);
+    return annualized == null ? null : { value: annualized, annualized: true };
+  }
+  const period = numberOrNull(result.returns?.irr);
+  return period == null ? null : { value: period, annualized: false };
+}
+
 export function simpleReturnFromNetContribution(
   returnAmount: number | null | undefined,
   netContribution: number | null | undefined,

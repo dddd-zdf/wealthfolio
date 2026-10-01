@@ -596,6 +596,7 @@ interface SelectedItemPlotState {
 
 const PLOTTED_ITEM_STATE: SelectedItemPlotState = { isPlotted: true };
 const PERFORMANCE_HIDDEN_DATE_RANGES = ["1D"] as const;
+const PERFORMANCE_YEAR_PRESETS = 5;
 
 function amountTone(value: number): string {
   if (value < 0) return "text-destructive";
@@ -1457,6 +1458,7 @@ export default function PerformancePage() {
           value={dateRange}
           onChange={setDateRange}
           hiddenRanges={PERFORMANCE_HIDDEN_DATE_RANGES}
+          yearPresets={PERFORMANCE_YEAR_PRESETS}
         />
       </div>
 
@@ -1468,6 +1470,7 @@ export default function PerformancePage() {
             value={dateRange}
             onChange={setDateRange}
             hiddenRanges={PERFORMANCE_HIDDEN_DATE_RANGES}
+            yearPresets={PERFORMANCE_YEAR_PRESETS}
           />
         </div>
 

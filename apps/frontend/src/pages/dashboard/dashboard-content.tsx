@@ -7,7 +7,11 @@ import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
-import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
+import {
+  performanceMoneyWeightedReturn,
+  performancePeriodPnl,
+  performanceSummaryReturn,
+} from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { PortfolioUpdateTrigger } from "@/pages/dashboard/portfolio-update-trigger";
@@ -133,6 +137,7 @@ export function DashboardContent() {
 
   const gainLossAmount = performancePeriodPnl(portfolioPerformance);
   const simpleReturn = performanceSummaryReturn(portfolioPerformance);
+  const moneyWeightedReturn = performanceMoneyWeightedReturn(portfolioPerformance);
   const isCurrentValuationUnavailable =
     !isCurrentValuationLoading && !portfolioCurrentValuation && Boolean(currentValuationError);
   const portfolioSourceDataAsOf =
@@ -211,6 +216,20 @@ export function DashboardContent() {
                         value={simpleReturn}
                         animated={true}
                       />
+                    )}
+                    {moneyWeightedReturn != null && (
+                      <>
+                        <div className="border-secondary my-1 border-r pr-2" />
+                        <span className="lg:text-md text-muted-foreground text-sm font-light">
+                          {moneyWeightedReturn.annualized
+                            ? t("performance:metric.ann_mwr_short")
+                            : t("performance:metric.mwr_short")}
+                        </span>
+                        <GainPercent
+                          className="lg:text-md !ml-1.5 text-sm font-light"
+                          value={moneyWeightedReturn.value}
+                        />
+                      </>
                     )}
                   </>
                 )}

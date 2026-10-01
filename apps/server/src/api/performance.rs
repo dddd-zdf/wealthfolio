@@ -1,5 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
+use chrono::{Datelike, Days, Months, NaiveDate};
+
 use crate::{
     error::{ApiError, ApiResult},
     main_lib::AppState,
@@ -233,23 +235,99 @@ fn parse_cached_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> ApiResult<T
         .map_err(|error| ApiError::BadRequest(format!("Invalid request body: {error}")))
 }
 
-/// Serves `/performance/summary` from the short-lived summary cache when the
-/// same request was answered since the last portfolio update.
+/// Cache key for a parsed summary request. Built from the parsed fields (not
+/// the raw bytes) so the server-side warm-up matches client requests.
+fn summary_cache_key(state: &Arc<AppState>, body: &PerfBody) -> u64 {
+    let canonical = serde_json::json!({
+        "itemType": body.item_type,
+        "itemId": body.item_id,
+        "startDate": body.start_date,
+        "endDate": body.end_date,
+        "trackingMode": body.tracking_mode,
+        "filter": body.filter,
+        "profile": body.profile,
+    })
+    .to_string();
+    crate::perf_cache::key("summary", Arc::as_ptr(state) as usize, canonical.as_bytes())
+}
+
+/// Serves `/performance/summary` from the summary cache when the same request
+/// was answered (or warmed) since the last portfolio update.
 async fn calculate_performance_summary(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     body: axum::body::Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let key = crate::perf_cache::key("summary", Arc::as_ptr(&state) as usize, &body);
+    let parsed: PerfBody = parse_cached_body(&body)?;
+    let key = summary_cache_key(&state, &parsed);
     if let Some(hit) = crate::perf_cache::get(key) {
         return Ok(Json(hit));
     }
     let generation = crate::perf_cache::current_generation();
-    let parsed: PerfBody = parse_cached_body(&body)?;
     let Json(result) = calculate_performance_summary_uncached(state, parsed).await?;
     let value = serde_json::to_value(&result)
         .map_err(|error| ApiError::Internal(format!("Failed to serialize summary: {error}")))?;
     crate::perf_cache::put(key, generation, value.clone());
     Ok(Json(value))
+}
+
+/// Dashboard headline periods, mirroring the frontend interval selector
+/// (`packages/ui/src/components/financial/interval-selector.tsx`).
+fn dashboard_period_ranges(today: NaiveDate) -> Vec<(Option<NaiveDate>, Option<NaiveDate>)> {
+    let months = |n: u32| today.checked_sub_months(Months::new(n));
+    vec![
+        (today.checked_sub_days(Days::new(1)), Some(today)),
+        (today.checked_sub_days(Days::new(7)), Some(today)),
+        (months(1), Some(today)),
+        (months(3), Some(today)),
+        (months(6), Some(today)),
+        (today.with_ordinal(1), Some(today)),
+        (months(12), Some(today)),
+        (months(60), Some(today)),
+        // ALL sends no dates.
+        (None, None),
+    ]
+}
+
+/// Precompute the dashboard headline for every standard period so switching
+/// periods after a portfolio update is served from cache.
+pub(crate) async fn warm_dashboard_summaries(state: &Arc<AppState>) {
+    let today = {
+        let timezone = state.timezone.read().unwrap().clone();
+        wealthfolio_core::utils::time_utils::user_today(
+            wealthfolio_core::utils::time_utils::parse_user_timezone_or_default(&timezone),
+        )
+    };
+    let started = Instant::now();
+    for (start, end) in dashboard_period_ranges(today) {
+        let body = PerfBody {
+            item_type: "account".to_string(),
+            item_id: "portfolio:all".to_string(),
+            start_date: start.map(|date| date.format("%Y-%m-%d").to_string()),
+            end_date: end.map(|date| date.format("%Y-%m-%d").to_string()),
+            tracking_mode: None,
+            filter: Some(AccountScope::All),
+            profile: Some(PerformanceSummaryProfile::Dashboard),
+        };
+        let key = summary_cache_key(state, &body);
+        if crate::perf_cache::get(key).is_some() {
+            continue;
+        }
+        let generation = crate::perf_cache::current_generation();
+        match calculate_performance_summary_uncached(state.clone(), body).await {
+            Ok(Json(result)) => {
+                if let Ok(value) = serde_json::to_value(&result) {
+                    crate::perf_cache::put(key, generation, value);
+                }
+            }
+            Err(error) => {
+                tracing::debug!("Dashboard summary warm-up skipped a period: {error}");
+            }
+        }
+    }
+    tracing::info!(
+        "Warmed dashboard performance summaries in {:?}",
+        started.elapsed()
+    );
 }
 
 async fn calculate_performance_summary_uncached(
