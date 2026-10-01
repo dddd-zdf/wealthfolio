@@ -12,6 +12,7 @@ use wealthfolio_core::{
     accounts::AccountServiceTrait,
     activities::ActivityServiceTrait,
     assets::AssetServiceTrait,
+    events::DomainEventSink,
     goals::GoalServiceTrait,
     health::HealthServiceTrait,
     limits::ContributionLimitServiceTrait,
@@ -86,4 +87,11 @@ pub trait AgentEnvironment: Send + Sync {
 
     /// Get the categorization-rules service for the rules-first pass in category proposals.
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait>;
+
+    /// Domain event sink used by write tools to request background work
+    /// (e.g. a full recalculation after manual price changes). Hosts that do
+    /// not run the portfolio job queue return `None`.
+    fn domain_event_sink(&self) -> Option<Arc<dyn DomainEventSink>> {
+        None
+    }
 }

@@ -8,12 +8,13 @@ use std::sync::{Arc, RwLock};
 use wealthfolio_ai::{AgentEnvironment, AiEnvironment, ChatRepositoryTrait};
 use wealthfolio_core::{
     accounts::AccountServiceTrait, activities::ActivityServiceTrait,
-    allocation::AllocationServiceTrait, assets::AssetServiceTrait, goals::GoalServiceTrait,
-    health::HealthServiceTrait, holdings::HoldingsServiceTrait, income::IncomeServiceTrait,
-    limits::ContributionLimitServiceTrait, performance::PerformanceServiceTrait,
-    portfolio::net_worth::NetWorthServiceTrait, portfolios::PortfolioServiceTrait,
-    quotes::QuoteServiceTrait, secrets::SecretStore, settings::SettingsServiceTrait,
-    taxonomies::TaxonomyServiceTrait, valuation::ValuationServiceTrait,
+    allocation::AllocationServiceTrait, assets::AssetServiceTrait, events::DomainEventSink,
+    goals::GoalServiceTrait, health::HealthServiceTrait, holdings::HoldingsServiceTrait,
+    income::IncomeServiceTrait, limits::ContributionLimitServiceTrait,
+    performance::PerformanceServiceTrait, portfolio::net_worth::NetWorthServiceTrait,
+    portfolios::PortfolioServiceTrait, quotes::QuoteServiceTrait, secrets::SecretStore,
+    settings::SettingsServiceTrait, taxonomies::TaxonomyServiceTrait,
+    valuation::ValuationServiceTrait,
 };
 use wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService;
 use wealthfolio_spending::cash_activities::{CashActivityService, CashActivityServiceTrait};
@@ -48,9 +49,16 @@ pub struct ServerAiEnvironment {
     cash_activity_service: Arc<CashActivityService>,
     activity_taxonomy_assignment_service: Arc<ActivityTaxonomyAssignmentService>,
     categorization_rules_service: Arc<CategorizationRulesService>,
+    domain_event_sink: Option<Arc<dyn DomainEventSink>>,
 }
 
 impl ServerAiEnvironment {
+    /// Attach the domain event sink so write tools can queue portfolio jobs.
+    pub fn with_domain_event_sink(mut self, sink: Arc<dyn DomainEventSink>) -> Self {
+        self.domain_event_sink = Some(sink);
+        self
+    }
+
     /// Create a new server AI environment.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -100,6 +108,7 @@ impl ServerAiEnvironment {
             cash_activity_service,
             activity_taxonomy_assignment_service,
             categorization_rules_service,
+            domain_event_sink: None,
         }
     }
 }
@@ -179,6 +188,10 @@ impl AgentEnvironment for ServerAiEnvironment {
 
     fn categorization_rules_service(&self) -> Arc<dyn CategorizationRulesServiceTrait> {
         self.categorization_rules_service.clone()
+    }
+
+    fn domain_event_sink(&self) -> Option<Arc<dyn DomainEventSink>> {
+        self.domain_event_sink.clone()
     }
 }
 

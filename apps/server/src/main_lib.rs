@@ -1009,7 +1009,8 @@ pub(crate) async fn build_profile_state(
         cash_activity_service.clone(),
         activity_taxonomy_assignment_service.clone(),
         categorization_rules_service.clone(),
-    ));
+    )
+    .with_domain_event_sink(domain_event_sink.clone()));
     let agent_environment: Arc<dyn wealthfolio_agent_tools::AgentEnvironment> =
         ai_environment.clone();
     let ai_chat_service = Arc::new(ChatService::new(ai_environment, ChatConfig::default()));

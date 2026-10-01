@@ -113,6 +113,29 @@ fn effective_provider(state: Option<&QuoteSyncState>, asset: &Asset) -> String {
         .unwrap_or_else(|| DATA_SOURCE_YAHOO.to_string())
 }
 
+/// End of a BackfillHistory window for a non-FX asset.
+///
+/// Positions that were closed more than the grace period ago only need prices
+/// for the period they were held (plus a small margin), so a full history
+/// rebuild must not re-download years of prices up to today for them. Open or
+/// recently closed positions still backfill up to `fetch_end_date`.
+fn backfill_end_date(
+    inputs: &SyncPlanningInputs,
+    planning_today: NaiveDate,
+    fetch_end_date: NaiveDate,
+) -> NaiveDate {
+    match inputs.position_closed_date {
+        Some(closed)
+            if !inputs.is_active
+                && closed + Duration::days(CLOSED_POSITION_GRACE_PERIOD_DAYS) < planning_today =>
+        {
+            let held_until = inputs.activity_max.map_or(closed, |last| last.max(closed));
+            (held_until + Duration::days(BACKFILL_SAFETY_MARGIN_DAYS)).min(fetch_end_date)
+        }
+        _ => fetch_end_date,
+    }
+}
+
 fn extends_to_fetch_end(category: &SyncCategory) -> bool {
     matches!(
         category,
@@ -827,7 +850,8 @@ where
                         .activity_min
                         .map(|d| d - Duration::days(QUOTE_HISTORY_BUFFER_DAYS))
                         .unwrap_or_else(|| fetch_end_date - Duration::days(days));
-                    (start, fetch_end_date)
+                    let end = backfill_end_date(inputs, planning_today, fetch_end_date);
+                    (start.min(end), end)
                 }
             }
         }
@@ -2613,6 +2637,61 @@ mod tests {
         fn test_default_history_days_constant() {
             // DEFAULT_HISTORY_DAYS is 1825 (5 years) for explicit full-history requests
             assert_eq!(DEFAULT_HISTORY_DAYS, 1825);
+        }
+    }
+
+    mod backfill_end_date_tests {
+        use super::*;
+
+        fn inputs(
+            closed: Option<NaiveDate>,
+            last_activity: Option<NaiveDate>,
+        ) -> SyncPlanningInputs {
+            SyncPlanningInputs {
+                is_active: closed.is_none(),
+                position_closed_date: closed,
+                activity_min: None,
+                activity_max: last_activity,
+                quote_min: None,
+                quote_max: None,
+            }
+        }
+
+        fn d(s: &str) -> NaiveDate {
+            NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+        }
+
+        #[test]
+        fn open_position_backfills_to_fetch_end() {
+            let end = backfill_end_date(
+                &inputs(None, Some(d("2026-01-01"))),
+                d("2026-10-01"),
+                d("2026-09-30"),
+            );
+            assert_eq!(end, d("2026-09-30"));
+        }
+
+        #[test]
+        fn recently_closed_position_backfills_to_fetch_end() {
+            let end = backfill_end_date(
+                &inputs(Some(d("2026-09-20")), Some(d("2026-09-20"))),
+                d("2026-10-01"),
+                d("2026-09-30"),
+            );
+            assert_eq!(end, d("2026-09-30"));
+        }
+
+        #[test]
+        fn long_closed_position_stops_after_holding_period() {
+            let end = backfill_end_date(
+                &inputs(Some(d("2025-11-18")), Some(d("2025-11-17"))),
+                d("2026-10-01"),
+                d("2026-09-30"),
+            );
+            assert_eq!(
+                end,
+                d("2025-11-18") + Duration::days(BACKFILL_SAFETY_MARGIN_DAYS)
+            );
         }
     }
 

@@ -323,6 +323,7 @@ pub async fn process_portfolio_job(
         }
     }
 
+    crate::perf_cache::invalidate();
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
     Ok(())
 }
