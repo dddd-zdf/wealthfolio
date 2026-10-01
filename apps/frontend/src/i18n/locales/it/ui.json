@@ -128,7 +128,8 @@
       "3Y": "Ultimi 3 anni",
       "5Y": "Ultimi 5 anni",
       "ALL": "Sempre"
-    }
+    },
+    "calendarYears": "Anni solari"
   },
   "dialog": {
     "close": "Chiudi",

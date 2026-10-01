@@ -2,6 +2,7 @@ import type { PerformanceResult } from "@/lib/types";
 import { describe, expect, it } from "vitest";
 
 import {
+  performanceMoneyWeightedReturn,
   performancePeriodPnl,
   performanceSummaryReturn,
   shouldDisplayAnnualizedPerformanceReturn,
@@ -166,5 +167,27 @@ describe("shouldDisplayAnnualizedPerformanceReturn", () => {
     result.period = { startDate: "2026-01-01", endDate: "2026-06-30" };
 
     expect(shouldDisplayAnnualizedPerformanceReturn(result)).toBe(false);
+  });
+});
+
+describe("performanceMoneyWeightedReturn", () => {
+  it("returns the period IRR for ranges under a year", () => {
+    const result = baseResult();
+    result.returns = { irr: 0.042, annualizedIrr: 0.09 };
+
+    expect(performanceMoneyWeightedReturn(result)).toEqual({ value: 0.042, annualized: false });
+  });
+
+  it("returns the annualized IRR for ranges of a year or more", () => {
+    const result = baseResult();
+    result.period = { startDate: "2022-01-01", endDate: "2026-01-01" };
+    result.returns = { irr: 0.45, annualizedIrr: 0.0858 };
+
+    expect(performanceMoneyWeightedReturn(result)).toEqual({ value: 0.0858, annualized: true });
+  });
+
+  it("returns null when IRR is unavailable", () => {
+    expect(performanceMoneyWeightedReturn(baseResult())).toBeNull();
+    expect(performanceMoneyWeightedReturn(null)).toBeNull();
   });
 });

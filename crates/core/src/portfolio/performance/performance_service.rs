@@ -29,15 +29,16 @@ use rust_decimal::MathematicalOps;
 use rust_decimal_macros::dec;
 
 use super::{
-    empty_performance_metrics, is_external_transfer, performance_account_ids_from_map,
-    performance_account_tracking_modes_from_map, performance_account_types_from_map,
-    performance_summary_scope_key, performance_tracking_composition,
-    sync_performance_summary_quality, unavailable_performance_metrics, DataQualityStatus,
-    PerformanceAttribution, PerformanceDataQuality, PerformancePeriod, PerformanceResult,
-    PerformanceReturns, PerformanceRisk, PerformanceScopeDescriptor, PerformanceSummary,
-    PerformanceSummaryBasis, PerformanceSummaryBatchResult, PerformanceSummaryBatchScope,
-    PerformanceSummaryProfile, PerformanceSummaryScopeTiming, PerformanceSummaryStatus,
-    ReturnMethod, SimplePerformanceMetrics,
+    classify_flow, empty_performance_metrics, is_external_transfer,
+    performance_account_ids_from_map, performance_account_tracking_modes_from_map,
+    performance_account_types_from_map, performance_summary_scope_key,
+    performance_tracking_composition, sync_performance_summary_quality,
+    unavailable_performance_metrics, DataQualityStatus, FlowType, PerformanceAttribution,
+    PerformanceDataQuality, PerformancePeriod, PerformanceResult, PerformanceReturns,
+    PerformanceRisk, PerformanceScopeDescriptor, PerformanceSummary, PerformanceSummaryBasis,
+    PerformanceSummaryBatchResult, PerformanceSummaryBatchScope, PerformanceSummaryProfile,
+    PerformanceSummaryScopeTiming, PerformanceSummaryStatus, ReturnMethod,
+    SimplePerformanceMetrics,
 };
 use crate::portfolio::valuation::{
     DailyAccountValuation, ExternalFlowSource as ValuationExternalFlowSource,
@@ -298,6 +299,9 @@ pub struct PerformanceService {
 const DAYS_PER_YEAR_DECIMAL: Decimal = dec!(365.25);
 const MIN_ANNUALIZATION_DAYS: i64 = 30;
 const MIN_RETURN_BASE: Decimal = Decimal::ONE;
+/// Daily TWR moves beyond this are logged with their flow inputs; they are
+/// almost always a flow/valuation data mismatch rather than a market move.
+const TWR_OUTLIER_LOG_THRESHOLD: Decimal = dec!(0.15);
 const ATTRIBUTION_RESIDUAL_TOLERANCE_RATE: Decimal = dec!(0.002);
 const ATTRIBUTION_RESIDUAL_LEGACY_WARNING_PREFIX: &str = "Attribution residual ";
 const ATTRIBUTION_INCOMPLETE_WARNING_PREFIX: &str = "Performance attribution is incomplete";
@@ -712,6 +716,22 @@ impl PerformanceService {
                 let numerator = curr_value + flow.outflow - prev_value - flow.inflow;
                 numerator / twr_denominator
             };
+
+            if twr.abs() > TWR_OUTLIER_LOG_THRESHOLD {
+                warn!(
+                    "TWR outlier {} on {}: value {} -> {}, inflow {}, outflow {}, flow source {:?}, net contribution delta {}",
+                    twr.round_dp(4),
+                    curr_point.valuation_date,
+                    prev_value.round_dp(2),
+                    curr_value.round_dp(2),
+                    flow.inflow.round_dp(2),
+                    flow.outflow.round_dp(2),
+                    flow.source,
+                    (Self::return_net_contribution(curr_point, flow_basis)
+                        - Self::return_net_contribution(prev_point, flow_basis))
+                    .round_dp(2),
+                );
+            }
 
             if !excluded_from_compounding {
                 cumulative_twr_factor *= Decimal::ONE + twr;
@@ -2232,6 +2252,7 @@ impl PerformanceService {
                 Self::activity_attribution_components(&activity, &activity_type);
             let event_kind = match activity_type {
                 ActivityType::Dividend | ActivityType::Interest => EconomicEventKind::Income,
+                ActivityType::Credit if !raw_income.is_zero() => EconomicEventKind::Income,
                 ActivityType::Fee => EconomicEventKind::Fee,
                 ActivityType::Tax => EconomicEventKind::Tax,
                 ActivityType::Buy | ActivityType::Sell => EconomicEventKind::Trade,
@@ -2328,6 +2349,15 @@ impl PerformanceService {
                 Decimal::ZERO,
                 Decimal::ZERO,
                 resolved.final_amount.unwrap_or(Decimal::ZERO),
+            ),
+            // Internal credits (REBATE, REFUND, cash back, ...) are gains inside the
+            // scope rather than contributions, so they must land in an attribution
+            // bucket or the period shows an unreconciled residual. External credits
+            // (BONUS) are contributions and stay out of income.
+            ActivityType::Credit if classify_flow(activity) == FlowType::Internal => (
+                resolved.gross_amount.unwrap_or(Decimal::ZERO),
+                Decimal::ZERO,
+                activity.tax_amt(),
             ),
             // Note: fees on these cash flows (and cash transfers below) are booked
             // to cash but knowingly not attributed — only trade and income fees are
@@ -3458,7 +3488,11 @@ impl PerformanceService {
         };
         let is_holdings_mode = matches!(tracking_mode, Some(TrackingMode::Holdings));
         let attribution_baseline = Self::attribution_baseline(is_holdings_mode, start_date_opt);
-        let include_irr = profile == PerformanceSummaryProfile::Full;
+        // The dashboard headline shows MWR next to the period return.
+        let include_irr = matches!(
+            profile,
+            PerformanceSummaryProfile::Full | PerformanceSummaryProfile::Dashboard
+        );
         let include_risk = profile == PerformanceSummaryProfile::Full;
         let include_annualized_returns = profile == PerformanceSummaryProfile::Full;
 
@@ -3794,7 +3828,7 @@ impl PerformanceService {
                     actual_end_date,
                     irr.annualized_irr,
                 ),
-                annualized_irr: if include_annualized_returns {
+                annualized_irr: if include_annualized_returns || include_irr {
                     irr.annualized_irr
                 } else {
                     None
@@ -8458,12 +8492,26 @@ mod tests {
             (Decimal::ZERO, dec!(1), dec!(3))
         );
 
+        // Internal credits (cash back, rebates) are gains: attributed as income.
+        for subtype in [None, Some("REBATE")] {
+            let mut rebate = activity_fixture(ActivityType::Credit, dec!(100), Decimal::ZERO);
+            rebate.subtype = subtype.map(str::to_string);
+            let (income, fees, _) =
+                PerformanceService::activity_attribution_components(&rebate, &ActivityType::Credit);
+            assert_eq!(income, dec!(100), "{subtype:?} credit should be income");
+            assert_eq!(fees, Decimal::ZERO);
+        }
+
+        // BONUS credits are external contributions, never income.
+        let mut bonus = activity_fixture(ActivityType::Credit, dec!(100), Decimal::ZERO);
+        bonus.subtype = Some("BONUS".to_string());
+        assert_eq!(
+            PerformanceService::activity_attribution_components(&bonus, &ActivityType::Credit).0,
+            Decimal::ZERO
+        );
+
         // Cash activity types book tax to cash, so their tax is attributed.
-        for cash_type in [
-            ActivityType::Credit,
-            ActivityType::Deposit,
-            ActivityType::Withdrawal,
-        ] {
+        for cash_type in [ActivityType::Deposit, ActivityType::Withdrawal] {
             let mut cash = activity_fixture(cash_type.clone(), dec!(100), dec!(2));
             cash.tax = Some(dec!(10));
             assert_eq!(

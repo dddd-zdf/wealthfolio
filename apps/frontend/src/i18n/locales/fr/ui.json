@@ -128,7 +128,8 @@
       "3Y": "3 dernières années",
       "5Y": "5 dernières années",
       "ALL": "Tout l'historique"
-    }
+    },
+    "calendarYears": "Années civiles"
   },
   "dialog": {
     "close": "Fermer",

@@ -1184,6 +1184,8 @@ pub(crate) async fn build_profile_state(
     #[cfg(feature = "device-sync")]
     state.workers.lock().unwrap().push(start_sync_outbox_wake_worker(sync_outbox_wake_receiver, Arc::clone(&state)));
 
+    crate::perf_cache::register_warm_target(&state);
+
     if portfolio_history_backfill_needed(&state) {
         tracing::info!(
             "Valuation rows are missing after startup; enqueueing full portfolio rebuild."

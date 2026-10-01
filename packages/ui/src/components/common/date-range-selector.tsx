@@ -79,9 +79,17 @@ interface DateRangeSelectorProps {
   value: DateRange | undefined;
   onChange: (range: DateRange | undefined) => void;
   hiddenRanges?: readonly DateRangePresetLabel[];
+  /** Show quick picks for this many calendar years (current year to date first) in the custom picker. */
+  yearPresets?: number;
 }
 
-export function DateRangeSelector({ value, onChange, hiddenRanges = [], asOf = new Date() }: DateRangeSelectorProps) {
+export function DateRangeSelector({
+  value,
+  onChange,
+  hiddenRanges = [],
+  asOf = new Date(),
+  yearPresets = 0,
+}: DateRangeSelectorProps) {
   const { t } = useTranslation();
   const formatting = useDateFormatting();
   const isMobile = useIsMobile();
@@ -113,6 +121,38 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [], asOf = n
   const isDraftRangeComplete = !draftRange || (!!draftRange.from && !!draftRange.to);
   const allTimeRange = visibleRanges.find((range) => range.label === "ALL")?.getValue(asOf);
   const appliedDraftRange = draftRange ?? allTimeRange;
+
+  const currentYear = asOf.getFullYear();
+  const yearOptions = Array.from({ length: yearPresets }, (_, index) => currentYear - index);
+  const calendarYearRange = (year: number): DateRange => ({
+    from: new Date(year, 0, 1),
+    to: year === currentYear ? asOf : new Date(year, 11, 31),
+  });
+  const renderYearPresets = (selected: DateRange | undefined, onPick: (range: DateRange) => void) =>
+    yearOptions.length > 0 ? (
+      <div
+        className="flex flex-wrap gap-1.5"
+        role="group"
+        aria-label={t("ui:dateRange.calendarYears", "Calendar years")}
+      >
+        {yearOptions.map((year) => {
+          const range = calendarYearRange(year);
+          const isSelected = compareDates(selected?.from, range.from) && compareDates(selected?.to, range.to);
+          return (
+            <Button
+              key={year}
+              type="button"
+              size="sm"
+              variant={isSelected ? "default" : "outline"}
+              className="h-7 rounded-full px-3 text-xs"
+              onClick={() => onPick(range)}
+            >
+              {year}
+            </Button>
+          );
+        })}
+      </div>
+    ) : null;
 
   const handleCustomPickerOpenChange = (open: boolean) => {
     if (open) {
@@ -181,6 +221,7 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [], asOf = n
             </SheetHeader>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+              {yearOptions.length > 0 && <div className="mb-4">{renderYearPresets(draftRange, setDraftRange)}</div>}
               <div className="grid grid-cols-2 gap-3">
                 <div className="border-border/70 bg-muted/30 rounded-lg border px-3 py-2">
                   <div className="text-muted-foreground text-xs font-medium">{t("ui:dateRange.start", "Start")}</div>
@@ -232,12 +273,20 @@ export function DateRangeSelector({ value, onChange, hiddenRanges = [], asOf = n
           </SheetContent>
         </Sheet>
       ) : (
-        <Popover>
+        <Popover open={isCustomPickerOpen} onOpenChange={setIsCustomPickerOpen}>
           <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
           <PopoverContent
             className="max-h-[min(var(--radix-popover-content-available-height,80vh),80vh)] w-auto overflow-y-auto overscroll-contain p-0 [-webkit-overflow-scrolling:touch]"
             align="end"
           >
+            {yearOptions.length > 0 && (
+              <div className="border-border border-b p-3">
+                {renderYearPresets(value, (range) => {
+                  onChange(range);
+                  setIsCustomPickerOpen(false);
+                })}
+              </div>
+            )}
             <Calendar
               mode="range"
               defaultMonth={value?.from}

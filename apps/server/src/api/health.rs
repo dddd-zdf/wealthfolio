@@ -25,11 +25,15 @@ async fn get_health_status(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     headers: HeaderMap,
 ) -> ApiResult<Json<HealthStatus>> {
-    // Try to get cached status first
+    // Serve the cached status; when it has aged out, refresh it in the
+    // background instead of making this request wait for a full check.
+    // Data changes clear the cache outright (and trigger a warm-up), so an
+    // aged entry only means time passed, not that the data changed.
     if let Some(status) = state.health_service.get_cached_status().await {
-        if !status.is_stale {
-            return Ok(Json(status));
+        if status.is_stale {
+            spawn_health_refresh(state.clone());
         }
+        return Ok(Json(status));
     }
 
     // Run fresh checks
@@ -38,6 +42,27 @@ async fn get_health_status(
     let status =
         run_health_checks_internal(&state, &base_currency, client_timezone.as_deref()).await?;
     Ok(Json(status))
+}
+
+static HEALTH_REFRESHING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn spawn_health_refresh(state: Arc<AppState>) {
+    use std::sync::atomic::Ordering;
+    if HEALTH_REFRESHING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tokio::spawn(async move {
+        warm_health_status(&state).await;
+        HEALTH_REFRESHING.store(false, Ordering::SeqCst);
+    });
+}
+
+/// Recompute and cache the health status ahead of the next page view.
+pub(crate) async fn warm_health_status(state: &Arc<AppState>) {
+    let base_currency = state.base_currency.read().unwrap().clone();
+    if let Err(error) = run_health_checks_internal(state, &base_currency, None).await {
+        tracing::debug!("Background health check failed: {error}");
+    }
 }
 
 /// Run health checks and return fresh status.

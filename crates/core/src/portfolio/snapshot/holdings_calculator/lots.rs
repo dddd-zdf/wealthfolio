@@ -10,7 +10,7 @@ use crate::activities::Activity;
 use crate::lots::{LotClosure, LotDisposal};
 use crate::portfolio::snapshot::{FifoReductionResult, Position};
 use chrono::{NaiveDate, Utc};
-use log::{error, warn};
+use log::{debug, error, warn};
 use rust_decimal::Decimal;
 
 impl HoldingsCalculator {
@@ -278,7 +278,9 @@ impl HoldingsCalculator {
 
         if position.lots.is_empty() {
             if position_currency != account_currency {
-                warn!(
+                // Fires once per position per valuation day during rebuilds;
+                // keep it out of the default log level.
+                debug!(
                     "Position {} has no materialized lots on {}. Falling back to valuation-date FX for account cost basis.",
                     position.asset_id, target_date
                 );
