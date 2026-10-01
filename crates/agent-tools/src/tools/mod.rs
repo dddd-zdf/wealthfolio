@@ -20,6 +20,7 @@ pub mod commit_reviewed_categorization_rule;
 pub mod contribution_limits;
 pub mod create_account;
 pub mod create_categorization_rule;
+pub mod data_admin;
 pub mod goals;
 pub mod health;
 pub mod holdings;
@@ -179,6 +180,12 @@ pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
         Arc::new(CommitCategorizationRule),
         Arc::new(CommitReviewedCategorizationRule),
         Arc::new(CreateAccount),
+        Arc::new(data_admin::MutateActivities),
+        Arc::new(data_admin::LinkTransferActivities),
+        Arc::new(data_admin::UpsertManualQuotes),
+        Arc::new(data_admin::UpdateAccountSettings),
+        Arc::new(data_admin::SetAssetQuoteMode),
+        Arc::new(data_admin::RecalculatePortfolio),
     ]
 }
 

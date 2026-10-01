@@ -228,9 +228,33 @@ async fn calculate_performance_history(
     Ok(Json(metrics))
 }
 
+fn parse_cached_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> ApiResult<T> {
+    serde_json::from_slice(body)
+        .map_err(|error| ApiError::BadRequest(format!("Invalid request body: {error}")))
+}
+
+/// Serves `/performance/summary` from the short-lived summary cache when the
+/// same request was answered since the last portfolio update.
 async fn calculate_performance_summary(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
-    Json(body): Json<PerfBody>,
+    body: axum::body::Bytes,
+) -> ApiResult<Json<serde_json::Value>> {
+    let key = crate::perf_cache::key("summary", Arc::as_ptr(&state) as usize, &body);
+    if let Some(hit) = crate::perf_cache::get(key) {
+        return Ok(Json(hit));
+    }
+    let generation = crate::perf_cache::current_generation();
+    let parsed: PerfBody = parse_cached_body(&body)?;
+    let Json(result) = calculate_performance_summary_uncached(state, parsed).await?;
+    let value = serde_json::to_value(&result)
+        .map_err(|error| ApiError::Internal(format!("Failed to serialize summary: {error}")))?;
+    crate::perf_cache::put(key, generation, value.clone());
+    Ok(Json(value))
+}
+
+async fn calculate_performance_summary_uncached(
+    state: Arc<AppState>,
+    body: PerfBody,
 ) -> ApiResult<Json<PerformanceResult>> {
     let start = parse_date_optional(body.start_date, "startDate")?;
     let end = parse_date_optional(body.end_date, "endDate")?;
@@ -359,9 +383,28 @@ async fn calculate_performance_summary(
     Ok(Json(metrics))
 }
 
+/// Serves `/performance/summaries` from the short-lived summary cache when the
+/// same request was answered since the last portfolio update.
 async fn get_performance_summaries(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
-    Json(body): Json<PerformanceSummariesBody>,
+    body: axum::body::Bytes,
+) -> ApiResult<Json<serde_json::Value>> {
+    let key = crate::perf_cache::key("summaries", Arc::as_ptr(&state) as usize, &body);
+    if let Some(hit) = crate::perf_cache::get(key) {
+        return Ok(Json(hit));
+    }
+    let generation = crate::perf_cache::current_generation();
+    let parsed: PerformanceSummariesBody = parse_cached_body(&body)?;
+    let Json(results) = get_performance_summaries_uncached(state, parsed).await?;
+    let value = serde_json::to_value(&results)
+        .map_err(|error| ApiError::Internal(format!("Failed to serialize summaries: {error}")))?;
+    crate::perf_cache::put(key, generation, value.clone());
+    Ok(Json(value))
+}
+
+async fn get_performance_summaries_uncached(
+    state: Arc<AppState>,
+    body: PerformanceSummariesBody,
 ) -> ApiResult<Json<HashMap<String, PerformanceResult>>> {
     let start = parse_date_optional(body.start_date, "startDate")?;
     let end = parse_date_optional(body.end_date, "endDate")?;

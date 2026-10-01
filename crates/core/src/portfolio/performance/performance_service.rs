@@ -392,6 +392,9 @@ struct MixedScopeComponentMetrics {
     amount: Option<Decimal>,
     denominator: Option<Decimal>,
     contributes_to_scope: bool,
+    /// Holdings-mode components infer flows from snapshots, so a missing
+    /// denominator there can hide an unknown contribution.
+    is_holdings: bool,
     basis_status: BasisStatus,
     attribution: PerformanceAttribution,
     warnings: Vec<String>,
@@ -3988,6 +3991,7 @@ impl PerformanceService {
             amount,
             denominator,
             contributes_to_scope,
+            is_holdings: matches!(component.tracking_mode, TrackingMode::Holdings),
             basis_status: component_basis_status,
             attribution,
             warnings,
@@ -4208,6 +4212,14 @@ impl PerformanceService {
                     ));
                 }
                 None if zero_value_zero_gain => {}
+                // Transaction-mode accounts have exact cash flows, so a gain
+                // earned from a zero opening balance (e.g. a few cents of
+                // interest in an emptied cash account) is real P&L. The
+                // combined percentage is measured against the scope's overall
+                // opening balance, so such an account adds its gain to the
+                // numerator and nothing to the denominator instead of making
+                // the whole percentage unavailable.
+                None if amount_available && !component.is_holdings => {}
                 None if amount_available => {
                     percent_coverage_complete = false;
                     warnings.push(format!(
@@ -11525,6 +11537,78 @@ mod tests {
         assert!(!result.data_quality.warnings.iter().any(|warning| {
             warning.contains("zero-account") && warning.contains("no valid return denominator")
         }));
+    }
+
+    #[test]
+    fn mixed_scope_keeps_percent_when_transaction_account_earns_from_zero_balance() {
+        // A closed cash account that starts the period at 0 and earns a cent of
+        // interest must not make the combined percentage unavailable.
+        let cash = [
+            account_valuation(
+                "emptied-cash",
+                "2026-06-12",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            account_valuation(
+                "emptied-cash",
+                "2026-06-19",
+                dec!(0.01),
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        let holdings = [
+            account_valuation(
+                "holdings",
+                "2026-06-12",
+                dec!(1000),
+                dec!(1000),
+                dec!(1000),
+                dec!(1000),
+            ),
+            account_valuation(
+                "holdings",
+                "2026-06-19",
+                dec!(1100),
+                dec!(1000),
+                dec!(1100),
+                dec!(1000),
+            ),
+        ];
+        let components = vec![
+            MixedScopeAccountHistory {
+                account_id: "emptied-cash",
+                tracking_mode: TrackingMode::Transactions,
+                account_type: Some(account_types::CASH),
+                history: &cash,
+            },
+            MixedScopeAccountHistory {
+                account_id: "holdings",
+                tracking_mode: TrackingMode::Holdings,
+                account_type: None,
+                history: &holdings,
+            },
+        ];
+
+        let result = PerformanceService::compute_mixed_scope_performance_from_account_histories(
+            &components,
+            "CAD",
+            Some(date("2026-06-12")),
+            true,
+            PerformanceSummaryProfile::Dashboard,
+        )
+        .expect("mixed scope should compute");
+
+        assert_eq!(
+            result.summary.percent_status,
+            PerformanceSummaryStatus::Complete
+        );
+        let percent = result.summary.percent.expect("combined percent");
+        assert!(percent > dec!(0.1) && percent < dec!(0.1001), "{percent}");
     }
 
     #[test]
