@@ -704,6 +704,8 @@
     "notes_placeholder": "Añade cualquier contexto sobre esta valoración (p. ej., fuente de la tasación, condiciones del mercado)",
     "cancel": "Cancelar",
     "update_value": "Actualizar valor",
+    "total_description": "Introduce el valor total de la posición. El precio por unidad se calcula con las unidades que tenías en esa fecha.",
+    "units_at_price": "{{units}} unidades a {{price}}",
     "na": "N/D"
   },
   "valueHistory": {

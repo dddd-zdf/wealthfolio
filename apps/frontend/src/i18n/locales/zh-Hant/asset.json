@@ -700,6 +700,8 @@
     "notes_placeholder": "新增此次估值的背景資訊（例如評估來源、市場狀況）",
     "cancel": "取消",
     "update_value": "更新價值",
+    "total_description": "輸入持倉的總價值。單價將根據該日期持有的份額計算。",
+    "units_at_price": "{{units}} 份，單價 {{price}}",
     "na": "不適用"
   },
   "valueHistory": {

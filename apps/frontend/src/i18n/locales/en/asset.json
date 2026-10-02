@@ -700,6 +700,8 @@
     "notes_placeholder": "Add any context about this valuation (e.g., appraisal source, market conditions)",
     "cancel": "Cancel",
     "update_value": "Update Value",
+    "total_description": "Enter the holding's total value. The unit price is worked out from the units you held on that date.",
+    "units_at_price": "{{units}} units at {{price}}",
     "na": "N/A"
   },
   "valueHistory": {

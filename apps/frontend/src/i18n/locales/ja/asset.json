@@ -699,6 +699,8 @@
     "notes_placeholder": "この評価額に関する補足(査定元、市況など)を入力",
     "cancel": "キャンセル",
     "update_value": "評価額を更新",
+    "total_description": "保有資産の合計額を入力してください。単価はその日の保有口数から計算されます。",
+    "units_at_price": "{{units}} 口 × {{price}}",
     "na": "N/A"
   },
   "valueHistory": {
