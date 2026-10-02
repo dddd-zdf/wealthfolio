@@ -437,7 +437,11 @@ async fn command(
             if let Some(session) = &session {
                 // Gate financial UI startup on the runtime, not just the grant.
                 // Failed initialization remains retryable with the same session.
-                root.runtime(session.profile_id).await?;
+                // Detached so a client timeout doesn't cancel a slow cold start.
+                let (runtime_root, profile_id) = (root.clone(), session.profile_id);
+                tokio::spawn(async move { runtime_root.runtime(profile_id).await })
+                    .await
+                    .map_err(failure)??;
                 registry
                     .sessions
                     .admit(&owner.0, session.scope_id)
