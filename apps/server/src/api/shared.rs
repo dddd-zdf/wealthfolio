@@ -245,11 +245,14 @@ pub async fn process_portfolio_job(
                 ));
                 tracing::info!("Market data sync completed in {:?}", sync_start.elapsed());
                 state.health_service.clear_cache().await;
-                if let Err(err) = state.fx_service.initialize() {
-                    tracing::warn!(
-                        "Failed to initialize FxService after market data sync: {}",
-                        err
-                    );
+                // FX rates are quotes too; reload them only when some moved.
+                if !prices_unchanged {
+                    if let Err(err) = state.fx_service.initialize() {
+                        tracing::warn!(
+                            "Failed to initialize FxService after market data sync: {}",
+                            err
+                        );
+                    }
                 }
             }
             Err(err) => {
