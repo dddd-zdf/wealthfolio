@@ -161,9 +161,14 @@ export function DashboardContent() {
 
   const chartData = useMemo(() => {
     if (intradayRange && intradayPoints && intradayPoints.length > 1) {
+      // The curve is anchored to the stored daily total; shift the latest
+      // session so it ends on the live headline value.
+      const last = intradayPoints[intradayPoints.length - 1];
+      const lastDay = last.timestamp.slice(0, 10);
+      const offset = totalValue > 0 ? totalValue - last.totalValueBase : 0;
       return intradayPoints.map((point) => ({
         date: point.timestamp,
-        totalValue: point.totalValueBase,
+        totalValue: point.totalValueBase + (point.timestamp.startsWith(lastDay) ? offset : 0),
         netContribution: point.netContributionBase,
         currency: baseCurrency,
       }));
@@ -176,7 +181,7 @@ export function DashboardContent() {
         currency: item.baseCurrency ?? baseCurrency,
       })) ?? []
     );
-  }, [intradayRange, intradayPoints, valuationHistory, baseCurrency]);
+  }, [intradayRange, intradayPoints, totalValue, valuationHistory, baseCurrency]);
 
   const chartMinDomainSpanRatio = useMemo(
     () => getDashboardChartMinDomainSpanRatio(selectedInterval),
