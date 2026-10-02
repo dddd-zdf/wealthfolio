@@ -22,6 +22,7 @@ interface QuoteHistoryToolbarProps {
   onSave: () => void;
   onCancel: () => void;
   onChangeDataSource?: (isManual: boolean) => void;
+  onUpdateValue?: () => void;
 }
 
 export function QuoteHistoryToolbar({
@@ -35,6 +36,7 @@ export function QuoteHistoryToolbar({
   onSave,
   onCancel,
   onChangeDataSource,
+  onUpdateValue,
 }: QuoteHistoryToolbarProps) {
   const { t } = useTranslation();
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -49,6 +51,12 @@ export function QuoteHistoryToolbar({
               <Icons.Plus className="mr-1.5 h-4 w-4" />
               {t("asset:quoteToolbar.add")}
             </Button>
+
+            {onUpdateValue && (
+              <Button variant="outline" size="sm" onClick={onUpdateValue}>
+                {t("asset:updateValuation.update_value")}
+              </Button>
+            )}
 
             <Button asChild variant="outline" size="sm">
               <Link to="/settings/market-data/import" className="flex items-center gap-1.5">

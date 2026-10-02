@@ -700,6 +700,8 @@
     "notes_placeholder": "Fügen Sie Kontext zu dieser Bewertung hinzu (z. B. Gutachtenquelle, Marktbedingungen)",
     "cancel": "Abbrechen",
     "update_value": "Wert aktualisieren",
+    "total_description": "Geben Sie den Gesamtwert der Position ein. Der Stückpreis wird aus den an diesem Datum gehaltenen Anteilen berechnet.",
+    "units_at_price": "{{units}} Anteile zu {{price}}",
     "na": "N/V"
   },
   "valueHistory": {

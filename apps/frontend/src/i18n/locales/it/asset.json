@@ -704,6 +704,8 @@
     "notes_placeholder": "Aggiungi contesto su questa valutazione (es. fonte della perizia, condizioni di mercato)",
     "cancel": "Annulla",
     "update_value": "Aggiorna valore",
+    "total_description": "Inserisci il valore totale della posizione. Il prezzo unitario viene calcolato dalle quote detenute in quella data.",
+    "units_at_price": "{{units}} quote a {{price}}",
     "na": "N/D"
   },
   "valueHistory": {

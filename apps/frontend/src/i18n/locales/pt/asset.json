@@ -704,6 +704,8 @@
     "notes_placeholder": "Adicione qualquer contexto sobre esta avaliação (ex.: fonte da avaliação, condições de mercado)",
     "cancel": "Cancelar",
     "update_value": "Atualizar valor",
+    "total_description": "Introduza o valor total da posição. O preço unitário é calculado a partir das unidades detidas nessa data.",
+    "units_at_price": "{{units}} unidades a {{price}}",
     "na": "N/D"
   },
   "valueHistory": {

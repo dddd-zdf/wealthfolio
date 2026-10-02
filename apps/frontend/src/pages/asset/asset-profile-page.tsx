@@ -66,6 +66,7 @@ import { useAssetProfile } from "./hooks/use-asset-profile";
 import { useAssetProfileMutations } from "./hooks/use-asset-profile-mutations";
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { QuoteHistoryDataGrid } from "./quote-history-data-grid";
+import { unitsOnDay } from "./units-on-day";
 import { ResetProviderHistoryDialog } from "./reset-provider-history-dialog";
 import { RefreshQuotesConfirmDialog } from "./refresh-quotes-confirm-dialog";
 
@@ -985,6 +986,7 @@ export const AssetProfilePage = () => {
         isManualDataSource={isManualPricingMode}
         onSaveQuote={(q: Quote) => saveQuoteMutation.mutate(q)}
         onDeleteQuote={(id: string) => deleteQuoteMutation.mutate(id)}
+        unitsOn={(day) => unitsOnDay(symbolHolding?.numShares ?? 0, assetActivities, day)}
         onChangeDataSource={(isManual) => {
           if (profile) {
             updateQuoteModeMutation.mutate({

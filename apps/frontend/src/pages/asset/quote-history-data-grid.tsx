@@ -19,6 +19,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QuoteHistoryToolbar } from "./quote-history-toolbar";
 import { toQuoteEntry, type QuoteEntry } from "./quote-history-utils";
+import { UpdateTotalValueDialog } from "./update-total-value-dialog";
 
 // Helper to normalize date values (handles both Date objects and strings from DateCell)
 const normalizeDate = (value: Date | string): Date => {
@@ -43,6 +44,8 @@ interface QuoteHistoryDataGridProps {
   onDeleteQuote: (quoteId: string) => void;
   /** Callback to change data source mode */
   onChangeDataSource?: (isManual: boolean) => void;
+  /** Units held at the end of a day (yyyy-MM-dd); enables entering a total value. */
+  unitsOn?: (day: string) => number;
 }
 
 // Generate a temporary ID for new entries
@@ -91,6 +94,7 @@ export function QuoteHistoryDataGrid({
   onSaveQuote,
   onDeleteQuote,
   onChangeDataSource,
+  unitsOn,
 }: QuoteHistoryDataGridProps) {
   const amountFormatting = useAmountFormatting();
   const dateFormatting = useDateFormatting();
@@ -380,6 +384,41 @@ export function QuoteHistoryDataGrid({
     dataGrid.table.resetRowSelection();
   }, [initialEntries, dataGrid.table]);
 
+  // Save the price that values the held units at the entered total.
+  const [totalValueOpen, setTotalValueOpen] = useState(false);
+  const handleTotalValue = useCallback(
+    (date: Date, price: number) => {
+      const day = format(date, "yyyy-MM-dd");
+      const existing = initialEntries.find((e) => format(e.date, "yyyy-MM-dd") === day);
+      onSaveQuote(
+        toQuote(
+          {
+            id: existing?.id ?? generateTempId(),
+            date,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: 0,
+            currency,
+          },
+          assetId,
+        ),
+      );
+    },
+    [initialEntries, onSaveQuote, currency, assetId],
+  );
+  const showUpdateValue = isManualDataSource && unitsOn != null;
+  const totalValueDialog = showUpdateValue ? (
+    <UpdateTotalValueDialog
+      open={totalValueOpen}
+      onOpenChange={setTotalValueOpen}
+      currency={currency}
+      unitsOn={unitsOn}
+      onSave={handleTotalValue}
+    />
+  ) : null;
+
   // Mobile state
   const [mobilePage, setMobilePage] = useState(0);
   const [mobileEditingId, setMobileEditingId] = useState<string | null>(null);
@@ -425,7 +464,9 @@ export function QuoteHistoryDataGrid({
           onSave={handleSave}
           onCancel={handleCancel}
           onChangeDataSource={onChangeDataSource}
+          onUpdateValue={showUpdateValue ? () => setTotalValueOpen(true) : undefined}
         />
+        {totalValueDialog}
 
         <div className="divide-y rounded-md border">
           {mobilePageEntries.length === 0 ? (
@@ -670,7 +711,9 @@ export function QuoteHistoryDataGrid({
         onSave={handleSave}
         onCancel={handleCancel}
         onChangeDataSource={onChangeDataSource}
+        onUpdateValue={showUpdateValue ? () => setTotalValueOpen(true) : undefined}
       />
+      {totalValueDialog}
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
         <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 340px)" />

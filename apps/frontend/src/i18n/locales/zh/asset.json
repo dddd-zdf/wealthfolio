@@ -699,6 +699,8 @@
     "notes_placeholder": "添加关于此次估值的任何背景信息（例如评估来源、市场状况）",
     "cancel": "取消",
     "update_value": "更新价值",
+    "total_description": "输入持仓的总价值。单价将根据该日期持有的份额计算。",
+    "units_at_price": "{{units}} 份，单价 {{price}}",
     "na": "不适用"
   },
   "valueHistory": {
