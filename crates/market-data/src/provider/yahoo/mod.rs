@@ -1046,6 +1046,39 @@ impl MarketDataProvider for YahooProvider {
         }
     }
 
+    async fn get_intraday_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        interval: &str,
+        range: &str,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let symbol = self.extract_symbol(&instrument)?;
+        if symbol.starts_with("CASH:") {
+            return Ok(vec![]);
+        }
+        let response = self
+            .connector
+            .get_quote_range(&symbol, interval, range)
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
+        let currency = response
+            .metadata()
+            .ok()
+            .and_then(|m| m.currency)
+            .unwrap_or_else(|| self.get_currency(context));
+        match response.quotes() {
+            // Bars with no trades come back without a close; skip them.
+            Ok(bars) => Ok(bars
+                .into_iter()
+                .filter(|q| q.close.is_finite() && q.close > 0.0)
+                .filter_map(|q| self.yahoo_quote_to_quote(q, currency.clone()).ok())
+                .collect()),
+            Err(yahoo::YahooError::NoQuotes) => Ok(vec![]),
+            Err(e) => Err(self.convert_yahoo_error(e, &symbol)),
+        }
+    }
+
     async fn get_splits(
         &self,
         _context: &QuoteContext,

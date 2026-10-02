@@ -56,6 +56,7 @@ export const COMMANDS: CommandMap = {
   get_historical_valuations: { method: "GET", path: "/valuations/history" },
   get_latest_valuations: { method: "GET", path: "/valuations/latest" },
   get_current_valuation: { method: "POST", path: "/valuations/current/query" },
+  get_intraday_valuations: { method: "POST", path: "/valuations/intraday/query" },
   get_portfolio_allocations: { method: "POST", path: "/allocations/query" },
   get_holdings_by_allocation: { method: "POST", path: "/allocations/holdings/query" },
   // Snapshot management
@@ -586,6 +587,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         includeAccounts?: boolean;
       };
       body = JSON.stringify({ filter, includeAccounts: includeAccounts ?? false });
+      break;
+    }
+    case "get_intraday_valuations": {
+      const { filter, range } = payload as { filter: unknown; range: string };
+      body = JSON.stringify({ filter, range });
       break;
     }
     case "get_portfolio_allocations": {

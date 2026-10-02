@@ -1,6 +1,6 @@
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 import { parseLocalDate } from "@/lib/utils";
-import { calculatePerformanceSummary } from "@/adapters";
+import { calculatePerformanceSummary, getIntradayValuations } from "@/adapters";
 import { HistoryChart } from "@/components/history-chart";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
@@ -146,7 +146,33 @@ export function DashboardContent() {
       ? valuationHistory?.[valuationHistory.length - 1]?.calculatedAt
       : undefined);
 
+  // 1D/1W: daily valuations only give a point per day, so draw the curve from
+  // live intraday prices instead (falls back to the daily points if empty).
+  const intradayRange =
+    selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
+  const { data: intradayPoints } = useQuery({
+    queryKey: [QueryKeys.HISTORY_VALUATION, "intraday", intradayRange],
+    queryFn: () => getIntradayValuations({ type: "all" }, intradayRange!),
+    enabled: intradayRange !== null,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    retry: 1,
+  });
+
   const chartData = useMemo(() => {
+    if (intradayRange && intradayPoints && intradayPoints.length > 1) {
+      // The curve is anchored to the stored daily total; shift the latest
+      // session so it ends on the live headline value.
+      const last = intradayPoints[intradayPoints.length - 1];
+      const lastDay = last.timestamp.slice(0, 10);
+      const offset = totalValue > 0 ? totalValue - last.totalValueBase : 0;
+      return intradayPoints.map((point) => ({
+        date: point.timestamp,
+        totalValue: point.totalValueBase + (point.timestamp.startsWith(lastDay) ? offset : 0),
+        netContribution: point.netContributionBase,
+        currency: baseCurrency,
+      }));
+    }
     return (
       valuationHistory?.map((item) => ({
         date: item.valuationDate,
@@ -155,7 +181,7 @@ export function DashboardContent() {
         currency: item.baseCurrency ?? baseCurrency,
       })) ?? []
     );
-  }, [valuationHistory, baseCurrency]);
+  }, [intradayRange, intradayPoints, totalValue, valuationHistory, baseCurrency]);
 
   const chartMinDomainSpanRatio = useMemo(
     () => getDashboardChartMinDomainSpanRatio(selectedInterval),

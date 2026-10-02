@@ -436,6 +436,24 @@ impl MarketDataClient {
         Ok(Self::convert_quote(market_quote, &asset.id))
     }
 
+    /// Fetch intraday bars for an asset (e.g. `interval` "5m", `range` "1d").
+    /// Empty when no provider has intraday data for it.
+    pub async fn fetch_intraday_quotes(
+        &self,
+        asset: &Asset,
+        interval: &str,
+        range: &str,
+    ) -> Result<Vec<Quote>> {
+        let context = self.build_quote_context(asset)?;
+        Ok(self
+            .registry
+            .fetch_intraday_quotes(&context, interval, range)
+            .await
+            .into_iter()
+            .map(|quote| Self::convert_quote(quote, &asset.id))
+            .collect())
+    }
+
     /// Build a QuoteContext from an Asset.
     fn build_quote_context(&self, asset: &Asset) -> Result<QuoteContext> {
         // Convert Asset to InstrumentId

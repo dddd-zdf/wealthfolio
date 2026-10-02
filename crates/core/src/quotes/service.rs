@@ -317,6 +317,17 @@ pub trait QuoteServiceTrait: Send + Sync {
         ))
     }
 
+    /// Intraday bars per asset id, fetched live from providers (not stored).
+    /// Assets without market pricing or without intraday data are omitted.
+    async fn get_intraday_quotes(
+        &self,
+        _asset_ids: &[String],
+        _interval: &str,
+        _range: &str,
+    ) -> Result<HashMap<String, Vec<Quote>>> {
+        Ok(HashMap::new())
+    }
+
     // =========================================================================
     // Quote CRUD Operations
     // =========================================================================
@@ -1793,6 +1804,41 @@ where
 
     async fn get_asset_profile(&self, asset: &Asset) -> Result<ProviderProfile> {
         self.client.read().await.get_profile(asset).await
+    }
+
+    async fn get_intraday_quotes(
+        &self,
+        asset_ids: &[String],
+        interval: &str,
+        range: &str,
+    ) -> Result<HashMap<String, Vec<Quote>>> {
+        use futures::stream::{self, StreamExt};
+
+        let assets: Vec<Asset> = asset_ids
+            .iter()
+            .filter_map(|id| self.asset_repo.get_by_id(id).ok())
+            .filter(|asset| asset.needs_pricing())
+            .collect();
+        let client = self.client.read().await;
+        let client = &*client;
+        let fetched: Vec<(String, Vec<Quote>)> = stream::iter(assets)
+            .map(|asset| async move {
+                let quotes = client
+                    .fetch_intraday_quotes(&asset, interval, range)
+                    .await
+                    .unwrap_or_else(|e| {
+                        debug!("Intraday quotes unavailable for {}: {}", asset.id, e);
+                        Vec::new()
+                    });
+                (asset.id, quotes)
+            })
+            .buffer_unordered(6)
+            .collect()
+            .await;
+        Ok(fetched
+            .into_iter()
+            .filter(|(_, quotes)| !quotes.is_empty())
+            .collect())
     }
 
     async fn fetch_quotes_from_provider(

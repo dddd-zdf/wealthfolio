@@ -27,6 +27,10 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
             "/valuations/history/query",
             post(handlers::get_historical_valuations_for_scope),
         )
+        .route(
+            "/valuations/intraday/query",
+            post(handlers::get_intraday_valuations),
+        )
         .route("/valuations/latest", get(handlers::get_latest_valuations))
         .route(
             "/valuations/current/query",

@@ -66,6 +66,21 @@ export const getHistoricalValuations = async (
   );
 };
 
+/** One point of the 1D/1W intraday portfolio curve (base currency). */
+export interface IntradayValuationPoint {
+  timestamp: string;
+  totalValueBase: number;
+  netContributionBase: number;
+}
+
+/** Live intraday curve for the last session ("1D") or five sessions ("1W"). */
+export const getIntradayValuations = async (
+  filter: AccountScope,
+  range: "1D" | "1W",
+): Promise<IntradayValuationPoint[]> => {
+  return invoke<IntradayValuationPoint[]>("get_intraday_valuations", { filter, range });
+};
+
 export const getLatestValuations = async (accountIds: string[]): Promise<AccountValuation[]> => {
   return invoke<AccountValuation[]>("get_latest_valuations", { accountIds });
 };

@@ -189,4 +189,21 @@ pub trait MarketDataProvider: Send + Sync {
             provider: self.id().to_string(),
         })
     }
+
+    /// Fetch intraday bars (e.g. `interval` "5m" over `range` "1d").
+    ///
+    /// Default implementation returns `NotSupported`.
+    async fn get_intraday_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        interval: &str,
+        range: &str,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let _ = (context, instrument, interval, range);
+        Err(MarketDataError::NotSupported {
+            operation: "intraday".to_string(),
+            provider: self.id().to_string(),
+        })
+    }
 }
