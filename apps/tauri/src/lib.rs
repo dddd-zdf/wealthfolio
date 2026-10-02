@@ -412,6 +412,7 @@ pub fn run() {
             commands::portfolio::get_holdings_by_allocation,
             commands::portfolio::get_income_summary,
             commands::portfolio::get_historical_valuations,
+            commands::portfolio::get_intraday_valuations,
             commands::portfolio::get_latest_valuations,
             commands::portfolio::get_current_valuation,
             commands::portfolio::calculate_accounts_simple_performance,

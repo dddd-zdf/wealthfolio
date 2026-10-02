@@ -435,6 +435,51 @@ impl ProviderRegistry {
         vec![]
     }
 
+    /// Fetch intraday bars for an instrument (e.g. "5m" over "1d").
+    ///
+    /// Tries providers in order. Returns empty vec (not error) when no provider
+    /// supports intraday data or none has bars for the instrument.
+    pub async fn fetch_intraday_quotes(
+        &self,
+        context: &QuoteContext,
+        interval: &str,
+        range: &str,
+    ) -> Vec<Quote> {
+        let providers = self.ordered_providers(context, false);
+
+        for provider in providers {
+            let provider_id: ProviderId = Cow::Borrowed(provider.id());
+
+            if !self.circuit_breaker.is_allowed(&provider_id) {
+                continue;
+            }
+
+            let resolved = match self.resolver.resolve(&provider_id, context) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            self.rate_limiter.acquire(&provider_id).await;
+
+            match provider
+                .get_intraday_quotes(context, resolved.instrument, interval, range)
+                .await
+            {
+                Ok(quotes) if !quotes.is_empty() => return quotes,
+                Ok(_) | Err(MarketDataError::NotSupported { .. }) => continue,
+                Err(e) => {
+                    debug!(
+                        "Intraday fetch failed for provider '{}': {:?}",
+                        provider_id, e
+                    );
+                    continue;
+                }
+            }
+        }
+
+        vec![]
+    }
+
     /// Fetch cash dividend history for an instrument.
     ///
     /// Tries dividend-capable providers in order, using provider fallback semantics

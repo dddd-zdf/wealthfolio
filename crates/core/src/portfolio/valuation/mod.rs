@@ -1,6 +1,7 @@
 //! Portfolio valuation module - daily valuations and history.
 
 mod current_account_valuation;
+pub mod intraday;
 pub mod valuation_calculator;
 mod valuation_model;
 pub mod valuation_service;

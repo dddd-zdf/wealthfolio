@@ -33,7 +33,8 @@ use super::dto::{
     AssetLotsQuery, CheckHoldingsImportRequest, CheckHoldingsImportResult, CurrentValuationBody,
     DeleteSnapshotQuery, FilterBody, HistoryFilterBody, HistoryQuery, HoldingItemQuery,
     HoldingsSnapshotInput, ImportHoldingsCsvRequest, ImportHoldingsCsvResult,
-    SaveManualHoldingsRequest, SnapshotDateQuery, SnapshotInfo, SnapshotsQuery, SymbolCheckResult,
+    IntradayValuationBody, SaveManualHoldingsRequest, SnapshotDateQuery, SnapshotInfo,
+    SnapshotsQuery, SymbolCheckResult,
 };
 use super::mappers::{parse_date, parse_date_optional};
 
@@ -349,6 +350,63 @@ async fn get_historical_valuations_for_scope_uncached(
             )?
     };
     Ok(Json(vals))
+}
+
+/// Intraday prices move every few minutes; keep each curve this long.
+const INTRADAY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+type IntradayCache = std::sync::Mutex<
+    std::collections::HashMap<(usize, Vec<u8>), (std::time::Instant, serde_json::Value)>,
+>;
+static INTRADAY_CACHE: std::sync::LazyLock<IntradayCache> =
+    std::sync::LazyLock::new(Default::default);
+
+/// POST /valuations/intraday/query - 1D/1W portfolio curve from live
+/// intraday bars, anchored to the stored daily totals.
+pub async fn get_intraday_valuations(
+    axum::Extension(state): axum::Extension<Arc<AppState>>,
+    body: axum::body::Bytes,
+) -> ApiResult<Json<serde_json::Value>> {
+    use wealthfolio_core::portfolio::valuation::intraday::{intraday_valuations, IntradayRange};
+
+    let key = (Arc::as_ptr(&state) as usize, body.to_vec());
+    if let Some((at, value)) = INTRADAY_CACHE.lock().unwrap().get(&key) {
+        if at.elapsed() < INTRADAY_CACHE_TTL {
+            return Ok(Json(value.clone()));
+        }
+    }
+    let parsed: IntradayValuationBody = serde_json::from_slice(&body).map_err(|error| {
+        crate::error::ApiError::BadRequest(format!("Invalid request body: {error}"))
+    })?;
+    let range = IntradayRange::parse(&parsed.range).ok_or_else(|| {
+        crate::error::ApiError::BadRequest(format!("Unsupported range: {}", parsed.range))
+    })?;
+
+    let tz = parse_user_timezone_or_default(&state.timezone.read().unwrap().clone());
+    let today = user_today(tz);
+    let holdings = load_holdings_for_filter(state.as_ref(), &parsed.filter, false).await?;
+    let Json(daily) = get_historical_valuations_for_scope_uncached(
+        state.clone(),
+        HistoryFilterBody {
+            filter: parsed.filter,
+            start_date: Some(
+                (today - chrono::Duration::days(range.anchor_days()))
+                    .format("%Y-%m-%d")
+                    .to_string(),
+            ),
+            end_date: Some(today.format("%Y-%m-%d").to_string()),
+        },
+    )
+    .await?;
+    let points =
+        intraday_valuations(&holdings, &daily, state.quote_service.as_ref(), range, tz).await?;
+    let value = serde_json::to_value(&points).map_err(|error| {
+        crate::error::ApiError::Internal(format!("Failed to serialize intraday values: {error}"))
+    })?;
+    let mut cache = INTRADAY_CACHE.lock().unwrap();
+    cache.retain(|_, (at, _)| at.elapsed() < INTRADAY_CACHE_TTL);
+    cache.insert(key, (std::time::Instant::now(), value.clone()));
+    Ok(Json(value))
 }
 
 pub async fn get_latest_valuations(

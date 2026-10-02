@@ -412,6 +412,63 @@ pub async fn get_holdings_by_allocation(
     }
 }
 
+/// 1D/1W portfolio curve from live intraday bars, anchored to the stored
+/// daily totals (see `portfolio::valuation::intraday`).
+#[tauri::command]
+pub async fn get_intraday_valuations(
+    state: ProfileAccess,
+    filter: AccountScopeInput,
+    range: String,
+) -> Result<Vec<wealthfolio_core::portfolio::valuation::intraday::IntradayValuationPoint>, String> {
+    use wealthfolio_core::portfolio::valuation::intraday::{intraday_valuations, IntradayRange};
+    use wealthfolio_core::utils::time_utils::{parse_user_timezone_or_default, user_today};
+
+    let context = state.context()?;
+    let range =
+        IntradayRange::parse(&range).ok_or_else(|| format!("Unsupported range: {}", range))?;
+    let tz = parse_user_timezone_or_default(&context.get_timezone());
+    let today = user_today(tz);
+    let filter = filter.into_account_filter()?;
+    let holdings = get_holdings_for_filter(context.as_ref(), filter.clone(), false).await?;
+
+    let base_currency = context.get_base_currency();
+    let resolved = context
+        .portfolio_service()
+        .resolve_account_scope(&filter, &base_currency)
+        .map_err(|e| e.to_string())?;
+    let account_ids = holdings_account_ids(context.as_ref(), &resolved.account_ids)?;
+    if account_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let start = Some(today - chrono::Duration::days(range.anchor_days()));
+    let daily = if account_ids.len() == 1 {
+        context
+            .valuation_service()
+            .get_historical_valuations(&account_ids[0], start, Some(today))
+    } else {
+        context
+            .valuation_service()
+            .get_historical_valuation_totals_for_accounts(
+                &resolved.scope_id,
+                &account_ids,
+                &resolved.base_currency,
+                start,
+                Some(today),
+            )
+    }
+    .map_err(|e| e.to_string())?;
+
+    intraday_valuations(
+        &holdings,
+        &daily,
+        context.quote_service().as_ref(),
+        range,
+        tz,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_historical_valuations(
     state: ProfileAccess,

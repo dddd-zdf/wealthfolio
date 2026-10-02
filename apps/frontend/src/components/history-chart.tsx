@@ -1,7 +1,7 @@
 import { useHapticFeedback } from "@/hooks";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { useIsMobileViewport } from "@/hooks/use-platform";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatTime } from "@/lib/utils";
 import { AmountDisplay, useDateFormatting } from "@wealthfolio/ui";
 import { ChartConfig, ChartContainer } from "@wealthfolio/ui/components/ui/chart";
 import { useId, useMemo, useRef, useState } from "react";
@@ -91,7 +91,11 @@ const CustomTooltip = ({
 
   return (
     <div className="bg-popover pointer-events-none grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
-      <p className="text-muted-foreground text-xs">{formatDate(tvPayload.date, dateFormatting)}</p>
+      <p className="text-muted-foreground text-xs">
+        {formatDate(tvPayload.date, dateFormatting)}
+        {/* Intraday points carry a time ("…T14:35:00Z"); daily ones are dates. */}
+        {tvPayload.date.includes("T") && ` ${formatTime(tvPayload.date, dateFormatting)}`}
+      </p>
 
       <div className="flex items-center justify-between space-x-2">
         <div className="flex items-center space-x-1.5">
