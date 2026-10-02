@@ -145,6 +145,14 @@ pub fn trigger_portfolio_recalc_with_asset_sync(state: Arc<AppState>, asset_ids:
     );
 }
 
+/// Whether every account with history already has a valuation for `today`.
+fn valuations_current(state: &AppState, account_ids: &[String], today: NaiveDate) -> bool {
+    match state.valuation_service.get_latest_valuations(account_ids) {
+        Ok(latest) => !latest.is_empty() && latest.iter().all(|v| v.valuation_date >= today),
+        Err(_) => false,
+    }
+}
+
 pub async fn process_portfolio_job(
     state: Arc<AppState>,
     config: PortfolioJobConfig,
@@ -188,6 +196,7 @@ pub async fn process_portfolio_job(
     let quote_reconciliation_account_ids: Vec<String> =
         accounts_for_scope.iter().map(|a| a.id.clone()).collect();
 
+    let mut prices_unchanged = false;
     // Only perform market sync if the mode requires it
     if config.market_sync_mode.requires_sync() {
         if let Err(e) = reconcile_quote_sync_from_latest_account_snapshots(
@@ -220,6 +229,7 @@ pub async fn process_portfolio_job(
 
         match sync_result {
             Ok(result) => {
+                prices_unchanged = result.quotes_synced == 0;
                 let skipped_reasons: Vec<(String, String)> = result
                     .skipped_reasons
                     .into_iter()
@@ -254,6 +264,18 @@ pub async fn process_portfolio_job(
     }
 
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
+
+    // Every app open syncs prices. When none moved and today's valuation is
+    // already stored, an incremental rebuild would reproduce the same rows.
+    if prices_unchanged
+        && matches!(snapshot_mode, SnapshotRecalcMode::IncrementalFromLast)
+        && matches!(valuation_mode, ValuationRecalcMode::IncrementalFromLast)
+        && valuations_current(&state, &account_ids, today)
+    {
+        tracing::info!("No price changes; skipping portfolio recalculation");
+        event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+        return Ok(());
+    }
 
     if !account_ids.is_empty() {
         let ids_slice = account_ids.as_slice();
