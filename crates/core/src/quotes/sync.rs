@@ -1004,6 +1004,17 @@ where
                 let quotes_count = quotes.len();
 
                 if quotes_count > 0 {
+                    // Count only new or changed closes, so callers can tell a
+                    // sync that moved prices from one that refetched the same data.
+                    let stored: HashMap<String, Decimal> = self
+                        .quote_store
+                        .get_quotes_in_range(&asset.id, plan.start_date, plan.end_date)
+                        .map(|existing| existing.into_iter().map(|q| (q.id, q.close)).collect())
+                        .unwrap_or_default();
+                    let quotes_changed = quotes
+                        .iter()
+                        .filter(|q| stored.get(&q.id) != Some(&q.close))
+                        .count();
                     // Preserve history on every refresh. An owned write retains the guard
                     // even if the caller is cancelled after enqueueing the SQLite operation.
                     let store = self.quote_store.clone();
@@ -1054,7 +1065,7 @@ where
 
                             AssetSyncResult {
                                 asset_id,
-                                quotes_added: quotes_count,
+                                quotes_added: quotes_changed,
                                 status: SyncStatus::Success,
                                 error: None,
                                 skip_reason: None,
