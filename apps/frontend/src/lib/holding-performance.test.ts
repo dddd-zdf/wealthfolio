@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   getBaseHoldingPerformancePercent,
   getBaseHoldingPerformancePercentForMode,
+  summarizeDayChange,
 } from "./holding-performance";
 
 describe("getBaseHoldingPerformancePercent", () => {
@@ -82,5 +83,32 @@ describe("getBaseHoldingPerformancePercentForMode", () => {
     };
 
     expect(getBaseHoldingPerformancePercentForMode(holding, "pnl")).toBe(0.1);
+  });
+});
+
+describe("summarizeDayChange", () => {
+  it("sums each holding's last-session move against the value before it", () => {
+    // Over a weekend each holding still carries its last trading day's move.
+    const holdings = [
+      { dayChange: { local: 100, base: 100 } },
+      { dayChange: { local: -50, base: -40 } },
+      { dayChange: null }, // e.g. cash or a manual asset
+    ];
+
+    const summary = summarizeDayChange(holdings, 10060);
+
+    expect(summary?.amount).toBe(60);
+    expect(summary?.percent).toBeCloseTo(60 / 10000);
+  });
+
+  it("is unavailable when no holding has a day change", () => {
+    expect(summarizeDayChange([{ dayChange: null }, {}], 5000)).toBeNull();
+  });
+
+  it("has no percent when the prior value is not positive", () => {
+    expect(summarizeDayChange([{ dayChange: { local: 10, base: 10 } }], 10)).toEqual({
+      amount: 10,
+      percent: null,
+    });
   });
 });

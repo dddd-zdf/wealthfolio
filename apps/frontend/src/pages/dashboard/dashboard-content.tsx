@@ -7,6 +7,7 @@ import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
+import { summarizeDayChange } from "@/lib/holding-performance";
 import {
   performanceMoneyWeightedReturn,
   performancePeriodPnl,
@@ -29,6 +30,8 @@ import SavingGoals from "./goals";
 import TopHoldings from "./top-holdings";
 
 const DEFAULT_INTERVAL: UITimePeriod = "3M";
+// Regular North American session (9:30-16:00 ET); bars exclude extended hours.
+const REGULAR_SESSION_MS = 6.5 * 60 * 60 * 1000;
 const INTERVAL_STORAGE_KEY = "dashboard-interval";
 
 function getDashboardChartMinDomainSpanRatio(period: UITimePeriod): number {
@@ -84,6 +87,9 @@ export function DashboardContent() {
     [selectedInterval, todayISO],
   );
   const isAllTime = selectedInterval === "ALL";
+  // 1D sums each holding's last-session move instead of comparing stored daily
+  // totals, which stay flat over weekends and holidays.
+  const isDayChange = selectedInterval === "1D";
 
   const { holdings: allHoldings, isLoading: isHoldingsLoading } = useHoldings({ type: "all" });
   const {
@@ -129,15 +135,28 @@ export function DashboardContent() {
         filter: { type: "all" },
         profile: "dashboard",
       }),
-    enabled: datesReady,
+    enabled: datesReady && !isDayChange,
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
     retry: 1,
   });
 
-  const gainLossAmount = performancePeriodPnl(portfolioPerformance);
-  const simpleReturn = performanceSummaryReturn(portfolioPerformance);
-  const moneyWeightedReturn = performanceMoneyWeightedReturn(portfolioPerformance);
+  const dayChange = useMemo(
+    () => (isDayChange ? summarizeDayChange(allHoldings ?? [], totalValue) : null),
+    [isDayChange, allHoldings, totalValue],
+  );
+  const gainLossAmount = isDayChange
+    ? (dayChange?.amount ?? null)
+    : performancePeriodPnl(portfolioPerformance);
+  const simpleReturn = isDayChange
+    ? (dayChange?.percent ?? null)
+    : performanceSummaryReturn(portfolioPerformance);
+  const moneyWeightedReturn = isDayChange
+    ? null
+    : performanceMoneyWeightedReturn(portfolioPerformance);
+  const isGainLoading = isDayChange
+    ? isHoldingsLoading || isCurrentValuationLoading
+    : isPortfolioPerformanceLoading;
   const isCurrentValuationUnavailable =
     !isCurrentValuationLoading && !portfolioCurrentValuation && Boolean(currentValuationError);
   const portfolioSourceDataAsOf =
@@ -183,6 +202,17 @@ export function DashboardContent() {
     );
   }, [intradayRange, intradayPoints, totalValue, valuationHistory, baseCurrency]);
 
+  // 1D shows a single session: span all of it so a half-finished day fills half
+  // the chart instead of stretching across the full width.
+  const sessionTimeDomain = useMemo((): [number, number] | undefined => {
+    if (selectedInterval !== "1D" || !intradayPoints || intradayPoints.length < 2) {
+      return undefined;
+    }
+    const open = Date.parse(intradayPoints[0].timestamp);
+    const lastPoint = Date.parse(intradayPoints[intradayPoints.length - 1].timestamp);
+    return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
+  }, [selectedInterval, intradayPoints]);
+
   const chartMinDomainSpanRatio = useMemo(
     () => getDashboardChartMinDomainSpanRatio(selectedInterval),
     [selectedInterval],
@@ -211,7 +241,7 @@ export function DashboardContent() {
                 displayCurrency={true}
               />
               <div className="text-md flex min-h-5 items-center space-x-3">
-                {isPortfolioPerformanceLoading ? (
+                {isGainLoading ? (
                   <div className="flex items-center gap-3">
                     <Skeleton className="h-4 w-24" />
                     <div className="border-secondary my-1 border-r pr-2" />
@@ -285,6 +315,7 @@ export function DashboardContent() {
             scaleMode="fit-visible"
             minDomainSpanRatio={chartMinDomainSpanRatio}
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
+            timeDomain={sessionTimeDomain}
           />
           {valuationHistory && chartData.length > 0 && (
             <div className="flex w-full justify-center">
@@ -305,6 +336,7 @@ export function DashboardContent() {
               <AccountsSummary
                 dateRange={dateRange}
                 isAllTime={isAllTime}
+                isDayChange={isDayChange}
                 currentAccountValuations={portfolioCurrentValuation?.accounts}
                 isLoadingCurrentValuations={isCurrentValuationLoading}
               />

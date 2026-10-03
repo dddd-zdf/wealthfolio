@@ -40,7 +40,14 @@ interface HistoryChartProps {
   netContributionMaxDomainSpanRatio?: number;
   /** Keeps narrow ranges from zooming too aggressively. Ratio is relative to the visible center. */
   minDomainSpanRatio?: number;
+  /**
+   * Places points by time across this [start, end] span (epoch ms) instead of
+   * spacing them evenly, so a partial span leaves the rest of the axis empty.
+   */
+  timeDomain?: [number, number];
 }
+
+const timeOf = (item: HistoryChartData) => Date.parse(item.date);
 
 interface TooltipEntry {
   dataKey?: string | number;
@@ -143,6 +150,7 @@ export function HistoryChart({
   scaleMode,
   netContributionMaxDomainSpanRatio,
   minDomainSpanRatio,
+  timeDomain,
 }: HistoryChartProps) {
   const { t } = useTranslation();
   const { triggerHaptic } = useHapticFeedback();
@@ -361,7 +369,11 @@ export function HistoryChart({
             />
           )}
         />
-        <XAxis hide dataKey="date" type="category" />
+        {timeDomain ? (
+          <XAxis hide dataKey={timeOf} type="number" scale="time" domain={timeDomain} />
+        ) : (
+          <XAxis hide dataKey="date" type="category" />
+        )}
         <YAxis
           hide
           type="number"
@@ -414,7 +426,7 @@ export function HistoryChart({
           ))}
         {singleDataPoint && (
           <ReferenceDot
-            x={singleDataPoint.date}
+            x={timeDomain ? timeOf(singleDataPoint) : singleDataPoint.date}
             y={singleDataPoint.totalValue}
             r={4}
             fill={singleDataPoint.totalValue >= 0 ? "var(--success)" : "var(--destructive)"}
