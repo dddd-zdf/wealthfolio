@@ -22,6 +22,7 @@ import { AccountsSummary } from "./accounts-summary";
 
 vi.mock("@/adapters", () => ({
   calculatePerformanceSummaries: vi.fn(),
+  getHoldingsList: vi.fn(),
   performanceSummaryScopeKey: (accountIds: string[]) =>
     `accounts:${[...new Set(accountIds)].sort().join(",")}`,
 }));
@@ -42,9 +43,23 @@ vi.mock("@/lib/settings-provider", () => ({
   useSettingsContext: vi.fn(),
 }));
 
+const queryMocks = vi.hoisted(() => ({
+  holdingsByScope: [] as ({ dayChange: { local: number; base: number } | null }[] | undefined)[],
+}));
+
 vi.mock("@tanstack/react-query", () => ({
   keepPreviousData: Symbol("keepPreviousData"),
   useQuery: vi.fn(),
+  useQueries: ({
+    queries,
+    combine,
+  }: {
+    queries: unknown[];
+    combine: (results: { data?: unknown; isLoading: boolean }[]) => unknown;
+  }) =>
+    combine(
+      queries.map((_, index) => ({ data: queryMocks.holdingsByScope[index], isLoading: false })),
+    ),
 }));
 
 vi.mock("@wealthfolio/ui", () => ({
@@ -270,6 +285,7 @@ function renderAccountsSummary({
   performanceByAccountId = {},
   performanceByScopeKey = {},
   isPerformanceLoading = false,
+  isDayChange = false,
 }: {
   accounts: Account[];
   valuations: AccountValuation[];
@@ -277,6 +293,7 @@ function renderAccountsSummary({
   performanceByAccountId?: Record<string, PerformanceFixture>;
   performanceByScopeKey?: Record<string, PerformanceFixture>;
   isPerformanceLoading?: boolean;
+  isDayChange?: boolean;
 }) {
   mockUseSettingsContext.mockReturnValue({
     settings: mockSettings,
@@ -372,7 +389,7 @@ function renderAccountsSummary({
 
   return render(
     <MemoryRouter>
-      <AccountsSummary />
+      <AccountsSummary isDayChange={isDayChange} />
     </MemoryRouter>,
   );
 }
@@ -392,6 +409,27 @@ function getLastPerformanceQueryPlaceholderData(): unknown {
 describe("AccountsSummary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    queryMocks.holdingsByScope = [];
+  });
+
+  it("shows each row's summed holding day changes on 1D", () => {
+    queryMocks.holdingsByScope = [[{ dayChange: { local: 20, base: 20 } }, { dayChange: null }]];
+
+    renderAccountsSummary({
+      accounts: [createAccount({ id: "brokerage", name: "Brokerage" })],
+      valuations: [
+        createValuation({ accountId: "brokerage", totalValue: 1020, totalValueBase: 1020 }),
+      ],
+      // A weekend period summary is flat; 1D must not use it.
+      performanceByAccountId: { brokerage: { pnl: 0, returnValue: 0 } },
+      isDayChange: true,
+    });
+
+    const row = screen.getByText("Brokerage").closest("a") as HTMLElement;
+    expect(within(row).getByText("gain-amount:USD:true:20")).toBeInTheDocument();
+    expect(within(row).getByText("gain-percent:0.02")).toBeInTheDocument();
+    const lastCall = mockUseQuery.mock.calls[mockUseQuery.mock.calls.length - 1];
+    expect((lastCall?.[0] as { enabled?: boolean }).enabled).toBe(false);
   });
 
   it("requests performance for visible grouped dashboard rows only", async () => {

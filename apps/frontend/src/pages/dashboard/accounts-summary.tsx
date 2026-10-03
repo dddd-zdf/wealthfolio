@@ -1,20 +1,27 @@
 "use client";
 
-import { calculatePerformanceSummaries, performanceSummaryScopeKey } from "@/adapters";
+import {
+  calculatePerformanceSummaries,
+  getHoldingsList,
+  performanceSummaryScopeKey,
+} from "@/adapters";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
 import { AccountPurpose } from "@/lib/constants";
+import { summarizeDayChange } from "@/lib/holding-performance";
 import { performanceSummaryReturn, performancePeriodPnl } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type {
   Account,
+  AccountScope,
   CurrentAccountValuation,
   DateRange,
+  Holding,
   PerformanceSummaryScope,
   TrackingMode,
 } from "@/lib/types";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
 import { GainAmount, GainPercent, PrivacyAmount } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
@@ -43,6 +50,19 @@ interface AccountSummaryDisplayData {
   accountCount?: number;
   accounts?: AccountSummaryDisplayData[];
   displayInAccountCurrency?: boolean;
+}
+
+interface PeriodGain {
+  amount: number | null;
+  percent: number | null;
+}
+
+// Module-level so useQueries keeps the combined result stable between renders.
+function combineDayChangeHoldings(results: { data?: Holding[]; isLoading: boolean }[]) {
+  return {
+    data: results.map((result) => result.data),
+    isLoading: results.some((result) => result.isLoading),
+  };
 }
 
 function addPerformanceScope(
@@ -368,11 +388,14 @@ export const AccountsSummary = React.memo(
   ({
     dateRange,
     isAllTime,
+    isDayChange = false,
     currentAccountValuations: currentAccountValuationsProp,
     isLoadingCurrentValuations: isLoadingCurrentValuationsProp,
   }: {
     dateRange?: DateRange;
     isAllTime?: boolean;
+    /** 1D: sum each holding's last-session move instead of period performance. */
+    isDayChange?: boolean;
     currentAccountValuations?: CurrentAccountValuation[];
     isLoadingCurrentValuations?: boolean;
   }) => {
@@ -415,7 +438,7 @@ export const AccountsSummary = React.memo(
 
     const {
       data: performanceSummaries,
-      isLoading: isLoadingPerformanceQueries,
+      isLoading: isLoadingPerformanceSummaries,
       isError: isPerformanceError,
       error: performanceError,
     } = useQuery({
@@ -428,11 +451,61 @@ export const AccountsSummary = React.memo(
       ],
       queryFn: () =>
         calculatePerformanceSummaries(performanceScopes, startDate, endDate, "dashboard"),
-      enabled: shouldFetchPerformance,
+      enabled: shouldFetchPerformance && !isDayChange,
       placeholderData: keepPreviousData,
       staleTime: 30 * 1000,
       retry: 1,
     });
+
+    const dayChangeHoldings = useQueries({
+      queries: (isDayChange ? performanceScopes : []).map((scope) => {
+        const filter: AccountScope = { type: "accounts", accountIds: scope.accountIds };
+        return {
+          queryKey: [QueryKeys.HOLDINGS, filter, { includeClosed: false }],
+          queryFn: () => getHoldingsList(filter),
+        };
+      }),
+      combine: combineDayChangeHoldings,
+    });
+    const isLoadingPerformanceQueries = isDayChange
+      ? dayChangeHoldings.isLoading
+      : isLoadingPerformanceSummaries;
+
+    const periodGains = useMemo((): Record<string, PeriodGain> => {
+      const gains: Record<string, PeriodGain> = {};
+      if (!isDayChange) {
+        for (const [key, perf] of Object.entries(performanceSummaries ?? {})) {
+          gains[key] = {
+            amount: performancePeriodPnl(perf),
+            percent: performanceSummaryReturn(perf),
+          };
+        }
+        return gains;
+      }
+      const totals = new Map(
+        (currentAccountValuations ?? []).map((valuation) => [
+          valuation.accountId,
+          valuation.totalValueBase,
+        ]),
+      );
+      performanceScopes.forEach((scope, index) => {
+        const holdings = dayChangeHoldings.data[index];
+        if (!holdings) return;
+        const totalValueBase = scope.accountIds.reduce((sum, id) => sum + (totals.get(id) ?? 0), 0);
+        const dayChange = summarizeDayChange(holdings, totalValueBase);
+        gains[performanceSummaryScopeKey(scope.accountIds)] = {
+          amount: dayChange?.amount ?? null,
+          percent: dayChange?.percent ?? null,
+        };
+      });
+      return gains;
+    }, [
+      isDayChange,
+      performanceSummaries,
+      currentAccountValuations,
+      performanceScopes,
+      dayChangeHoldings.data,
+    ]);
 
     const combinedAccountViews = useMemo((): AccountSummaryDisplayData[] => {
       if (!accounts || accounts.length === 0) return [];
@@ -462,12 +535,12 @@ export const AccountsSummary = React.memo(
           };
         }
 
-        const perf = performanceSummaries?.[performanceSummaryScopeKey([acc.id])];
+        const gain = periodGains[performanceSummaryScopeKey([acc.id])];
         const totalValueAccountCurrency = valuation.totalValue;
         const totalValueBaseCurrency = valuation.totalValueBase;
 
-        const gainLossBaseCurrency = performancePeriodPnl(perf);
-        const gainPercent = performanceSummaryReturn(perf);
+        const gainLossBaseCurrency = gain?.amount ?? null;
+        const gainPercent = gain?.percent ?? null;
 
         return {
           accountName: acc.name,
@@ -492,7 +565,7 @@ export const AccountsSummary = React.memo(
           isGroup: false,
         };
       });
-    }, [accounts, currentAccountValuations, performanceSummaries, settings?.baseCurrency]);
+    }, [accounts, currentAccountValuations, periodGains, settings?.baseCurrency]);
 
     const toggleGroup = useCallback((groupName: string) => {
       setExpandedGroups((prev) => ({
@@ -579,16 +652,15 @@ export const AccountsSummary = React.memo(
             const groupAccountIds = groupAccounts
               .map((account) => account.accountId)
               .filter((id): id is string => Boolean(id));
-            const groupPerformance =
-              performanceSummaries?.[performanceSummaryScopeKey(groupAccountIds)];
+            const groupGain = periodGains[performanceSummaryScopeKey(groupAccountIds)];
 
             const totalValueBaseCurrency = groupAccounts.reduce(
               (sum, acc) => sum + Number(acc.totalValueBaseCurrency),
               0,
             );
 
-            const totalGainLossAmountBase = performancePeriodPnl(groupPerformance);
-            const groupTotalReturnPercentBase = performanceSummaryReturn(groupPerformance);
+            const totalGainLossAmountBase = groupGain?.amount ?? null;
+            const groupTotalReturnPercentBase = groupGain?.percent ?? null;
 
             actualGroups.push({
               accountName: groupName,
@@ -695,7 +767,7 @@ export const AccountsSummary = React.memo(
       isLoadingAccounts,
       isLoadingCurrentValuations,
       isLoadingPerformanceQueries,
-      performanceSummaries,
+      periodGains,
       isErrorAccounts,
       errorAccounts,
       settings?.baseCurrency,

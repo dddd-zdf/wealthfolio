@@ -6,11 +6,12 @@ import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { useSettingsContext } from "@/lib/settings-provider";
+import { QueryKeys } from "@/lib/query-keys";
 import { DashboardContent } from "./dashboard-content";
 
 const uiMocks = vi.hoisted(() => ({
   realIntervals: false,
-  intervalCode: "3M" as "3M" | "ALL",
+  intervalCode: "3M" as "1D" | "3M" | "ALL",
 }));
 
 vi.mock("@/adapters", () => ({
@@ -18,7 +19,11 @@ vi.mock("@/adapters", () => ({
 }));
 
 vi.mock("@/components/history-chart", () => ({
-  HistoryChart: () => <div>history-chart</div>,
+  HistoryChart: ({ timeDomain }: { timeDomain?: [number, number] }) => (
+    <div data-testid="history-chart" data-time-domain={JSON.stringify(timeDomain ?? null)}>
+      history-chart
+    </div>
+  ),
 }));
 
 vi.mock("@/hooks", () => ({
@@ -253,6 +258,66 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("balance:100")).not.toBeInTheDocument();
     expect(screen.getByTestId("portfolio-as-of")).toHaveTextContent("2026-06-01T12:30:00Z");
     expect(screen.getByTestId("portfolio-as-of")).not.toHaveTextContent("2026-06-01T13:00:00Z");
+  });
+
+  it("sums holdings' last-session moves for 1D instead of the flat weekend period", () => {
+    uiMocks.intervalCode = "1D";
+    mockCurrentValuation(1030);
+    mockUseHoldings.mockReturnValue({
+      holdings: [
+        { holdingType: "security", dayChange: { local: 20, base: 20 } },
+        { holdingType: "security", dayChange: { local: 10, base: 10 } },
+      ],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useHoldings>);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useValuationHistory>);
+    mockUseSettingsContext.mockReturnValue({
+      settings: { baseCurrency: "USD" },
+    } as unknown as ReturnType<typeof useSettingsContext>);
+    // Friday's session, half done: 9:30 to 12:45 ET.
+    const intradayPoints = [
+      { timestamp: "2026-10-02T13:30:00Z", totalValueBase: 1000, netContributionBase: 900 },
+      { timestamp: "2026-10-02T16:45:00Z", totalValueBase: 1030, netContributionBase: 900 },
+    ];
+    mockUseQuery.mockImplementation(
+      (options) =>
+        ({
+          isLoading: false,
+          isPending: false,
+          // The period summary for a weekend would be flat; it must not be used.
+          data:
+            (options.queryKey as unknown[])[1] === "intraday"
+              ? intradayPoints
+              : {
+                  summary: {
+                    amount: 0,
+                    amountStatus: "complete",
+                    percent: 0,
+                    percentStatus: "complete",
+                  },
+                },
+        }) as unknown as ReturnType<typeof useQuery>,
+    );
+
+    render(<DashboardContent />);
+
+    expect(screen.getByText("gain-amount:30")).toBeInTheDocument();
+    expect(screen.getByText("gain-percent:0.03")).toBeInTheDocument();
+    const performanceQuery = mockUseQuery.mock.calls.find(
+      ([options]) => (options.queryKey as unknown[])[0] === QueryKeys.PERFORMANCE_SUMMARY,
+    );
+    expect(performanceQuery?.[0].enabled).toBe(false);
+    // The axis spans the full 6.5-hour session, so the line stops halfway.
+    const open = Date.parse("2026-10-02T13:30:00Z");
+    expect(screen.getByTestId("history-chart")).toHaveAttribute(
+      "data-time-domain",
+      JSON.stringify([open, open + 6.5 * 60 * 60 * 1000]),
+    );
   });
 
   it("requests all-time valuation history without the 1970 sentinel range", () => {
