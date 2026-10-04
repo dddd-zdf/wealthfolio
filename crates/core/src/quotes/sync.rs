@@ -1006,12 +1006,19 @@ where
                 if quotes_count > 0 {
                     // Count only new or changed closes, so callers can tell a
                     // sync that moved prices from one that refetched the same data.
+                    // Providers can return days outside the plan (FX has weekend
+                    // bars), so compare over the days actually fetched.
+                    let first_day = quotes[0].timestamp.date_naive().min(plan.start_date);
+                    let last_day = quotes[quotes_count - 1]
+                        .timestamp
+                        .date_naive()
+                        .max(plan.end_date);
                     let quotes_changed = count_changed_quotes(&quotes, |source| {
                         self.quote_store
                             .range(
                                 &asset_id,
-                                Day::new(plan.start_date),
-                                Day::new(plan.end_date),
+                                Day::new(first_day),
+                                Day::new(last_day),
                                 Some(source),
                             )
                             .unwrap_or_default()
