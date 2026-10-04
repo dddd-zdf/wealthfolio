@@ -39,7 +39,7 @@ use super::sync_state::{
     calculate_sync_window, determine_sync_category, QuoteSyncState, SymbolSyncPlan, SyncCategory,
     SyncMode, SyncPlanningInputs, SyncStateStore,
 };
-use super::types::{AssetId, Day, ProviderId};
+use super::types::{AssetId, Day, ProviderId, QuoteSource};
 use crate::activities::{ActivityRepositoryTrait, ActivityUpsert};
 use crate::assets::{Asset, AssetKind, AssetRepositoryTrait, InstrumentType, QuoteMode};
 use crate::errors::Error;
@@ -1006,15 +1006,35 @@ where
                 if quotes_count > 0 {
                     // Count only new or changed closes, so callers can tell a
                     // sync that moved prices from one that refetched the same data.
-                    let stored: HashMap<String, Decimal> = self
-                        .quote_store
-                        .get_quotes_in_range(&asset.id, plan.start_date, plan.end_date)
-                        .map(|existing| existing.into_iter().map(|q| (q.id, q.close)).collect())
-                        .unwrap_or_default();
-                    let quotes_changed = quotes
-                        .iter()
-                        .filter(|q| stored.get(&q.id) != Some(&q.close))
-                        .count();
+                    // Providers can return days outside the plan (FX has weekend
+                    // bars), so compare over the days actually fetched.
+                    let first_day = quotes[0].timestamp.date_naive().min(plan.start_date);
+                    let last_day = quotes[quotes_count - 1]
+                        .timestamp
+                        .date_naive()
+                        .max(plan.end_date);
+                    let quotes_changed = count_changed_quotes(&quotes, |source| {
+                        self.quote_store
+                            .range(
+                                &asset_id,
+                                Day::new(first_day),
+                                Day::new(last_day),
+                                Some(source),
+                            )
+                            .unwrap_or_default()
+                    });
+                    if quotes_changed > 0 {
+                        // Any change makes the portfolio job recalculate, so name the asset.
+                        info!(
+                            "{} new or changed closes for {} (plan {}..{}, fetched {}..{})",
+                            quotes_changed,
+                            asset.id,
+                            plan.start_date,
+                            plan.end_date,
+                            quotes[0].timestamp.date_naive(),
+                            quotes[quotes_count - 1].timestamp.date_naive(),
+                        );
+                    }
                     // Preserve history on every refresh. An owned write retains the guard
                     // even if the caller is cancelled after enqueueing the SQLite operation.
                     let store = self.quote_store.clone();
@@ -1894,6 +1914,111 @@ where
 // =============================================================================
 // Tests
 // =============================================================================
+
+/// Counts fetched quotes (sorted by time) whose close differs from the stored
+/// row with the same id, or, for a new day, from the previous day's close.
+/// Stored rows are loaded per source: an unfiltered range keeps one quote per
+/// day, so a day another source also covers (such as a second exchange
+/// listing) would hide this provider's row and count it as changed on every
+/// sync. A new day at the previous close (a weekend FX bar) only carries the
+/// value forward, which valuations already do.
+fn count_changed_quotes(
+    fetched: &[Quote],
+    load_stored: impl Fn(&QuoteSource) -> Vec<Quote>,
+) -> usize {
+    let mut stored: HashMap<String, Decimal> = HashMap::new();
+    let sources: HashSet<&str> = fetched.iter().map(|q| q.data_source.as_str()).collect();
+    for source in sources {
+        let source = QuoteSource::from_storage_string(source);
+        stored.extend(load_stored(&source).into_iter().map(|q| (q.id, q.close)));
+    }
+    let mut previous: HashMap<&str, Decimal> = HashMap::new();
+    let mut changed = 0;
+    for quote in fetched {
+        let reference = match stored.get(&quote.id) {
+            Some(close) => Some(close),
+            None => previous.get(quote.data_source.as_str()),
+        };
+        if reference != Some(&quote.close) {
+            changed += 1;
+        }
+        previous.insert(quote.data_source.as_str(), quote.close);
+    }
+    changed
+}
+
+#[cfg(test)]
+mod changed_quote_tests {
+    use super::*;
+    use rust_decimal_macros::dec;
+
+    fn quote(source: &str, day: u32, close: Decimal) -> Quote {
+        let ts = Utc.with_ymd_and_hms(2025, 10, day, 20, 0, 0).unwrap();
+        Quote {
+            id: format!("aep_2025-10-{day:02}_{source}"),
+            asset_id: "aep".to_string(),
+            timestamp: ts,
+            open: close,
+            high: close,
+            low: close,
+            close,
+            adjclose: close,
+            volume: Decimal::ZERO,
+            currency: "USD".to_string(),
+            data_source: source.to_string(),
+            created_at: ts,
+            notes: None,
+        }
+    }
+
+    /// Stored rows filtered by source, as `QuoteStore::range` does with a source.
+    fn loader(stored: Vec<Quote>) -> impl Fn(&QuoteSource) -> Vec<Quote> {
+        move |source| {
+            stored
+                .iter()
+                .filter(|q| QuoteSource::from_storage_string(&q.data_source) == *source)
+                .cloned()
+                .collect()
+        }
+    }
+
+    #[test]
+    fn refetched_closes_shadowed_by_another_source_are_unchanged() {
+        // A second listing (Frankfurt) has quotes on the same days as Yahoo.
+        let stored = vec![
+            quote("YAHOO", 6, dec!(81)),
+            quote("BOERSE_FRANKFURT", 6, dec!(97.8)),
+            quote("YAHOO", 7, dec!(81.85)),
+            quote("BOERSE_FRANKFURT", 7, dec!(102)),
+        ];
+        let fetched = vec![quote("YAHOO", 6, dec!(81)), quote("YAHOO", 7, dec!(81.85))];
+
+        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
+    }
+
+    #[test]
+    fn a_new_day_at_the_previous_close_is_unchanged() {
+        // Saturday's FX bar repeated as Sunday's once the UTC day rolls over.
+        let stored = vec![quote("YAHOO", 3, dec!(0.7019))];
+        let fetched = vec![
+            quote("YAHOO", 3, dec!(0.7019)),
+            quote("YAHOO", 4, dec!(0.7019)),
+        ];
+
+        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
+    }
+
+    #[test]
+    fn new_or_moved_closes_are_counted() {
+        let stored = vec![quote("YAHOO", 6, dec!(81))];
+        let fetched = vec![
+            quote("YAHOO", 6, dec!(81.5)), // moved
+            quote("YAHOO", 7, dec!(82)),   // new day
+        ];
+
+        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 2);
+    }
+}
 
 #[cfg(test)]
 mod tests {
