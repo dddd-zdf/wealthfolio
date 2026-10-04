@@ -601,6 +601,18 @@ export default function SpendingTabContent() {
   const deltaPct = priorSpending > 0 ? delta / priorSpending : 0;
   const priorIsMeaningful = priorSpending >= Math.max(100, totalSpending * 0.02);
   const displayDeltaPct = priorIsMeaningful ? deltaPct : null;
+  // Average per month for ranges longer than a month, normalized by calendar
+  // length so partial months (e.g. YTD) don't skew it. Month-or-shorter
+  // selections are already monthly, so they skip it.
+  const monthlyAvgSpending = useMemo(() => {
+    if (!dateRange?.from || !dateRange?.to) return null;
+    const days = calendarDaysBetweenInclusive(
+      localDateParts(dateRange.from),
+      localDateParts(dateRange.to),
+    );
+    if (days <= 31) return null;
+    return totalSpending / (days / (365.25 / 12));
+  }, [dateRange, totalSpending]);
   const maxPickerMonth = useMemo(
     () => addMonthsToMonthKey(currentBudgetMonthKey, -1),
     [currentBudgetMonthKey],
@@ -978,12 +990,20 @@ export default function SpendingTabContent() {
                 </>
               )}
             </div>
-            <Balance
-              isLoading={isLoading}
-              targetValue={totalSpending}
-              currency={currency}
-              displayCurrency={true}
-            />
+            <div className="flex flex-wrap items-baseline gap-x-3">
+              <Balance
+                isLoading={isLoading}
+                targetValue={totalSpending}
+                currency={currency}
+                displayCurrency={true}
+              />
+              {!isLoading && monthlyAvgSpending !== null && (
+                <span className="text-muted-foreground text-sm tabular-nums">
+                  <PrivacyAmount value={monthlyAvgSpending} currency={currency} />{" "}
+                  {t("spending:tabContent.monthlyAvg")}
+                </span>
+              )}
+            </div>
             <div className="text-md flex items-center">
               {isPriorLoading ? (
                 <Skeleton className="mt-1 h-4 w-56" />
