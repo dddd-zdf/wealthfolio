@@ -210,18 +210,24 @@ pub fn start_background_workers(state: Arc<AppState>) {
 
 /// Every 5 minutes while North American markets are open (weekdays
 /// 9:30-16:00 New York time, plus a few minutes for closing prices), hourly
-/// otherwise. Off-hours runs find no price changes and skip the recalculation.
+/// otherwise, cut short so the first run of the day lands at the open.
+/// Off-hours runs find no price changes and skip the recalculation.
 fn background_update_interval(now: chrono::DateTime<chrono::Utc>) -> std::time::Duration {
     use chrono::{Datelike, Timelike, Weekday};
 
     let Ok(new_york) = parse_user_timezone("America/New_York") else {
         return std::time::Duration::from_secs(3600);
     };
+    const OPEN_SECS: u32 = 9 * 3600 + 30 * 60;
+    const CLOSE_SECS: u32 = 16 * 3600 + 15 * 60;
+
     let local = now.with_timezone(&new_york);
-    let minutes = local.hour() * 60 + local.minute();
+    let secs = local.num_seconds_from_midnight();
     let weekday = !matches!(local.weekday(), Weekday::Sat | Weekday::Sun);
-    if weekday && (9 * 60 + 30..16 * 60 + 15).contains(&minutes) {
+    if weekday && (OPEN_SECS..CLOSE_SECS).contains(&secs) {
         std::time::Duration::from_secs(5 * 60)
+    } else if weekday && secs < OPEN_SECS {
+        std::time::Duration::from_secs(u64::from((OPEN_SECS - secs).min(3600)))
     } else {
         std::time::Duration::from_secs(3600)
     }
@@ -277,10 +283,19 @@ mod background_update_tests {
     }
 
     #[test]
+    fn the_last_wait_before_the_open_ends_at_the_open() {
+        // Mon 2026-10-05 09:20 New York: next run at 09:30, not 10:20.
+        assert_eq!(
+            background_update_interval(utc(2026, 10, 5, 13, 20)),
+            std::time::Duration::from_secs(600)
+        );
+    }
+
+    #[test]
     fn updates_hourly_outside_market_hours() {
-        // Fri 09:00 New York (before the open), Sat noon, Fri 17:00.
+        // Fri 08:00 New York (over an hour before the open), Sat noon, Fri 17:00.
         for now in [
-            utc(2026, 10, 2, 13, 0),
+            utc(2026, 10, 2, 12, 0),
             utc(2026, 10, 3, 16, 0),
             utc(2026, 10, 2, 21, 0),
         ] {
