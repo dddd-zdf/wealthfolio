@@ -309,20 +309,25 @@ impl WebProfiles {
     pub fn start_connected_profiles(self: &Arc<Self>) {
         let root = self.clone();
         tokio::spawn(async move {
+            // The unlocked default profile also starts at boot, so its
+            // background price updates run without waiting for a visit.
+            let default_id = root.registry.default_id().ok();
             if let Ok(profiles) = root.registry.list() {
                 for profile in profiles {
-                    if root
-                        .registry
-                        .profile(profile.id)
-                        .ok()
-                        .and_then(|p| {
-                            root.registry
-                                .secret_store(&p)
-                                .get_secret(wealthfolio_core::secrets::CLOUD_REFRESH_TOKEN_KEY)
-                                .ok()
-                                .flatten()
-                        })
-                        .is_some()
+                    let unlocked_default = Some(profile.id) == default_id && !profile.lock_enabled;
+                    if unlocked_default
+                        || root
+                            .registry
+                            .profile(profile.id)
+                            .ok()
+                            .and_then(|p| {
+                                root.registry
+                                    .secret_store(&p)
+                                    .get_secret(wealthfolio_core::secrets::CLOUD_REFRESH_TOKEN_KEY)
+                                    .ok()
+                                    .flatten()
+                            })
+                            .is_some()
                     {
                         if let Err((status, _)) = root.runtime(profile.id).await {
                             tracing::warn!(%status, "Profile sync startup deferred");
