@@ -157,7 +157,38 @@ pub async fn process_portfolio_job(
     state: Arc<AppState>,
     config: PortfolioJobConfig,
 ) -> ApiResult<()> {
+    run_portfolio_job(state, config, false).await
+}
+
+/// Runs a scheduled portfolio job. Its progress events carry `background: true`
+/// so clients refresh their data without showing progress notifications.
+pub async fn process_background_portfolio_job(
+    state: Arc<AppState>,
+    config: PortfolioJobConfig,
+) -> ApiResult<()> {
+    run_portfolio_job(state, config, true).await
+}
+
+async fn run_portfolio_job(
+    state: Arc<AppState>,
+    config: PortfolioJobConfig,
+    background: bool,
+) -> ApiResult<()> {
     let event_bus = state.event_bus.clone();
+    let progress_event = |name: &'static str| {
+        if background {
+            ServerEvent::with_payload(name, json!({ "background": true }))
+        } else {
+            ServerEvent::new(name)
+        }
+    };
+    // Background failures are logged and surface on the Health page; pushing
+    // them to clients would pop up errors the user didn't start.
+    let publish_error = |event: ServerEvent| {
+        if !background {
+            event_bus.publish(event);
+        }
+    };
     let today = user_today(parse_user_timezone_or_default(
         &state.timezone.read().unwrap(),
     ));
@@ -181,7 +212,7 @@ pub async fn process_portfolio_job(
         .get_non_archived_accounts()
         .map_err(|err| {
             let err_msg = format!("Failed to list non-archived accounts: {}", err);
-            event_bus.publish(ServerEvent::with_payload(
+            publish_error(ServerEvent::with_payload(
                 PORTFOLIO_UPDATE_ERROR,
                 json!(err_msg),
             ));
@@ -212,7 +243,7 @@ pub async fn process_portfolio_job(
             );
         }
 
-        event_bus.publish(ServerEvent::new(MARKET_SYNC_START));
+        event_bus.publish(progress_event(MARKET_SYNC_START));
 
         let sync_start = std::time::Instant::now();
         let asset_ids = config.market_sync_mode.asset_ids().cloned();
@@ -235,14 +266,15 @@ pub async fn process_portfolio_job(
                     .into_iter()
                     .map(|(asset_id, reason)| (asset_id, reason.to_string()))
                     .collect();
-                event_bus.publish(ServerEvent::with_payload(
-                    MARKET_SYNC_COMPLETE,
-                    json!(MarketSyncResult {
-                        failed_syncs: result.failures,
-                        skipped_reasons,
-                        show_skipped_reasons: false,
-                    }),
-                ));
+                let mut payload = json!(MarketSyncResult {
+                    failed_syncs: result.failures,
+                    skipped_reasons,
+                    show_skipped_reasons: false,
+                });
+                if background {
+                    payload["background"] = json!(true);
+                }
+                event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_COMPLETE, payload));
                 tracing::info!("Market data sync completed in {:?}", sync_start.elapsed());
                 state.health_service.clear_cache().await;
                 // FX rates are quotes too; reload them only when some moved.
@@ -258,7 +290,7 @@ pub async fn process_portfolio_job(
             Err(err) => {
                 let err_msg = err.to_string();
                 tracing::error!("Market data sync failed: {}", err_msg);
-                event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
+                publish_error(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
                 return Err(crate::error::ApiError::Anyhow(anyhow!(err_msg)));
             }
         }
@@ -266,7 +298,7 @@ pub async fn process_portfolio_job(
         tracing::debug!("Skipping market sync (MarketSyncMode::None)");
     }
 
-    event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
+    event_bus.publish(progress_event(PORTFOLIO_UPDATE_START));
 
     // Every app open syncs prices. When none moved and today's valuation is
     // already stored, an incremental rebuild would reproduce the same rows.
@@ -276,7 +308,7 @@ pub async fn process_portfolio_job(
         && valuations_current(&state, &account_ids, today)
     {
         tracing::info!("No price changes; skipping portfolio recalculation");
-        event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+        event_bus.publish(progress_event(PORTFOLIO_UPDATE_COMPLETE));
         return Ok(());
     }
 
@@ -292,7 +324,7 @@ pub async fn process_portfolio_job(
                 err
             );
             tracing::warn!("{}", err_msg);
-            event_bus.publish(ServerEvent::with_payload(
+            publish_error(ServerEvent::with_payload(
                 PORTFOLIO_UPDATE_ERROR,
                 json!(err_msg),
             ));
@@ -332,7 +364,7 @@ pub async fn process_portfolio_job(
                     failure.account_id,
                     failure.message
                 );
-                event_bus.publish(ServerEvent::with_payload(
+                publish_error(ServerEvent::with_payload(
                     PORTFOLIO_UPDATE_ERROR,
                     json!(failure),
                 ));
@@ -341,7 +373,7 @@ pub async fn process_portfolio_job(
         Err(error) => {
             let message = format!("Failed to load shared valuation facts: {}", error);
             tracing::warn!("{}", message);
-            event_bus.publish(ServerEvent::with_payload(
+            publish_error(ServerEvent::with_payload(
                 PORTFOLIO_UPDATE_ERROR,
                 json!(message),
             ));
@@ -349,6 +381,6 @@ pub async fn process_portfolio_job(
     }
 
     crate::perf_cache::invalidate();
-    event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
+    event_bus.publish(progress_event(PORTFOLIO_UPDATE_COMPLETE));
     Ok(())
 }

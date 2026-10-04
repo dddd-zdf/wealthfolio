@@ -306,6 +306,24 @@ impl WebProfiles {
         crate::scheduler::start_background_workers(runtime.clone());
         Ok(runtime)
     }
+    /// Starts the unlocked default profile so its background price updates
+    /// run without waiting for a first visit. Failures are left for that
+    /// visit to retry and report.
+    pub async fn start_default_profile(&self) {
+        let Ok(id) = self.registry.default_id() else {
+            return;
+        };
+        let unlocked = self
+            .registry
+            .profile(id)
+            .is_ok_and(|profile| !profile.lock_enabled);
+        if unlocked {
+            if let Err((status, _)) = self.runtime(id).await {
+                tracing::warn!(%status, "Default profile startup deferred to first request");
+            }
+        }
+    }
+
     pub fn start_connected_profiles(self: &Arc<Self>) {
         let root = self.clone();
         tokio::spawn(async move {
