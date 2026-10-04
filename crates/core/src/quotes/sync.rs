@@ -1016,6 +1016,18 @@ where
                             )
                             .unwrap_or_default()
                     });
+                    if quotes_changed > 0 {
+                        // Any change makes the portfolio job recalculate, so name the asset.
+                        info!(
+                            "{} new or changed closes for {} (plan {}..{}, fetched {}..{})",
+                            quotes_changed,
+                            asset.id,
+                            plan.start_date,
+                            plan.end_date,
+                            quotes[0].timestamp.date_naive(),
+                            quotes[quotes_count - 1].timestamp.date_naive(),
+                        );
+                    }
                     // Preserve history on every refresh. An owned write retains the guard
                     // even if the caller is cancelled after enqueueing the SQLite operation.
                     let store = self.quote_store.clone();

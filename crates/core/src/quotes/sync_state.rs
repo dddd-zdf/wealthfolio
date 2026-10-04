@@ -207,10 +207,18 @@ pub fn determine_sync_category(
         return SyncCategory::New;
     }
 
-    // Check if needs backfill (activity date - buffer - margin before earliest quote)
+    let recently_closed = is_recently_closed(inputs, grace_period_days, today);
+
+    // Check if needs backfill (activity date - buffer - margin before earliest quote).
+    // A sold position only needs prices for the days it was held: the buffer can
+    // start on a weekend or holiday that never gets a quote, which would refetch
+    // the same window on every sync.
     if let (Some(activity_min), Some(quote_min)) = (inputs.activity_min, inputs.quote_min) {
-        let required_start =
-            activity_min - Duration::days(QUOTE_HISTORY_BUFFER_DAYS + BACKFILL_SAFETY_MARGIN_DAYS);
+        let required_start = if inputs.is_active || recently_closed {
+            activity_min - Duration::days(QUOTE_HISTORY_BUFFER_DAYS + BACKFILL_SAFETY_MARGIN_DAYS)
+        } else {
+            activity_min
+        };
         if required_start < quote_min {
             return SyncCategory::NeedsBackfill;
         }
@@ -221,23 +229,31 @@ pub fn determine_sync_category(
         return SyncCategory::Active;
     }
 
-    // Position is closed - check grace period
-    if let Some(closed_date) = inputs.position_closed_date {
-        let days_since_close = (today - closed_date).num_days();
-        if days_since_close <= grace_period_days {
-            return SyncCategory::RecentlyClosed;
-        }
-    }
-
-    // Fallback: check activity_max for recently closed without explicit closed_date
-    if let Some(activity_max) = inputs.activity_max {
-        let days_since_activity = (today - activity_max).num_days();
-        if days_since_activity <= grace_period_days {
-            return SyncCategory::RecentlyClosed;
-        }
+    if recently_closed {
+        return SyncCategory::RecentlyClosed;
     }
 
     SyncCategory::Closed
+}
+
+/// Whether a closed position is still within the grace period after its close
+/// date (or, without one, its last activity).
+fn is_recently_closed(
+    inputs: &SyncPlanningInputs,
+    grace_period_days: i64,
+    today: NaiveDate,
+) -> bool {
+    if inputs.is_active {
+        return false;
+    }
+    if let Some(closed_date) = inputs.position_closed_date {
+        if (today - closed_date).num_days() <= grace_period_days {
+            return true;
+        }
+    }
+    inputs
+        .activity_max
+        .is_some_and(|activity_max| (today - activity_max).num_days() <= grace_period_days)
 }
 
 /// Calculates the sync date window based on category and inputs.
@@ -750,6 +766,47 @@ mod tests {
     // =========================================================================
     // calculate_sync_window Tests for NeedsBackfill
     // =========================================================================
+
+    #[test]
+    fn test_sold_position_with_held_days_covered_is_closed() {
+        // Sold a year ago; quotes start the Monday after a weekend that the
+        // 52-day buffer before the first buy would require.
+        let today = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
+        let first_buy = NaiveDate::from_ymd_opt(2025, 11, 12).unwrap();
+        let quote_min = NaiveDate::from_ymd_opt(2025, 9, 22).unwrap();
+        let inputs = create_inputs(
+            false,
+            Some(NaiveDate::from_ymd_opt(2025, 11, 21).unwrap()),
+            Some(first_buy),
+            Some(NaiveDate::from_ymd_opt(2025, 11, 21).unwrap()),
+            Some(quote_min),
+            Some(NaiveDate::from_ymd_opt(2025, 12, 1).unwrap()),
+        );
+
+        assert_eq!(
+            determine_sync_category(&inputs, 30, today),
+            SyncCategory::Closed
+        );
+    }
+
+    #[test]
+    fn test_sold_position_missing_held_days_still_backfills() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 3).unwrap();
+        let first_buy = NaiveDate::from_ymd_opt(2025, 9, 1).unwrap();
+        let inputs = create_inputs(
+            false,
+            Some(NaiveDate::from_ymd_opt(2025, 11, 21).unwrap()),
+            Some(first_buy),
+            Some(NaiveDate::from_ymd_opt(2025, 11, 21).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2025, 9, 22).unwrap()),
+            Some(NaiveDate::from_ymd_opt(2025, 12, 1).unwrap()),
+        );
+
+        assert_eq!(
+            determine_sync_category(&inputs, 30, today),
+            SyncCategory::NeedsBackfill
+        );
+    }
 
     #[test]
     fn test_backfill_window_tiny_gap_expands_to_minimum() {
