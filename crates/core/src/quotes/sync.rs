@@ -1915,11 +1915,13 @@ where
 // Tests
 // =============================================================================
 
-/// Counts fetched quotes whose close is new or differs from the stored row
-/// with the same id. Stored rows are loaded per source: an unfiltered range
-/// keeps one quote per day, so a day another source also covers (such as a
-/// second exchange listing) would hide this provider's row and count it as
-/// changed on every sync.
+/// Counts fetched quotes (sorted by time) whose close differs from the stored
+/// row with the same id, or, for a new day, from the previous day's close.
+/// Stored rows are loaded per source: an unfiltered range keeps one quote per
+/// day, so a day another source also covers (such as a second exchange
+/// listing) would hide this provider's row and count it as changed on every
+/// sync. A new day at the previous close (a weekend FX bar) only carries the
+/// value forward, which valuations already do.
 fn count_changed_quotes(
     fetched: &[Quote],
     load_stored: impl Fn(&QuoteSource) -> Vec<Quote>,
@@ -1930,10 +1932,19 @@ fn count_changed_quotes(
         let source = QuoteSource::from_storage_string(source);
         stored.extend(load_stored(&source).into_iter().map(|q| (q.id, q.close)));
     }
-    fetched
-        .iter()
-        .filter(|q| stored.get(&q.id) != Some(&q.close))
-        .count()
+    let mut previous: HashMap<&str, Decimal> = HashMap::new();
+    let mut changed = 0;
+    for quote in fetched {
+        let reference = match stored.get(&quote.id) {
+            Some(close) => Some(close),
+            None => previous.get(quote.data_source.as_str()),
+        };
+        if reference != Some(&quote.close) {
+            changed += 1;
+        }
+        previous.insert(quote.data_source.as_str(), quote.close);
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -1981,6 +1992,18 @@ mod changed_quote_tests {
             quote("BOERSE_FRANKFURT", 7, dec!(102)),
         ];
         let fetched = vec![quote("YAHOO", 6, dec!(81)), quote("YAHOO", 7, dec!(81.85))];
+
+        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
+    }
+
+    #[test]
+    fn a_new_day_at_the_previous_close_is_unchanged() {
+        // Saturday's FX bar repeated as Sunday's once the UTC day rolls over.
+        let stored = vec![quote("YAHOO", 3, dec!(0.7019))];
+        let fetched = vec![
+            quote("YAHOO", 3, dec!(0.7019)),
+            quote("YAHOO", 4, dec!(0.7019)),
+        ];
 
         assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
     }
