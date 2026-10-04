@@ -46,6 +46,15 @@ interface MarketSyncCompletePayload {
   show_skipped_reasons?: boolean;
 }
 
+/** Scheduled server runs keep data fresh silently: refresh, but no notifications. */
+function isBackgroundEvent(payload: unknown): boolean {
+  return (
+    typeof payload === "object" &&
+    payload !== null &&
+    (payload as { background?: unknown }).background === true
+  );
+}
+
 function getSyncFailures(payload?: MarketSyncCompletePayload | null): [string, string][] {
   return Array.isArray(payload?.failed_syncs) ? payload.failed_syncs : [];
 }
@@ -85,7 +94,8 @@ const useGlobalEventListener = () => {
     let cleanupFn: (() => void) | undefined;
     setAreListenersReady(false);
 
-    const handleMarketSyncStart = () => {
+    const handleMarketSyncStart = (event: { payload: unknown }) => {
+      if (isBackgroundEvent(event.payload)) return;
       if (isMobileViewportRef.current && syncContextRef.current) {
         syncContextRef.current.setMarketSyncing();
       } else {
@@ -97,6 +107,8 @@ const useGlobalEventListener = () => {
     };
 
     const handleMarketSyncComplete = (event: { payload: MarketSyncCompletePayload | null }) => {
+      // Background failures show on the Health page instead.
+      if (isBackgroundEvent(event.payload)) return;
       const failed_syncs = getSyncFailures(event.payload);
       const skipped_reasons = getSyncSkips(event.payload);
 
@@ -151,7 +163,8 @@ const useGlobalEventListener = () => {
       logger.error("Market sync error: " + errorMsg);
     };
 
-    const handlePortfolioUpdateStart = () => {
+    const handlePortfolioUpdateStart = (event: { payload: unknown }) => {
+      if (isBackgroundEvent(event.payload)) return;
       if (isMobileViewportRef.current && syncContextRef.current) {
         syncContextRef.current.setPortfolioCalculating();
       } else {
@@ -221,8 +234,10 @@ const useGlobalEventListener = () => {
       logger.error("Portfolio Update Error: " + errorMessage);
     };
 
-    const handlePortfolioUpdateComplete = () => {
-      if (isMobileViewportRef.current && syncContextRef.current) {
+    const handlePortfolioUpdateComplete = (event: { payload: unknown }) => {
+      if (isBackgroundEvent(event.payload)) {
+        // Nothing was shown for it; just refresh the data below.
+      } else if (isMobileViewportRef.current && syncContextRef.current) {
         syncContextRef.current.setIdle();
       } else {
         toast.dismiss(TOAST_IDS.portfolioUpdateStart);
@@ -433,8 +448,9 @@ const useGlobalEventListener = () => {
         Array.from(POST_LOGIN_REQUIRED_LISTENERS).every((name) => readyListeners.has(name)),
       );
 
-      // Trigger initial portfolio update after listeners are set up
-      if (!hasTriggeredInitialUpdate.current) {
+      // Trigger initial portfolio update after listeners are set up. The web
+      // server keeps prices and valuations current on its own schedule.
+      if (!hasTriggeredInitialUpdate.current && isDesktopEnv) {
         hasTriggeredInitialUpdate.current = true;
         logger.debug("Triggering initial portfolio update from frontend");
 

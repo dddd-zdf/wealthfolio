@@ -1,6 +1,5 @@
-//! Background scheduler for periodic broker sync.
-//!
-//! Runs a fixed 4-hour interval sync for the Docker/Web server.
+//! Background schedulers for the Docker/Web server: periodic broker sync
+//! (fixed 4-hour interval) and price/valuation updates.
 
 use std::sync::Arc;
 
@@ -15,9 +14,15 @@ use tracing::{debug, info, warn};
 
 #[cfg(feature = "connect-sync")]
 use crate::api::connect::{has_broker_sync, perform_broker_sync};
+use crate::api::shared::{process_background_portfolio_job, PortfolioJobConfig};
 use crate::main_lib::AppState;
 #[cfg(feature = "connect-sync")]
 use wealthfolio_connect::CLOUD_REFRESH_TOKEN_KEY;
+use wealthfolio_core::{
+    portfolio::{snapshot::SnapshotRecalcMode, valuation::ValuationRecalcMode},
+    quotes::MarketSyncMode,
+    utils::time_utils::parse_user_timezone,
+};
 
 /// Sync interval: 4 hours (not user-configurable to prevent API abuse)
 #[cfg(feature = "connect-sync")]
@@ -181,17 +186,45 @@ pub fn start_background_workers(state: Arc<AppState>) {
     // Start background broker sync scheduler (4-hour interval)
     start_broker_sync_scheduler(state.clone());
 
-    // Start periodic market data sync (6h interval, 2min initial delay)
-    let quote_svc = state.quote_service.clone();
+    // Keep prices and valuations current in the background, so opening the
+    // app doesn't have to (2min initial delay).
+    let job_state = state.clone();
     let worker = tokio::spawn(async move {
-        wealthfolio_core::quotes::scheduler::run_periodic_sync(
-            quote_svc,
-            std::time::Duration::from_secs(120),
-            std::time::Duration::from_secs(6 * 3600),
-        )
-        .await;
+        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+        loop {
+            let config = PortfolioJobConfig {
+                account_ids: None,
+                market_sync_mode: MarketSyncMode::Incremental { asset_ids: None },
+                snapshot_mode: SnapshotRecalcMode::IncrementalFromLast,
+                valuation_mode: ValuationRecalcMode::IncrementalFromLast,
+                since_date: None,
+            };
+            if let Err(err) = process_background_portfolio_job(job_state.clone(), config).await {
+                tracing::error!("Background portfolio update failed: {}", err);
+            }
+            tokio::time::sleep(background_update_interval(chrono::Utc::now())).await;
+        }
     });
     state.workers.lock().unwrap().push(worker);
+}
+
+/// Every 5 minutes while North American markets are open (weekdays
+/// 9:30-16:00 New York time, plus a few minutes for closing prices), hourly
+/// otherwise. Off-hours runs find no price changes and skip the recalculation.
+fn background_update_interval(now: chrono::DateTime<chrono::Utc>) -> std::time::Duration {
+    use chrono::{Datelike, Timelike, Weekday};
+
+    let Ok(new_york) = parse_user_timezone("America/New_York") else {
+        return std::time::Duration::from_secs(3600);
+    };
+    let local = now.with_timezone(&new_york);
+    let minutes = local.hour() * 60 + local.minute();
+    let weekday = !matches!(local.weekday(), Weekday::Sat | Weekday::Sun);
+    if weekday && (9 * 60 + 30..16 * 60 + 15).contains(&minutes) {
+        std::time::Duration::from_secs(5 * 60)
+    } else {
+        std::time::Duration::from_secs(3600)
+    }
 }
 
 #[cfg(all(test, feature = "device-sync"))]
@@ -217,5 +250,44 @@ mod tests {
     fn startup_token_warmup_treats_unexpected_internal_as_warning_candidate() {
         let err = ApiError::Internal("Upstream refresh timeout".to_string());
         assert!(!is_expected_startup_token_warmup_error(&err));
+    }
+}
+
+#[cfg(test)]
+mod background_update_tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> chrono::DateTime<chrono::Utc> {
+        chrono::Utc.with_ymd_and_hms(y, m, d, h, min, 0).unwrap()
+    }
+
+    #[test]
+    fn updates_every_five_minutes_while_markets_are_open() {
+        // Fri 2026-10-02 11:00 New York (EDT, UTC-4).
+        assert_eq!(
+            background_update_interval(utc(2026, 10, 2, 15, 0)),
+            std::time::Duration::from_secs(300)
+        );
+        // 16:10 New York still catches closing prices.
+        assert_eq!(
+            background_update_interval(utc(2026, 10, 2, 20, 10)),
+            std::time::Duration::from_secs(300)
+        );
+    }
+
+    #[test]
+    fn updates_hourly_outside_market_hours() {
+        // Fri 09:00 New York (before the open), Sat noon, Fri 17:00.
+        for now in [
+            utc(2026, 10, 2, 13, 0),
+            utc(2026, 10, 3, 16, 0),
+            utc(2026, 10, 2, 21, 0),
+        ] {
+            assert_eq!(
+                background_update_interval(now),
+                std::time::Duration::from_secs(3600)
+            );
+        }
     }
 }
