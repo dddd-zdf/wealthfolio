@@ -306,28 +306,41 @@ impl WebProfiles {
         crate::scheduler::start_background_workers(runtime.clone());
         Ok(runtime)
     }
+    /// Starts the unlocked default profile so its background price updates
+    /// run without waiting for a first visit. Failures are left for that
+    /// visit to retry and report.
+    pub async fn start_default_profile(&self) {
+        let Ok(id) = self.registry.default_id() else {
+            return;
+        };
+        let unlocked = self
+            .registry
+            .profile(id)
+            .is_ok_and(|profile| !profile.lock_enabled);
+        if unlocked {
+            if let Err((status, _)) = self.runtime(id).await {
+                tracing::warn!(%status, "Default profile startup deferred to first request");
+            }
+        }
+    }
+
     pub fn start_connected_profiles(self: &Arc<Self>) {
         let root = self.clone();
         tokio::spawn(async move {
-            // The unlocked default profile also starts at boot, so its
-            // background price updates run without waiting for a visit.
-            let default_id = root.registry.default_id().ok();
             if let Ok(profiles) = root.registry.list() {
                 for profile in profiles {
-                    let unlocked_default = Some(profile.id) == default_id && !profile.lock_enabled;
-                    if unlocked_default
-                        || root
-                            .registry
-                            .profile(profile.id)
-                            .ok()
-                            .and_then(|p| {
-                                root.registry
-                                    .secret_store(&p)
-                                    .get_secret(wealthfolio_core::secrets::CLOUD_REFRESH_TOKEN_KEY)
-                                    .ok()
-                                    .flatten()
-                            })
-                            .is_some()
+                    if root
+                        .registry
+                        .profile(profile.id)
+                        .ok()
+                        .and_then(|p| {
+                            root.registry
+                                .secret_store(&p)
+                                .get_secret(wealthfolio_core::secrets::CLOUD_REFRESH_TOKEN_KEY)
+                                .ok()
+                                .flatten()
+                        })
+                        .is_some()
                     {
                         if let Err((status, _)) = root.runtime(profile.id).await {
                             tracing::warn!(%status, "Profile sync startup deferred");
