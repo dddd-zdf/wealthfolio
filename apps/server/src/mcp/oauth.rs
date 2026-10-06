@@ -512,7 +512,7 @@ mod tests {
     fn pkce_s256() {
         // RFC 7636 appendix B.
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-        let challenge = "E9Melhoa2OwvFrEMTJguCQaoeAeAZPd7GgUu0TfwTx0";
+        let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
         assert!(pkce_matches(verifier, challenge));
         assert!(!pkce_matches("wrong", challenge));
     }
