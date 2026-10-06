@@ -18,6 +18,8 @@ export interface HistoryChartScaleOptions {
   mode?: HistoryChartScaleMode;
   netContributionMaxDomainSpanRatio?: number;
   minDomainSpanRatio?: number;
+  /** A horizontal guide (e.g. previous close) the domain must keep in view. */
+  referenceValue?: number;
 }
 
 export interface HistoryChartScaleConfig {
@@ -91,8 +93,12 @@ export function getAutomaticHistoryChartScale(
   const mode = options.mode ?? "automatic";
   const upperPaddingRatio =
     mode === "fit-visible" ? FIT_VISIBLE_UPPER_PADDING_RATIO : LINEAR_DOMAIN_PADDING_RATIO;
+  const domainValues =
+    options.referenceValue !== undefined && Number.isFinite(options.referenceValue)
+      ? [...totalValues, options.referenceValue]
+      : totalValues;
   let linearDomain = getLinearDomain(
-    totalValues,
+    domainValues,
     mode === "automatic",
     options.minDomainSpanRatio,
     upperPaddingRatio,
@@ -105,7 +111,7 @@ export function getAutomaticHistoryChartScale(
     options.netContributionMaxDomainSpanRatio &&
     netContributionValues.every(Number.isFinite)
   ) {
-    const combinedValues = [...totalValues, ...netContributionValues];
+    const combinedValues = [...domainValues, ...netContributionValues];
     const combinedDomain = getLinearDomain(
       combinedValues,
       mode === "automatic",
