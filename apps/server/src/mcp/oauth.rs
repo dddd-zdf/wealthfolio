@@ -39,9 +39,6 @@ use crate::{
 /// How long an issued authorization code stays redeemable.
 const CODE_TTL: Duration = Duration::from_secs(300);
 const CLIENT_ID_PREFIX: &str = "wfc_";
-/// Hosts allowed as HTTPS redirect targets. Loopback redirects (any port)
-/// are also allowed for local clients such as Claude Code.
-const REDIRECT_HOSTS: &[&str] = &["claude.ai", "claude.com", "chatgpt.com", "chat.openai.com"];
 
 /// Authorization codes awaiting exchange, shared by the approve and token
 /// endpoints.
@@ -92,6 +89,9 @@ fn decode_client_id(client_id: &str) -> Option<ClientInfo> {
     serde_json::from_slice(&json).ok()
 }
 
+/// Any HTTPS redirect (hosted clients such as Claude, ChatGPT and Muse use
+/// their own hosts; the consent screen shows where the browser returns), or
+/// plain HTTP on loopback for local clients such as Claude Code.
 fn redirect_allowed(uri: &str) -> bool {
     let Ok(url) = url::Url::parse(uri) else {
         return false;
@@ -99,11 +99,10 @@ fn redirect_allowed(uri: &str) -> bool {
     if url.fragment().is_some() {
         return false;
     }
-    match (url.scheme(), url.host_str()) {
-        ("https", Some(host)) => REDIRECT_HOSTS.contains(&host),
-        ("http", Some("localhost" | "127.0.0.1" | "[::1]")) => true,
-        _ => false,
-    }
+    matches!(
+        (url.scheme(), url.host_str()),
+        ("https", Some(_)) | ("http", Some("localhost" | "127.0.0.1" | "[::1]"))
+    )
 }
 
 /// Checks the client id and that `redirect_uri` is one it registered.
@@ -241,7 +240,7 @@ async fn register(Json(request): Json<RegisterRequest>) -> Response {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_redirect_uri",
-            "Redirect URIs must be loopback or an allowed MCP client host",
+            "Redirect URIs must use HTTPS, or HTTP on loopback",
         );
     }
     let name = request
@@ -481,8 +480,7 @@ mod tests {
         assert!(redirect_allowed("http://localhost:33418/callback"));
         assert!(redirect_allowed("http://127.0.0.1:5000/cb"));
         assert!(!redirect_allowed("http://claude.ai/api/mcp/auth_callback"));
-        assert!(!redirect_allowed("https://claude.ai.evil.com/cb"));
-        assert!(!redirect_allowed("https://evil.com/cb"));
+        assert!(!redirect_allowed("http://example.com/cb"));
         assert!(!redirect_allowed("https://claude.ai/cb#frag"));
         assert!(!redirect_allowed("javascript:alert(1)"));
     }
@@ -500,12 +498,12 @@ mod tests {
             validate_client("wfc_garbage", "https://claude.ai/api/mcp/auth_callback").is_none()
         );
 
-        // A forged client id cannot smuggle in a disallowed redirect.
+        // A forged client id cannot smuggle in a non-HTTPS redirect.
         let forged = encode_client_id(&ClientInfo {
             name: "x".into(),
-            redirect_uris: vec!["https://evil.com/cb".into()],
+            redirect_uris: vec!["http://example.com/cb".into()],
         });
-        assert!(validate_client(&forged, "https://evil.com/cb").is_none());
+        assert!(validate_client(&forged, "http://example.com/cb").is_none());
     }
 
     #[test]
