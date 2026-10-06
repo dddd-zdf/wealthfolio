@@ -37,10 +37,13 @@ export default function OAuthConsentPage() {
   const codeChallenge = params.get("code_challenge");
   const state = params.get("state") ?? undefined;
 
+  // Clients tend to request every advertised scope, so only requested read
+  // scopes start ticked; write access is always an explicit choice here.
   const [selected, setSelected] = useState<Set<ScopeKey>>(() => {
-    const known = new Set<string>(SCOPES.map((scope) => scope.key));
-    const requested = (params.get("scope") ?? "").split(" ").filter((s) => known.has(s));
-    return new Set(applyScopeDependencies(requested.length > 0 ? requested : READ_SCOPES));
+    const requested = (params.get("scope") ?? "")
+      .split(" ")
+      .filter((s): s is ScopeKey => READ_SCOPES.includes(s as ScopeKey));
+    return new Set(requested.length > 0 ? requested : READ_SCOPES);
   });
   const scopes = useMemo(() => applyScopeDependencies(selected), [selected]);
   const [pending, setPending] = useState(false);
