@@ -52,6 +52,7 @@ hkdf = "0.12"
 sha2 = "0.10"
 rand = "0.8"
 urlencoding = "2"
+url = "2"
 tower_governor = "0.8"
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"

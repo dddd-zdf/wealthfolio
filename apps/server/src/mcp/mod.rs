@@ -5,6 +5,7 @@
 
 pub mod audit_sink;
 pub mod auth;
+pub mod oauth;
 
 use std::sync::Arc;
 use std::time::Duration;

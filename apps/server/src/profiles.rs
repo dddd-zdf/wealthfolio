@@ -76,6 +76,7 @@ pub struct WebProfiles {
     pub(crate) oidc: Option<Arc<crate::oidc::OidcManager>>,
     runtimes: Mutex<HashMap<Uuid, Arc<AppState>>>,
     mcp: Mutex<HashMap<Uuid, Router>>,
+    pub(crate) oauth_codes: crate::mcp::oauth::OAuthCodes,
     visited: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 impl WebProfiles {
@@ -139,6 +140,7 @@ impl WebProfiles {
             deletion: Mutex::new(()),
             runtimes: Mutex::new(HashMap::new()),
             mcp: Mutex::new(HashMap::new()),
+            oauth_codes: Default::default(),
             visited: std::sync::Mutex::new(Default::default()),
         }))
     }
@@ -247,6 +249,7 @@ impl WebProfiles {
             deletion: Mutex::new(()),
             runtimes: Mutex::new(runtimes),
             mcp: Mutex::new(HashMap::new()),
+            oauth_codes: Default::default(),
             visited: std::sync::Mutex::new(Default::default()),
         }))
     }

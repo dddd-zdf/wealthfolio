@@ -30,7 +30,7 @@ mod accounts;
 mod activities;
 mod addon_network;
 mod addons;
-mod agent_access;
+pub(crate) mod agent_access;
 mod ai_chat;
 mod ai_providers;
 mod allocation_targets;
@@ -269,8 +269,9 @@ fn app_router_with_profiles(
     if config.mcp_enabled {
         router = router.route(
             "/mcp",
-            axum::routing::any(crate::profiles::mcp).with_state(profiles),
+            axum::routing::any(crate::profiles::mcp).with_state(profiles.clone()),
         );
+        router = router.merge(crate::mcp::oauth::router(profiles));
     }
 
     Ok(router

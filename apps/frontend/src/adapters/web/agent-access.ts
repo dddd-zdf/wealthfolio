@@ -6,6 +6,7 @@ import type {
   AgentAuditQuery,
   CreateAgentAccessTokenInput,
   CreatedAgentAccessToken,
+  McpOAuthDecision,
   McpServerStatus,
 } from "../types";
 
@@ -98,3 +99,14 @@ export const stopMcp = (): Promise<McpServerStatus> =>
 
 export const setMcpAuditEnabled = (_enabled: boolean): Promise<McpServerStatus> =>
   Promise.reject(new Error("The MCP server runs inside the desktop app"));
+
+/** Records the consent decision; resolves with the URL to send the browser to. */
+export const decideMcpOAuth = async (decision: McpOAuthDecision): Promise<string> => {
+  try {
+    const result = await invoke<{ redirectUrl: string }>("approve_mcp_oauth", { ...decision });
+    return result.redirectUrl;
+  } catch (error) {
+    logger.error("Error recording MCP client authorization.");
+    throw error;
+  }
+};
