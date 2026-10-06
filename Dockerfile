@@ -24,18 +24,11 @@ RUN pnpm --filter frontend... build && mv dist /web-dist
 # Stage 2: build server with cross-compilation
 FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 
-FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS backend
+# Toolchain shared by the dependency planner and the server build.
+FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS chef
 # Copy xx scripts to handle cross-compilation
 COPY --from=xx / /
 ARG TARGETPLATFORM
-
-# Wealthfolio Connect configuration (baked into server binary at build time)
-ARG CONNECT_AUTH_URL=
-ARG CONNECT_AUTH_PUBLISHABLE_KEY=
-ENV CONNECT_AUTH_URL=${CONNECT_AUTH_URL}
-ENV CONNECT_AUTH_PUBLISHABLE_KEY=${CONNECT_AUTH_PUBLISHABLE_KEY}
-
-WORKDIR /app
 
 # Install build tools for the HOST (to run cargo, build scripts)
 # clang/lld are needed for cross-linking
@@ -51,22 +44,40 @@ RUN xx-apk add --no-cache musl-dev gcc openssl-dev openssl-libs-static sqlite-de
 # Install rust target
 RUN rustup target add $(xx-cargo --print-target-triple)
 
-# Leverage Docker layer caching for dependencies
+# cargo-chef compiles dependencies in their own cached layer, so a source
+# change rebuilds only the workspace crates instead of every dependency.
+RUN cargo install cargo-chef --locked --version 0.1.78
+
+WORKDIR /app
+
+# Workspace sources as the Rust build sees them
+FROM chef AS sources
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY apps/server ./apps/server
 # Stub out apps/tauri so the workspace resolves (not built in Docker)
 COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
-RUN mkdir -p apps/server/src && \
-    echo "fn main(){}" > apps/server/src/main.rs && \
-    xx-cargo fetch --locked --manifest-path apps/server/Cargo.toml
 
-# Now copy full sources
-COPY crates ./crates
-COPY apps/server ./apps/server
+# Dependency recipe: changes only when manifests or the lockfile change
+FROM sources AS planner
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS backend
+# Wealthfolio Connect configuration (baked into server binary at build time)
+ARG CONNECT_AUTH_URL=
+ARG CONNECT_AUTH_PUBLISHABLE_KEY=
+ENV CONNECT_AUTH_URL=${CONNECT_AUTH_URL}
+ENV CONNECT_AUTH_PUBLISHABLE_KEY=${CONNECT_AUTH_PUBLISHABLE_KEY}
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV OPENSSL_STATIC=1
+
+# Build dependencies only (cached until the recipe changes)
+COPY --from=planner /app/recipe.json recipe.json
+RUN xx-cargo chef cook --release --locked -p wealthfolio-server --recipe-path recipe.json
+
+# Now build the server from the full sources
+COPY --from=sources /app ./
 # Build using xx-cargo which handles target flags
 RUN xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml && \
     # Move the binary to a predictable location because the target dir changes with --target
