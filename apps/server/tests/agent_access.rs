@@ -284,6 +284,17 @@ async fn mcp_pat_lifecycle() {
     .await;
     assert_eq!(status, 400);
 
+    // A 2026-07-28 client opens with server/discover and no session; it
+    // only falls back to initialize on a 400 (rmcp's own status is 422).
+    let response = mcp_post(
+        &server,
+        Some(&pat),
+        None,
+        serde_json::json!({ "jsonrpc": "2.0", "id": "discover", "method": "server/discover", "params": {} }),
+    )
+    .await;
+    assert_eq!(response.status(), 400);
+
     let session = mcp_initialize(&server, &pat).await;
 
     // tools/list -> the read-only catalog: 16 read tools + get_import_mapping
