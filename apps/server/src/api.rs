@@ -30,7 +30,7 @@ mod accounts;
 mod activities;
 mod addon_network;
 mod addons;
-mod agent_access;
+pub(crate) mod agent_access;
 mod ai_chat;
 mod ai_providers;
 mod allocation_targets;
