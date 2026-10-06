@@ -101,6 +101,19 @@ describe("getAutomaticHistoryChartScale", () => {
     expect(scale.domain[1] - scale.domain[0]).toBeCloseTo(19);
   });
 
+  it("keeps the reference value in view", () => {
+    const scale = getAutomaticHistoryChartScale(
+      [
+        { totalValue: 101_000, netContribution: 0 },
+        { totalValue: 101_500, netContribution: 0 },
+      ],
+      { mode: "fit-visible", minDomainSpanRatio: 0.004, referenceValue: 100_000 },
+    );
+
+    expect(scale.domain[0]).toBeLessThan(100_000);
+    expect(scale.domain[1]).toBeGreaterThan(101_500);
+  });
+
   it("expands fit-visible scale to show net contribution when the span stays reasonable", () => {
     const scale = getAutomaticHistoryChartScale(
       [

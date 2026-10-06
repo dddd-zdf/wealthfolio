@@ -36,7 +36,10 @@ const INTERVAL_STORAGE_KEY = "dashboard-interval";
 
 function getDashboardChartMinDomainSpanRatio(period: UITimePeriod): number {
   switch (period) {
+    // A whole session rarely moves more than a percent or two; a wide floor
+    // flattens a real move into a near-straight line.
     case "1D":
+      return 0.004;
     case "1W":
       return 0.035;
     case "1M":
@@ -222,6 +225,10 @@ export function DashboardContent() {
     [selectedInterval],
   );
 
+  // 1D: faint guide at yesterday's close (live total minus today's move).
+  const previousClose =
+    isDayChange && sessionTimeDomain && dayChange ? totalValue - dayChange.amount : undefined;
+
   const isNegative = totalValue < 0;
 
   return (
@@ -316,6 +323,7 @@ export function DashboardContent() {
             minDomainSpanRatio={chartMinDomainSpanRatio}
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
             timeDomain={sessionTimeDomain}
+            referenceValue={previousClose}
           />
           {valuationHistory && chartData.length > 0 && (
             <div className="flex w-full justify-center">

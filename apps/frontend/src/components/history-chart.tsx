@@ -6,7 +6,7 @@ import { AmountDisplay, useDateFormatting } from "@wealthfolio/ui";
 import { ChartConfig, ChartContainer } from "@wealthfolio/ui/components/ui/chart";
 import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Area, AreaChart, ReferenceDot, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
 import {
   HistoryChartActiveDot,
@@ -45,6 +45,8 @@ interface HistoryChartProps {
    * spacing them evenly, so a partial span leaves the rest of the axis empty.
    */
   timeDomain?: [number, number];
+  /** Draws a faint horizontal guide at this value (e.g. previous close). */
+  referenceValue?: number;
 }
 
 const timeOf = (item: HistoryChartData) => Date.parse(item.date);
@@ -151,6 +153,7 @@ export function HistoryChart({
   netContributionMaxDomainSpanRatio,
   minDomainSpanRatio,
   timeDomain,
+  referenceValue,
 }: HistoryChartProps) {
   const { t } = useTranslation();
   const { triggerHaptic } = useHapticFeedback();
@@ -172,8 +175,9 @@ export function HistoryChart({
           ? {}
           : { netContributionMaxDomainSpanRatio }),
         ...(minDomainSpanRatio === undefined ? {} : { minDomainSpanRatio }),
+        ...(referenceValue === undefined ? {} : { referenceValue }),
       }),
-    [data, scaleMode, netContributionMaxDomainSpanRatio, minDomainSpanRatio],
+    [data, scaleMode, netContributionMaxDomainSpanRatio, minDomainSpanRatio, referenceValue],
   );
 
   const chartConfig = {
@@ -380,6 +384,15 @@ export function HistoryChart({
           scale={scaleConfig.scale === "log" ? "log" : "auto"}
           domain={scaleConfig.domain}
         />
+        {referenceValue !== undefined && (
+          <ReferenceLine
+            y={referenceValue}
+            stroke="var(--muted-foreground)"
+            strokeDasharray="2 4"
+            strokeOpacity={0.4}
+            ifOverflow="hidden"
+          />
+        )}
         <Area
           isAnimationActive={true}
           animationDuration={300}
