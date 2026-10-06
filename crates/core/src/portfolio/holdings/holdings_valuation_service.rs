@@ -34,6 +34,8 @@ pub struct HoldingsValuationService {
     fx_service: Arc<dyn FxServiceTrait>,
     quote_service: Arc<dyn QuoteServiceTrait>,
     timezone: Arc<RwLock<String>>,
+    #[cfg(test)]
+    today_override: Option<NaiveDate>,
 }
 
 impl HoldingsValuationService {
@@ -57,10 +59,22 @@ impl HoldingsValuationService {
             fx_service,
             quote_service,
             timezone,
+            #[cfg(test)]
+            today_override: None,
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_today(mut self, today: NaiveDate) -> Self {
+        self.today_override = Some(today);
+        self
+    }
+
     fn today_in_user_timezone(&self) -> chrono::NaiveDate {
+        #[cfg(test)]
+        if let Some(today) = self.today_override {
+            return today;
+        }
         let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
         user_today(tz)
     }
@@ -350,7 +364,17 @@ impl HoldingsValuationService {
                 );
             }
 
-            if let Some(prev_quote) = prev_quote_opt {
+            // Market quotes follow each exchange's own sessions, so latest vs previous is
+            // the last session's move. A manual price only moves on the day it's entered;
+            // otherwise its last update would keep showing as today's change.
+            let quote_is_stale =
+                instrument.pricing_mode != "MARKET" && latest_quote.timestamp.date_naive() != today;
+
+            if quote_is_stale {
+                holding.prev_close_value = Some(holding.market_value.clone());
+                holding.day_change = Some(MonetaryValue::zero());
+                holding.day_change_pct = Some(Decimal::ZERO);
+            } else if let Some(prev_quote) = prev_quote_opt {
                 let (prev_price_normalized, prev_quote_currency_normalized) =
                     normalize_amount(prev_quote.close, &prev_quote.currency);
 
