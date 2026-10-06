@@ -6,7 +6,7 @@ use crate::portfolio::holdings::{Holding, HoldingType, MonetaryValue};
 use crate::quotes::{LatestQuotePair, QuoteServiceTrait};
 use crate::utils::time_utils::{parse_user_timezone_or_default, user_today};
 use async_trait::async_trait;
-use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use chrono::NaiveDate;
 use log::{debug, warn};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -27,15 +27,6 @@ fn gain_pct_from_basis(amount: Decimal, basis: Decimal) -> Option<Decimal> {
     } else {
         None
     }
-}
-
-/// Most recent weekday before `today`.
-fn previous_business_day(today: NaiveDate) -> NaiveDate {
-    let mut day = today - Duration::days(1);
-    while matches!(day.weekday(), Weekday::Sat | Weekday::Sun) {
-        day -= Duration::days(1);
-    }
-    day
 }
 
 #[derive(Clone)]
@@ -373,9 +364,11 @@ impl HoldingsValuationService {
                 );
             }
 
-            // A quote older than the last business day means nothing moved today
-            // (e.g. a manually priced fund), so don't re-report its last change.
-            let quote_is_stale = latest_quote.timestamp.date_naive() < previous_business_day(today);
+            // Market quotes follow each exchange's own sessions, so latest vs previous is
+            // the last session's move. A manual price only moves on the day it's entered;
+            // otherwise its last update would keep showing as today's change.
+            let quote_is_stale =
+                instrument.pricing_mode != "MARKET" && latest_quote.timestamp.date_naive() != today;
 
             if quote_is_stale {
                 holding.prev_close_value = Some(holding.market_value.clone());

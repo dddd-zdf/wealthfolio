@@ -1881,10 +1881,24 @@ mod tests {
         );
     }
 
+    fn create_manual_holding(symbol: &str) -> Holding {
+        let mut holding = create_holding(
+            "h1",
+            HoldingType::Security,
+            symbol,
+            dec!(10),
+            "CAD",
+            "CAD",
+            Some(dec!(1400.0)),
+            None,
+        );
+        holding.instrument.as_mut().unwrap().pricing_mode = "MANUAL".to_string();
+        holding
+    }
+
     #[tokio::test]
-    async fn stale_quote_reports_zero_day_change() {
+    async fn manual_quote_from_earlier_day_reports_zero_day_change() {
         let (_fx_service, market_data_service, valuation_service) = setup_test_env();
-        // Today is Tue 2024-01-16; the last business day is Mon 2024-01-15.
         let valuation_service =
             valuation_service.with_today(NaiveDate::from_ymd_opt(2024, 1, 16).unwrap());
 
@@ -1892,16 +1906,7 @@ mod tests {
         let prev_quote = create_quote("2024-01-09", dec!(145.0), "CAD");
         market_data_service.add_quote_pair("FUND", latest_quote, Some(prev_quote));
 
-        let mut holdings = vec![create_holding(
-            "h1",
-            HoldingType::Security,
-            "FUND",
-            dec!(10),
-            "CAD",
-            "CAD",
-            Some(dec!(1400.0)),
-            None,
-        )];
+        let mut holdings = vec![create_manual_holding("FUND")];
 
         valuation_service
             .calculate_holdings_live_valuation(&mut holdings)
@@ -1928,11 +1933,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn last_trading_day_quote_still_reports_day_change_on_weekend() {
+    async fn manual_quote_entered_today_reports_change_since_previous_quote() {
         let (_fx_service, market_data_service, valuation_service) = setup_test_env();
-        // Fri 2024-01-12 close, viewed on Sun 2024-01-14.
+
+        // Previous manual update was days earlier; the whole move shows on the update day.
+        let latest_quote = create_quote("2024-01-10", dec!(150.0), "CAD");
+        let prev_quote = create_quote("2024-01-03", dec!(145.0), "CAD");
+        market_data_service.add_quote_pair("FUND", latest_quote, Some(prev_quote));
+
+        let mut holdings = vec![create_manual_holding("FUND")];
+
+        valuation_service
+            .calculate_holdings_live_valuation(&mut holdings)
+            .await
+            .unwrap();
+
+        assert_monetary_value_approx(
+            holdings[0].day_change.as_ref(),
+            dec!(50.0),
+            dec!(50.0),
+            TOLERANCE,
+            "Day Change",
+        );
+    }
+
+    #[tokio::test]
+    async fn market_quote_from_last_session_still_reports_day_change() {
+        let (_fx_service, market_data_service, valuation_service) = setup_test_env();
+        // Fri 2024-01-12 close, viewed on Mon 2024-01-15 before the next close.
         let valuation_service =
-            valuation_service.with_today(NaiveDate::from_ymd_opt(2024, 1, 14).unwrap());
+            valuation_service.with_today(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
 
         let latest_quote = create_quote("2024-01-12", dec!(150.0), "CAD");
         let prev_quote = create_quote("2024-01-11", dec!(145.0), "CAD");
