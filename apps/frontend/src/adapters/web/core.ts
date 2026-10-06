@@ -415,6 +415,7 @@ export const COMMANDS: CommandMap = {
   delete_agent_access_token: { method: "DELETE", path: "/agent-access/tokens" },
   list_agent_audit_log: { method: "GET", path: "/agent-access/audit" },
   purge_agent_audit_log: { method: "POST", path: "/agent-access/audit/purge" },
+  approve_mcp_oauth: { method: "POST", path: "/agent-access/oauth/approve" },
 };
 
 /**
@@ -2087,6 +2088,10 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         scopes: string[];
       };
       body = JSON.stringify({ name, expiresAt, scopes });
+      break;
+    }
+    case "approve_mcp_oauth": {
+      body = JSON.stringify(payload);
       break;
     }
     case "delete_agent_access_token": {

@@ -7,6 +7,7 @@ import type {
   AgentAuditQuery,
   CreateAgentAccessTokenInput,
   CreatedAgentAccessToken,
+  McpOAuthDecision,
   McpServerStatus,
 } from "../types";
 
@@ -177,3 +178,6 @@ export const deleteAgentAccessToken = async (id: string): Promise<void> => {
     throw error;
   }
 };
+
+export const decideMcpOAuth = (_decision: McpOAuthDecision): Promise<string> =>
+  Promise.reject(new Error("MCP client authorization is only available on the web server"));

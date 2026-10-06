@@ -416,6 +416,16 @@ export interface CreatedAgentAccessToken {
   expiresAt: string | null;
 }
 
+/** Consent decision for an MCP client's OAuth request (web only). */
+export interface McpOAuthDecision {
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  state?: string;
+  /** Granted scopes; omit to deny the request. */
+  scopes?: string[];
+}
+
 /** One MCP tool-call audit entry. */
 export interface AgentAuditEntry {
   id: string;

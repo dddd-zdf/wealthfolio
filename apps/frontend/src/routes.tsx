@@ -36,6 +36,7 @@ import OnboardingPage from "./pages/onboarding/onboarding-page";
 import AboutSettingsPage from "./pages/settings/about/about-page";
 import AddonSettingsPage from "./pages/settings/addons/addon-settings";
 import AgentAccessPage from "./pages/settings/agent-access/agent-access-page";
+import OAuthConsentPage from "./pages/settings/agent-access/oauth-consent-page";
 import AiProvidersPage from "./pages/settings/ai-providers/ai-providers-page";
 import ContributionLimitPage from "./pages/settings/contribution-limits/contribution-limits-page";
 import ExportSettingsPage from "./pages/settings/exports/exports-page";
@@ -91,6 +92,9 @@ export function AppRoutes() {
 
         {/* Auth callback - No layout needed */}
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+        {/* MCP client OAuth consent - No layout needed */}
+        <Route path="/oauth/consent" element={<OAuthConsentPage />} />
 
         {/* Onboarding with dedicated layout */}
         <Route path="/onboarding" element={<OnboardingLayout />}>

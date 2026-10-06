@@ -56,6 +56,7 @@ export type {
   AgentAccessToken,
   CreateAgentAccessTokenInput,
   CreatedAgentAccessToken,
+  McpOAuthDecision,
   AgentAuditEntry,
   AgentAuditPage,
   AgentAuditQuery,
@@ -221,6 +222,7 @@ export {
   listAgentAccessTokens,
   createAgentAccessToken,
   deleteAgentAccessToken,
+  decideMcpOAuth,
 } from "./agent-access";
 
 // AI Streaming (Tauri Channel-based implementation)

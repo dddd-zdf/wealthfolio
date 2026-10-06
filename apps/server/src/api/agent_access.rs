@@ -92,7 +92,7 @@ struct CreateTokenRequest {
 }
 
 /// Validate the requested scope strings and return the canonical, deduped set.
-fn validate_requested_scopes(requested: &[String]) -> Result<Vec<String>, ApiError> {
+pub(crate) fn validate_requested_scopes(requested: &[String]) -> Result<Vec<String>, ApiError> {
     if requested.is_empty() {
         return Err(ApiError::BadRequest(
             "At least one scope is required".into(),
@@ -295,4 +295,8 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route("/agent-access/tokens/{id}", delete(delete_token))
         .route("/agent-access/audit", get(list_audit))
         .route("/agent-access/audit/purge", post(purge_audit))
+        .route(
+            "/agent-access/oauth/approve",
+            post(crate::mcp::oauth::approve),
+        )
 }
