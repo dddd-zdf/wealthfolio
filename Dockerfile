@@ -79,7 +79,8 @@ RUN xx-cargo chef cook --release --locked -p wealthfolio-server --recipe-path re
 # Now build the server from the full sources
 COPY --from=sources /app ./
 # Build using xx-cargo which handles target flags
-RUN xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml &&     # Move the binary to a predictable location because the target dir changes with --target
+RUN xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml && \
+    # Move the binary to a predictable location because the target dir changes with --target
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
