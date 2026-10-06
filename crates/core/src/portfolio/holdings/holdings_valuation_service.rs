@@ -6,7 +6,7 @@ use crate::portfolio::holdings::{Holding, HoldingType, MonetaryValue};
 use crate::quotes::{LatestQuotePair, QuoteServiceTrait};
 use crate::utils::time_utils::{parse_user_timezone_or_default, user_today};
 use async_trait::async_trait;
-use chrono::NaiveDate;
+use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use log::{debug, warn};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -29,11 +29,22 @@ fn gain_pct_from_basis(amount: Decimal, basis: Decimal) -> Option<Decimal> {
     }
 }
 
+/// Most recent weekday before `today`.
+fn previous_business_day(today: NaiveDate) -> NaiveDate {
+    let mut day = today - Duration::days(1);
+    while matches!(day.weekday(), Weekday::Sat | Weekday::Sun) {
+        day -= Duration::days(1);
+    }
+    day
+}
+
 #[derive(Clone)]
 pub struct HoldingsValuationService {
     fx_service: Arc<dyn FxServiceTrait>,
     quote_service: Arc<dyn QuoteServiceTrait>,
     timezone: Arc<RwLock<String>>,
+    #[cfg(test)]
+    today_override: Option<NaiveDate>,
 }
 
 impl HoldingsValuationService {
@@ -57,10 +68,22 @@ impl HoldingsValuationService {
             fx_service,
             quote_service,
             timezone,
+            #[cfg(test)]
+            today_override: None,
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_today(mut self, today: NaiveDate) -> Self {
+        self.today_override = Some(today);
+        self
+    }
+
     fn today_in_user_timezone(&self) -> chrono::NaiveDate {
+        #[cfg(test)]
+        if let Some(today) = self.today_override {
+            return today;
+        }
         let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
         user_today(tz)
     }
@@ -350,7 +373,15 @@ impl HoldingsValuationService {
                 );
             }
 
-            if let Some(prev_quote) = prev_quote_opt {
+            // A quote older than the last business day means nothing moved today
+            // (e.g. a manually priced fund), so don't re-report its last change.
+            let quote_is_stale = latest_quote.timestamp.date_naive() < previous_business_day(today);
+
+            if quote_is_stale {
+                holding.prev_close_value = Some(holding.market_value.clone());
+                holding.day_change = Some(MonetaryValue::zero());
+                holding.day_change_pct = Some(Decimal::ZERO);
+            } else if let Some(prev_quote) = prev_quote_opt {
                 let (prev_price_normalized, prev_quote_currency_normalized) =
                     normalize_amount(prev_quote.close, &prev_quote.currency);
 
