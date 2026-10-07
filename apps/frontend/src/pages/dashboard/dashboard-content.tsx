@@ -225,9 +225,15 @@ export function DashboardContent() {
     [selectedInterval],
   );
 
-  // 1D: faint guide at yesterday's close (live total minus today's move).
-  const previousClose =
-    isDayChange && sessionTimeDomain && dayChange ? totalValue - dayChange.amount : undefined;
+  // Faint guide at where the period started: yesterday's close on 1D (live
+  // total minus today's move), the first point otherwise. ALL starts near zero.
+  const periodStartValue = isDayChange
+    ? sessionTimeDomain && dayChange
+      ? totalValue - dayChange.amount
+      : undefined
+    : !isAllTime && chartData.length > 1
+      ? chartData[0].totalValue
+      : undefined;
 
   const isNegative = totalValue < 0;
 
@@ -323,7 +329,7 @@ export function DashboardContent() {
             minDomainSpanRatio={chartMinDomainSpanRatio}
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
             timeDomain={sessionTimeDomain}
-            referenceValue={previousClose}
+            referenceValue={periodStartValue}
           />
           {valuationHistory && chartData.length > 0 && (
             <div className="flex w-full justify-center">
