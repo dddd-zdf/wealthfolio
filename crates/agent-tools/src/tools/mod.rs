@@ -185,6 +185,7 @@ pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
         Arc::new(data_admin::UpsertManualQuotes),
         Arc::new(data_admin::UpdateAccountSettings),
         Arc::new(data_admin::SetAssetQuoteMode),
+        Arc::new(data_admin::SetTermDeposit),
         Arc::new(data_admin::RecalculatePortfolio),
     ]
 }

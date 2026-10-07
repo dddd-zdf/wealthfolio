@@ -13,6 +13,7 @@
 //! - `update_account_settings` — rename, regroup, hide/show, archive or change
 //!   the tracking mode of an account.
 //! - `set_asset_quote_mode` — switch an asset between MARKET and MANUAL pricing.
+//! - `set_term_deposit` — price a GIC/term deposit from its terms.
 //! - `recalculate_portfolio` — rebuild valuations from saved prices.
 //!
 //! Every call goes through the MCP audit log like any other tool.
@@ -24,6 +25,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use wealthfolio_core::accounts::{AccountUpdate, TrackingMode};
 use wealthfolio_core::activities::ActivityBulkMutationRequest;
+use wealthfolio_core::assets::{DepositCompounding, DepositSpec, DEPOSIT_METADATA_KEY};
 use wealthfolio_core::events::DomainEvent;
 use wealthfolio_core::quotes::{Quote, DATA_SOURCE_MANUAL};
 
@@ -576,6 +578,127 @@ impl AgentTool for SetAssetQuoteMode {
 }
 
 // ---------------------------------------------------------------------------
+// set_term_deposit
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetTermDepositArgs {
+    asset_id: String,
+    principal: Decimal,
+    annual_rate: Decimal,
+    start_date: NaiveDate,
+    maturity_date: NaiveDate,
+    compounding: DepositCompounding,
+}
+
+/// Price a GIC / term deposit from its terms instead of manual prices.
+pub struct SetTermDeposit;
+
+#[async_trait::async_trait]
+impl AgentTool for SetTermDeposit {
+    fn name(&self) -> &'static str {
+        "set_term_deposit"
+    }
+
+    fn description(&self) -> &'static str {
+        "Value a GIC / term deposit automatically from its terms. Saves the terms on the          asset, deletes its MANUAL prices, and switches it to calculated daily prices          (principal plus interest to date, flat after maturity). The holding's quantity          must be 1 (the price is the whole deposit's value). This MUTATES data."
+    }
+
+    fn input_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "assetId": { "type": "string" },
+                "principal": { "type": "number", "description": "Amount deposited" },
+                "annualRate": {
+                    "type": "number",
+                    "description": "Annual rate as a fraction, e.g. 0.0395 for 3.95%"
+                },
+                "startDate": { "type": "string", "description": "YYYY-MM-DD" },
+                "maturityDate": { "type": "string", "description": "YYYY-MM-DD" },
+                "compounding": {
+                    "type": "string",
+                    "enum": ["ANNUAL", "SEMI_ANNUAL", "QUARTERLY", "MONTHLY", "AT_MATURITY"],
+                    "description": "How often interest is added; AT_MATURITY = simple interest"
+                }
+            },
+            "required": [
+                "assetId", "principal", "annualRate", "startDate", "maturityDate", "compounding"
+            ]
+        })
+    }
+
+    fn required_scopes(&self) -> &'static [AgentScope] {
+        &[AgentScope::AccountsWrite]
+    }
+
+    fn access_level(&self) -> AgentToolAccess {
+        AgentToolAccess::Write
+    }
+
+    async fn call(
+        &self,
+        env: Arc<dyn AgentEnvironment>,
+        args: serde_json::Value,
+    ) -> Result<AgentToolResult, AgentToolError> {
+        let args: SetTermDepositArgs = serde_json::from_value(args)?;
+        let spec = DepositSpec {
+            principal: args.principal,
+            annual_rate: args.annual_rate,
+            start_date: args.start_date,
+            maturity_date: args.maturity_date,
+            compounding: args.compounding,
+        };
+        spec.validate().map_err(AgentToolError::InvalidInput)?;
+
+        let assets = env.asset_service();
+        let asset_id = args.asset_id.trim();
+        let asset = assets.get_asset_by_id(asset_id).map_err(exec_err)?;
+        let mut metadata = match asset.metadata {
+            Some(serde_json::Value::Object(map)) => map,
+            _ => serde_json::Map::new(),
+        };
+        metadata.insert(
+            DEPOSIT_METADATA_KEY.to_string(),
+            serde_json::to_value(&spec)?,
+        );
+        assets
+            .update_asset_metadata(asset_id, serde_json::Value::Object(metadata))
+            .await
+            .map_err(exec_err)?;
+
+        // Manual prices win over calculated ones on the same day, so remove them.
+        let quotes = env.quote_service();
+        let manual: Vec<_> = quotes
+            .get_historical_quotes(asset_id)
+            .map_err(exec_err)?
+            .into_iter()
+            .filter(|q| q.data_source == DATA_SOURCE_MANUAL)
+            .collect();
+        for quote in &manual {
+            quotes.delete_quote(&quote.id).await.map_err(exec_err)?;
+        }
+
+        // MARKET makes quote sync price it from the terms and rebuild valuations.
+        assets
+            .update_quote_mode(asset_id, "MARKET")
+            .await
+            .map_err(exec_err)?;
+
+        let today = chrono::Utc::now().date_naive();
+        Ok(AgentToolResult {
+            content: serde_json::json!({
+                "asset": { "id": asset_id, "quoteMode": "MARKET", "deposit": spec },
+                "manualPricesDeleted": manual.len(),
+                "valueToday": spec.value_on(today),
+                "valueAtMaturity": spec.value_on(spec.maturity_date),
+            }),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // recalculate_portfolio
 // ---------------------------------------------------------------------------
 
@@ -663,6 +786,22 @@ mod tests {
             Some("DIVIDEND_IN_KIND")
         );
         assert_eq!(request.delete_ids, vec!["x".to_string()]);
+    }
+
+    #[test]
+    fn term_deposit_args_parse_numbers_and_dates() {
+        let args: SetTermDepositArgs = serde_json::from_value(serde_json::json!({
+            "assetId": "gic",
+            "principal": 41464,
+            "annualRate": 0.0395,
+            "startDate": "2025-02-04",
+            "maturityDate": "2027-02-04",
+            "compounding": "ANNUAL"
+        }))
+        .unwrap();
+        assert_eq!(args.principal, Decimal::from(41464));
+        assert_eq!(args.annual_rate.to_string(), "0.0395");
+        assert_eq!(args.compounding, DepositCompounding::Annual);
     }
 
     #[test]

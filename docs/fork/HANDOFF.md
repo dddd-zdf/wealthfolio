@@ -29,6 +29,7 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #25    | GICs/term deposits valued from their terms (daily accrual); MCP `set_term_deposit`        | `crates/core/src/assets/term_deposit.rs`, `crates/core/src/quotes/sync.rs`, `crates/agent-tools/src/tools/data_admin.rs`           |
 | #24    | Pencil on a managed account's total (dashboard + account page) sets manual fund prices    | `apps/frontend/src/components/managed-value-edit.tsx`, `apps/frontend/src/lib/managed-account.ts`                                  |
 | #23    | Faint start-of-period line on the dashboard chart for 1W–5Y                               | `apps/frontend/src/pages/dashboard/dashboard-content.tsx`                                                                          |
 | #21    | 1D chart zooms to the day's move and marks the previous close                             | `apps/frontend/src/components/history-chart*.ts(x)`                                                                                |
@@ -69,6 +70,11 @@ To see the full divergence:
   pre-ticked because Claude requests every scope.
 - **MCP protocol (#19).** rmcp 1.8 doesn't speak 2026-07-28; we map its 422 to a
   400 so new clients fall back. Native support would need rmcp 3.x.
+- **GICs (#25).** A term deposit is a holding of quantity 1 whose asset has
+  `metadata.deposit` terms. Quote sync writes a `CALCULATED` price per day from
+  them (no provider); the value is flat after maturity, and the redemption is
+  still recorded as a SELL. Set terms with the MCP tool `set_term_deposit`,
+  which also deletes the asset's manual prices and switches it to MARKET.
 - **Login sessions.** `WF_AUTH_TOKEN_TTL_MINUTES=43200` (30 days, renewed on
   use) at the owner's request.
 

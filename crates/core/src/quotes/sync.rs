@@ -41,7 +41,9 @@ use super::sync_state::{
 };
 use super::types::{AssetId, Day, ProviderId, QuoteSource};
 use crate::activities::{ActivityRepositoryTrait, ActivityUpsert};
-use crate::assets::{Asset, AssetKind, AssetRepositoryTrait, InstrumentType, QuoteMode};
+use crate::assets::{
+    Asset, AssetKind, AssetRepositoryTrait, DepositSpec, InstrumentType, QuoteMode,
+};
 use crate::errors::Error;
 use crate::errors::Result;
 use crate::utils::time_utils;
@@ -232,6 +234,46 @@ pub(super) fn asset_skip_reason(asset: &Asset, allow_inactive: bool) -> Option<A
     }
 
     None
+}
+
+/// Daily prices for a term deposit from its start (or `start`) to its maturity
+/// (or `end`), worked out from its terms.
+fn deposit_quotes(
+    asset: &Asset,
+    spec: &DepositSpec,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> Vec<Quote> {
+    let now = Utc::now();
+    let mut quotes = Vec::new();
+    let mut day = start.max(spec.start_date);
+    let last = end.min(spec.maturity_date);
+    while day <= last {
+        if let Some(value) = spec.value_on(day) {
+            quotes.push(Quote {
+                id: format!(
+                    "{}_{}_{}",
+                    asset.id,
+                    day.format("%Y-%m-%d"),
+                    DATA_SOURCE_CALCULATED
+                ),
+                asset_id: asset.id.clone(),
+                timestamp: Utc.from_utc_datetime(&day.and_hms_opt(12, 0, 0).unwrap()),
+                open: value,
+                high: value,
+                low: value,
+                close: value,
+                adjclose: value,
+                volume: Decimal::ZERO,
+                currency: asset.quote_ccy.clone(),
+                data_source: DATA_SOURCE_CALCULATED.to_string(),
+                created_at: now,
+                notes: None,
+            });
+        }
+        day += Duration::days(1);
+    }
+    quotes
 }
 
 fn is_empty_asset_target(asset_ids: Option<&[String]>) -> bool {
@@ -990,12 +1032,17 @@ where
         let start_dt = Utc.from_utc_datetime(&plan.start_date.and_hms_opt(0, 0, 0).unwrap());
         let end_dt = Utc.from_utc_datetime(&plan.end_date.and_hms_opt(23, 59, 59).unwrap());
 
-        // Fetch quotes via MarketDataClient
-        let client = self.client.read().await;
-        match client
-            .fetch_historical_quotes_with_context(asset, start_dt, end_dt)
-            .await
-        {
+        // Term deposits are priced from their terms; everything else via MarketDataClient
+        let fetched = match asset.deposit_spec() {
+            Some(spec) => Ok(deposit_quotes(asset, &spec, plan.start_date, plan.end_date)),
+            None => {
+                let client = self.client.read().await;
+                client
+                    .fetch_historical_quotes_with_context(asset, start_dt, end_dt)
+                    .await
+            }
+        };
+        match fetched {
             Ok(mut quotes) => {
                 // Sort quotes by timestamp to ensure correct ordering
                 // This is important because we use first()/last() to determine date ranges
@@ -1945,6 +1992,39 @@ fn count_changed_quotes(
         previous.insert(quote.data_source.as_str(), quote.close);
     }
     changed
+}
+
+#[cfg(test)]
+mod deposit_quote_tests {
+    use super::*;
+    use crate::assets::DepositCompounding;
+    use rust_decimal_macros::dec;
+
+    #[test]
+    fn deposit_quotes_cover_the_term_only() {
+        let asset = Asset {
+            id: "gic".to_string(),
+            quote_ccy: "CAD".to_string(),
+            ..Default::default()
+        };
+        let day = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
+        let spec = DepositSpec {
+            principal: dec!(1000),
+            annual_rate: dec!(0.0365),
+            start_date: day(2025, 1, 10),
+            maturity_date: day(2025, 1, 12),
+            compounding: DepositCompounding::Annual,
+        };
+
+        let quotes = deposit_quotes(&asset, &spec, day(2025, 1, 1), day(2025, 1, 31));
+
+        let closes: Vec<_> = quotes.iter().map(|q| q.close).collect();
+        assert_eq!(closes, vec![dec!(1000), dec!(1000.10), dec!(1000.20)]);
+        assert_eq!(quotes[0].id, "gic_2025-01-10_CALCULATED");
+        assert_eq!(quotes[0].data_source, DATA_SOURCE_CALCULATED);
+        assert_eq!(quotes[0].currency, "CAD");
+        assert!(deposit_quotes(&asset, &spec, day(2025, 2, 1), day(2025, 2, 5)).is_empty());
+    }
 }
 
 #[cfg(test)]

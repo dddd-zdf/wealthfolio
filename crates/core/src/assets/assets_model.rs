@@ -507,6 +507,14 @@ impl Asset {
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
+    /// Get term deposit terms if this asset carries them (metadata["deposit"]).
+    pub fn deposit_spec(&self) -> Option<super::term_deposit::DepositSpec> {
+        self.metadata
+            .as_ref()
+            .and_then(|m| m.get(super::term_deposit::DEPOSIT_METADATA_KEY))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+    }
+
     fn metadata_identifier(&self, key: &str) -> Option<&str> {
         self.metadata
             .as_ref()

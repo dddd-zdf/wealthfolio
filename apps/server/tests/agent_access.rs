@@ -502,8 +502,8 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools.len(),
-        37,
-        "full-scope token must see all 37 tools: {names:?}"
+        38,
+        "full-scope token must see all 38 tools: {names:?}"
     );
     assert!(
         names.contains(&"commit_activity_import"),
