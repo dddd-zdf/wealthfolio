@@ -27,6 +27,8 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ActionPalette, type ActionPaletteGroup } from "@/components/action-palette";
+import { ManagedValueEdit } from "@/components/managed-value-edit";
+import { managedHoldings } from "@/lib/managed-account";
 import { PrivacyToggle } from "@/components/privacy-toggle";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useRecalculatePortfolioMutation } from "@/hooks/use-calculate-portfolio";
@@ -263,6 +265,13 @@ const AccountPage = () => {
     if (!holdings) return false;
     return holdings.some((holding) => holding.holdingType !== HoldingType.CASH);
   }, [holdings]);
+
+  // Managed accounts (manually priced holdings) get an in-place total editor.
+  const { holdings: allHoldings } = useHoldings({ type: "all" });
+  const managed = useMemo(
+    () => (account ? managedHoldings(allHoldings, account.id, account.currency) : null),
+    [allHoldings, account],
+  );
 
   const shouldShowSnapshotHistory =
     (isHoldingsMode && hasHoldings && !isHoldingsLoading) || isInvalidSnapshotContext;
@@ -1010,20 +1019,26 @@ const AccountPage = () => {
                     >
                       <div className="flex items-start gap-2">
                         <div>
-                          <p className="pt-3 text-xl font-bold">
+                          <div className="pt-3 text-xl font-bold">
                             {isCurrentValuationLoading ? (
                               <Skeleton className="h-8 w-36" />
                             ) : isCurrentValuationUnavailable ? (
                               <span className="text-muted-foreground">
                                 {t("account:not_available")}
                               </span>
+                            ) : managed && displayedValueCurrency === account?.currency ? (
+                              <ManagedValueEdit
+                                holdings={managed}
+                                value={displayedTotalValue}
+                                currency={displayedValueCurrency}
+                              />
                             ) : (
                               <PrivacyAmount
                                 value={displayedTotalValue}
                                 currency={displayedValueCurrency}
                               />
                             )}
-                          </p>
+                          </div>
                           {!hasPerformanceError && (
                             <div className="flex items-center gap-2 text-sm">
                               {gainLossAmountToDisplay == null ? (
