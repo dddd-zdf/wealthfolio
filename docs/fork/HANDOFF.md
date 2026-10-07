@@ -29,6 +29,7 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #23    | Faint start-of-period line on the dashboard chart for 1W–5Y                               | `apps/frontend/src/pages/dashboard/dashboard-content.tsx`                                                                          |
 | #21    | 1D chart zooms to the day's move and marks the previous close                             | `apps/frontend/src/components/history-chart*.ts(x)`                                                                                |
 | #20    | Zero day change for manual prices not updated today                                       | `crates/core/src/portfolio/holdings/holdings_valuation_service.rs`                                                                 |
 | #19    | MCP: clients speaking protocol 2026-07-28 (ChatGPT) fall back to `initialize` (422 → 400) | `apps/server/src/mcp/mod.rs`                                                                                                       |
