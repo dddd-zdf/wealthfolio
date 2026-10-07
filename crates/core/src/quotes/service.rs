@@ -318,7 +318,8 @@ pub trait QuoteServiceTrait: Send + Sync {
     }
 
     /// Intraday bars per asset id, fetched live from providers (not stored).
-    /// Assets without market pricing or without intraday data are omitted.
+    /// Assets without market pricing (including term deposits) or without
+    /// intraday data are omitted.
     async fn get_intraday_quotes(
         &self,
         _asset_ids: &[String],
@@ -1817,7 +1818,7 @@ where
         let assets: Vec<Asset> = asset_ids
             .iter()
             .filter_map(|id| self.asset_repo.get_by_id(id).ok())
-            .filter(|asset| asset.needs_pricing())
+            .filter(|asset| asset.needs_pricing() && asset.deposit_spec().is_none())
             .collect();
         let client = self.client.read().await;
         let client = &*client;
