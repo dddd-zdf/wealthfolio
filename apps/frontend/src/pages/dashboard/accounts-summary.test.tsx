@@ -31,6 +31,10 @@ vi.mock("@/hooks/use-accounts", () => ({
   useAccounts: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-holdings", () => ({
+  useHoldings: () => ({ holdings: [] }),
+}));
+
 vi.mock("@/hooks/use-latest-valuations", () => ({
   useLatestValuations: vi.fn(),
 }));
