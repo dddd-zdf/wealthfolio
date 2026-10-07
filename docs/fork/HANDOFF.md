@@ -113,9 +113,9 @@ There is no build on the server. CI builds the image; the server pulls it.
    sudo /opt/wealthfolio/deploy.sh mcp-<sha>
    ```
    The script pulls the image, replaces the `wealthfolio` container
-   (`--restart unless-stopped`, `127.0.0.1:8088`, volume `wealthfolio-data` at
-   `/data`, env from `/opt/wealthfolio/.env`, `CONNECT_API_URL` blank), and
-   health-checks `http://127.0.0.1:8088/`.
+   (`--restart unless-stopped`, logs capped at 3 × 10 MB, `127.0.0.1:8088`,
+   volume `wealthfolio-data` at `/data`, env from `/opt/wealthfolio/.env`,
+   `CONNECT_API_URL` blank), and health-checks `http://127.0.0.1:8088/`.
 4. Rollback = run `deploy.sh` with the previous tag. Note the current and
    previous tags somewhere (the private README keeps them).
 
