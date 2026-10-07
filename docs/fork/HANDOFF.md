@@ -29,6 +29,7 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #26    | No "skipping orphan cleanup" warning for fully sold accounts (count open lots only)       | `crates/storage-sqlite/src/lots.rs`                                                                                                |
 | #25    | GICs/term deposits valued from their terms (daily accrual); MCP `set_term_deposit`        | `crates/core/src/assets/term_deposit.rs`, `crates/core/src/quotes/sync.rs`, `crates/agent-tools/src/tools/data_admin.rs`           |
 | #24    | Pencil on a managed account's total (dashboard + account page) sets manual fund prices    | `apps/frontend/src/components/managed-value-edit.tsx`, `apps/frontend/src/lib/managed-account.ts`                                  |
 | #23    | Faint start-of-period line on the dashboard chart for 1W–5Y                               | `apps/frontend/src/pages/dashboard/dashboard-content.tsx`                                                                          |
@@ -113,9 +114,9 @@ There is no build on the server. CI builds the image; the server pulls it.
    sudo /opt/wealthfolio/deploy.sh mcp-<sha>
    ```
    The script pulls the image, replaces the `wealthfolio` container
-   (`--restart unless-stopped`, `127.0.0.1:8088`, volume `wealthfolio-data` at
-   `/data`, env from `/opt/wealthfolio/.env`, `CONNECT_API_URL` blank), and
-   health-checks `http://127.0.0.1:8088/`.
+   (`--restart unless-stopped`, logs capped at 3 × 10 MB, `127.0.0.1:8088`,
+   volume `wealthfolio-data` at `/data`, env from `/opt/wealthfolio/.env`,
+   `CONNECT_API_URL` blank), and health-checks `http://127.0.0.1:8088/`.
 4. Rollback = run `deploy.sh` with the previous tag. Note the current and
    previous tags somewhere (the private README keeps them).
 

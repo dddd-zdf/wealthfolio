@@ -630,9 +630,12 @@ impl LotRepositoryTrait for LotsRepository {
                 if known_ids.is_empty() {
                     // Check whether existing lots would have been destroyed by the
                     // old wipe-all behaviour and warn loudly so the underlying
-                    // calculator failure can be investigated.
+                    // calculator failure can be investigated. Only open lots
+                    // count: a fully sold account legitimately produces
+                    // nothing while keeping its closed lots.
                     let existing: i64 = dsl::lots
                         .filter(dsl::account_id.eq(&account_id))
+                        .filter(dsl::is_closed.eq(0))
                         .count()
                         .get_result(conn)
                         .map_err(StorageError::from)?;
@@ -640,7 +643,7 @@ impl LotRepositoryTrait for LotsRepository {
                         log::warn!(
                             "sync_lots_for_account: skipping orphan cleanup for account {} \
                              because the recalculation produced no lots and no closures. \
-                             {} existing lot row(s) preserved. This usually indicates a \
+                             {} existing open lot row(s) preserved. This usually indicates a \
                              holdings_calculator error during recalc; check the logs for \
                              'Failed to process activity' or 'Invalid asset_id' messages. \
                              Use replace_lots_for_account explicitly if a wipe is intended.",
