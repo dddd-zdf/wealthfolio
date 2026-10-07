@@ -18,7 +18,7 @@ import { format } from "date-fns";
 import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QuoteHistoryToolbar } from "./quote-history-toolbar";
-import { toQuoteEntry, type QuoteEntry } from "./quote-history-utils";
+import { generateTempId, toQuote, toQuoteEntry, type QuoteEntry } from "./quote-history-utils";
 import { UpdateTotalValueDialog } from "./update-total-value-dialog";
 
 // Helper to normalize date values (handles both Date objects and strings from DateCell)
@@ -47,28 +47,6 @@ interface QuoteHistoryDataGridProps {
   /** Units held at the end of a day (yyyy-MM-dd); enables entering a total value. */
   unitsOn?: (day: string) => number;
 }
-
-// Generate a temporary ID for new entries
-const generateTempId = () => `temp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-
-// Convert QuoteEntry back to Quote for saving
-const toQuote = (entry: QuoteEntry, assetId: string): Quote => {
-  const datePart = format(entry.date, "yyyy-MM-dd").replace(/-/g, "");
-  return {
-    id: entry.id.startsWith("temp-") ? `${datePart}_${assetId.toUpperCase()}` : entry.id,
-    createdAt: new Date().toISOString(),
-    dataSource: "MANUAL",
-    timestamp: format(entry.date, "yyyy-MM-dd'T'00:00:00'Z'"),
-    assetId: assetId,
-    open: entry.open,
-    high: entry.high,
-    low: entry.low,
-    close: entry.close,
-    volume: entry.volume,
-    adjclose: entry.close,
-    currency: entry.currency,
-  };
-};
 
 // Create draft entry
 const createDraftEntry = (currency: string): QuoteEntry => ({

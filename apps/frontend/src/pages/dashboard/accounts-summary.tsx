@@ -5,10 +5,13 @@ import {
   getHoldingsList,
   performanceSummaryScopeKey,
 } from "@/adapters";
+import { ManagedValueEdit } from "@/components/managed-value-edit";
 import { useAccounts } from "@/hooks/use-accounts";
+import { useHoldings } from "@/hooks/use-holdings";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
 import { AccountPurpose } from "@/lib/constants";
 import { summarizeDayChange } from "@/lib/holding-performance";
+import { managedHoldings } from "@/lib/managed-account";
 import { performanceSummaryReturn, performancePeriodPnl } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
@@ -153,6 +156,7 @@ const AccountSummaryComponent = React.memo(
     isLoadingPerformance = false,
     displayInAccountCurrency = false,
     isNested = false,
+    managed,
   }: {
     item: AccountSummaryDisplayData;
     isExpanded?: boolean;
@@ -161,6 +165,8 @@ const AccountSummaryComponent = React.memo(
     isLoadingPerformance?: boolean;
     displayInAccountCurrency?: boolean;
     isNested?: boolean;
+    /** Manually priced holdings of a managed account; makes its total editable in place. */
+    managed?: Holding[] | null;
   }) => {
     const { t } = useTranslation();
     const isGroup = item.isGroup ?? false;
@@ -309,9 +315,13 @@ const AccountSummaryComponent = React.memo(
         </div>
         <div className="flex shrink-0 items-center gap-2 md:gap-3">
           <div className="flex min-h-[3rem] flex-col items-end justify-center gap-1 md:gap-1.5">
-            <p className="text-sm font-semibold leading-tight md:text-base md:font-semibold">
-              <PrivacyAmount value={totalValue} currency={currency} />
-            </p>
+            <div className="text-sm font-semibold leading-tight md:text-base md:font-semibold">
+              {managed ? (
+                <ManagedValueEdit holdings={managed} value={totalValue} currency={currency} />
+              ) : (
+                <PrivacyAmount value={totalValue} currency={currency} />
+              )}
+            </div>
             {secondaryMetricContent && (
               <div
                 className="flex items-center gap-1.5 md:gap-2"
@@ -413,6 +423,19 @@ export const AccountsSummary = React.memo(
     const accounts = useMemo(() => allAccounts ?? [], [allAccounts]);
 
     const accountIds = useMemo(() => accounts?.map((acc) => acc.id) ?? [], [accounts]);
+
+    // Managed accounts (manually priced holdings) get an in-place total editor.
+    const { holdings: allHoldings } = useHoldings({ type: "all" });
+    const managedByAccount = useMemo(
+      () =>
+        new Map(
+          accounts.map((account) => [
+            account.id,
+            managedHoldings(allHoldings, account.id, account.currency),
+          ]),
+        ),
+      [accounts, allHoldings],
+    );
 
     const shouldFetchCurrentValuations = currentAccountValuationsProp === undefined;
     const {
@@ -718,6 +741,7 @@ export const AccountsSummary = React.memo(
                           <div key={account.accountId} className="px-4 py-3 md:px-5 md:py-4">
                             <AccountSummaryComponent
                               item={account}
+                              managed={managedByAccount.get(account.accountId ?? "")}
                               isLoadingValuation={isLoadingCurrentValuations}
                               isLoadingPerformance={isLoadingPerformance}
                               displayInAccountCurrency={
@@ -737,6 +761,7 @@ export const AccountsSummary = React.memo(
               <AccountSummaryComponent
                 key={account.accountId}
                 item={account}
+                managed={managedByAccount.get(account.accountId ?? "")}
                 isLoadingValuation={isLoadingCurrentValuations}
                 isLoadingPerformance={isLoadingPerformance}
                 displayInAccountCurrency={account.accountCurrency !== account.baseCurrency}
@@ -753,6 +778,7 @@ export const AccountsSummary = React.memo(
           <AccountSummaryComponent
             key={account.accountId}
             item={account}
+            managed={managedByAccount.get(account.accountId ?? "")}
             isLoadingValuation={isLoadingCurrentValuations}
             isLoadingPerformance={isLoadingPerformance}
             displayInAccountCurrency={account.accountCurrency !== account.baseCurrency}
@@ -761,6 +787,7 @@ export const AccountsSummary = React.memo(
       }
     }, [
       combinedAccountViews,
+      managedByAccount,
       accountsGrouped,
       expandedGroups,
       toggleGroup,
