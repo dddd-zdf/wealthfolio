@@ -3,6 +3,10 @@
 Shared instructions for agents working on Wealthfolio, a local-first finance app
 with a React frontend, Tauri desktop/mobile runtime, and Axum web server.
 
+This checkout is a personal fork. Before working on it, read
+[docs/fork/HANDOFF.md](docs/fork/HANDOFF.md) for the fork's changes, deploy
+pipeline and server operations.
+
 ## Working agreements
 
 - Resolve routine implementation choices from nearby code. State material
