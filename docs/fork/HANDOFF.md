@@ -29,6 +29,7 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #24    | Pencil on a managed account's total (dashboard + account page) sets manual fund prices    | `apps/frontend/src/components/managed-value-edit.tsx`, `apps/frontend/src/lib/managed-account.ts`                                  |
 | #21    | 1D chart zooms to the day's move and marks the previous close                             | `apps/frontend/src/components/history-chart*.ts(x)`                                                                                |
 | #20    | Zero day change for manual prices not updated today                                       | `crates/core/src/portfolio/holdings/holdings_valuation_service.rs`                                                                 |
 | #19    | MCP: clients speaking protocol 2026-07-28 (ChatGPT) fall back to `initialize` (422 → 400) | `apps/server/src/mcp/mod.rs`                                                                                                       |
