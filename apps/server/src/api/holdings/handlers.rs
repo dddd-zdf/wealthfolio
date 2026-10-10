@@ -352,14 +352,9 @@ async fn get_historical_valuations_for_scope_uncached(
     Ok(Json(vals))
 }
 
-/// Intraday prices move every few minutes; keep each curve this long.
+/// Intraday prices move every few minutes; keep each curve this long. Like
+/// the other cached results, a portfolio update drops it.
 const INTRADAY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
-
-type IntradayCache = std::sync::Mutex<
-    std::collections::HashMap<(usize, Vec<u8>), (std::time::Instant, serde_json::Value)>,
->;
-static INTRADAY_CACHE: std::sync::LazyLock<IntradayCache> =
-    std::sync::LazyLock::new(Default::default);
 
 /// POST /valuations/intraday/query - 1D/1W portfolio curve from live
 /// intraday bars, anchored to the stored daily totals.
@@ -369,12 +364,11 @@ pub async fn get_intraday_valuations(
 ) -> ApiResult<Json<serde_json::Value>> {
     use wealthfolio_core::portfolio::valuation::intraday::{intraday_valuations, IntradayRange};
 
-    let key = (Arc::as_ptr(&state) as usize, body.to_vec());
-    if let Some((at, value)) = INTRADAY_CACHE.lock().unwrap().get(&key) {
-        if at.elapsed() < INTRADAY_CACHE_TTL {
-            return Ok(Json(value.clone()));
-        }
+    let key = crate::perf_cache::key("intraday", Arc::as_ptr(&state) as usize, &body);
+    if let Some(hit) = crate::perf_cache::get(key) {
+        return Ok(Json(hit));
     }
+    let generation = crate::perf_cache::current_generation();
     let parsed: IntradayValuationBody = serde_json::from_slice(&body).map_err(|error| {
         crate::error::ApiError::BadRequest(format!("Invalid request body: {error}"))
     })?;
@@ -403,9 +397,7 @@ pub async fn get_intraday_valuations(
     let value = serde_json::to_value(&points).map_err(|error| {
         crate::error::ApiError::Internal(format!("Failed to serialize intraday values: {error}"))
     })?;
-    let mut cache = INTRADAY_CACHE.lock().unwrap();
-    cache.retain(|_, (at, _)| at.elapsed() < INTRADAY_CACHE_TTL);
-    cache.insert(key, (std::time::Instant::now(), value.clone()));
+    crate::perf_cache::put_with_ttl(key, generation, value.clone(), INTRADAY_CACHE_TTL);
     Ok(Json(value))
 }
 
