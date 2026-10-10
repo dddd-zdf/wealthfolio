@@ -352,11 +352,13 @@ async fn get_historical_valuations_for_scope_uncached(
     Ok(Json(vals))
 }
 
-/// Intraday prices move every few minutes; keep each curve this long.
+/// Intraday prices move every few minutes; keep each curve this long. Entries
+/// also carry the `perf_cache` generation, so a portfolio update (which moves
+/// the daily anchors) drops them, and a curve built mid-update isn't kept.
 const INTRADAY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
 type IntradayCache = std::sync::Mutex<
-    std::collections::HashMap<(usize, Vec<u8>), (std::time::Instant, serde_json::Value)>,
+    std::collections::HashMap<(usize, Vec<u8>), (std::time::Instant, u64, serde_json::Value)>,
 >;
 static INTRADAY_CACHE: std::sync::LazyLock<IntradayCache> =
     std::sync::LazyLock::new(Default::default);
@@ -370,8 +372,9 @@ pub async fn get_intraday_valuations(
     use wealthfolio_core::portfolio::valuation::intraday::{intraday_valuations, IntradayRange};
 
     let key = (Arc::as_ptr(&state) as usize, body.to_vec());
-    if let Some((at, value)) = INTRADAY_CACHE.lock().unwrap().get(&key) {
-        if at.elapsed() < INTRADAY_CACHE_TTL {
+    let generation = crate::perf_cache::current_generation();
+    if let Some((at, cached_generation, value)) = INTRADAY_CACHE.lock().unwrap().get(&key) {
+        if at.elapsed() < INTRADAY_CACHE_TTL && *cached_generation == generation {
             return Ok(Json(value.clone()));
         }
     }
@@ -404,8 +407,12 @@ pub async fn get_intraday_valuations(
         crate::error::ApiError::Internal(format!("Failed to serialize intraday values: {error}"))
     })?;
     let mut cache = INTRADAY_CACHE.lock().unwrap();
-    cache.retain(|_, (at, _)| at.elapsed() < INTRADAY_CACHE_TTL);
-    cache.insert(key, (std::time::Instant::now(), value.clone()));
+    cache.retain(|_, (at, cached_generation, _)| {
+        at.elapsed() < INTRADAY_CACHE_TTL && *cached_generation == generation
+    });
+    if generation == crate::perf_cache::current_generation() {
+        cache.insert(key, (std::time::Instant::now(), generation, value.clone()));
+    }
     Ok(Json(value))
 }
 
