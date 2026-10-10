@@ -6,6 +6,8 @@
 //! are cached per request and dropped whenever a portfolio update completes
 //! (or fails). Dated requests change key when the calendar day rolls over, so
 //! the TTL only bounds staleness for anything changed outside a portfolio job.
+//! Results that also depend on live prices use [`put_with_ttl`] for a shorter
+//! lifetime.
 //!
 //! Every invalidation also schedules a background warm-up (see
 //! [`register_warm_target`]) so the dashboard's standard periods and the
@@ -28,6 +30,7 @@ static ENTRIES: LazyLock<Mutex<HashMap<u64, Entry>>> = LazyLock::new(|| Mutex::n
 struct Entry {
     generation: u64,
     stored_at: Instant,
+    ttl: Duration,
     value: serde_json::Value,
 }
 
@@ -46,7 +49,7 @@ pub fn get(key: u64) -> Option<serde_json::Value> {
     let generation = GENERATION.load(Ordering::SeqCst);
     let entries = ENTRIES.lock().ok()?;
     let entry = entries.get(&key)?;
-    if entry.generation == generation && entry.stored_at.elapsed() < TTL {
+    if entry.generation == generation && entry.stored_at.elapsed() < entry.ttl {
         Some(entry.value.clone())
     } else {
         None
@@ -56,6 +59,11 @@ pub fn get(key: u64) -> Option<serde_json::Value> {
 /// Store a result computed while `generation` was current. Results computed
 /// across an invalidation are discarded.
 pub fn put(key: u64, generation: u64, value: serde_json::Value) {
+    put_with_ttl(key, generation, value, TTL);
+}
+
+/// [`put`] with a lifetime shorter than the default.
+pub fn put_with_ttl(key: u64, generation: u64, value: serde_json::Value, ttl: Duration) {
     if generation != GENERATION.load(Ordering::SeqCst) {
         return;
     }
@@ -63,7 +71,7 @@ pub fn put(key: u64, generation: u64, value: serde_json::Value) {
         if entries.len() >= MAX_ENTRIES {
             let now_generation = GENERATION.load(Ordering::SeqCst);
             entries.retain(|_, entry| {
-                entry.generation == now_generation && entry.stored_at.elapsed() < TTL
+                entry.generation == now_generation && entry.stored_at.elapsed() < entry.ttl
             });
             if entries.len() >= MAX_ENTRIES {
                 entries.clear();
@@ -74,6 +82,7 @@ pub fn put(key: u64, generation: u64, value: serde_json::Value) {
             Entry {
                 generation,
                 stored_at: Instant::now(),
+                ttl,
                 value,
             },
         );
@@ -162,6 +171,18 @@ mod tests {
         assert_eq!(get(k), None);
         // A result computed before the invalidation is not stored.
         put(k, generation, serde_json::json!({"x": 2}));
+        assert_eq!(get(k), None);
+    }
+
+    #[test]
+    fn short_ttl_entries_expire() {
+        let k = key("intraday", 1, b"{}");
+        put_with_ttl(
+            k,
+            current_generation(),
+            serde_json::json!(1),
+            Duration::ZERO,
+        );
         assert_eq!(get(k), None);
     }
 
