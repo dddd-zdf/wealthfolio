@@ -75,7 +75,12 @@ impl HoldingsValuationService {
         if let Some(today) = self.today_override {
             return today;
         }
-        let tz = parse_user_timezone_or_default(&self.timezone.read().unwrap());
+        let tz = parse_user_timezone_or_default(
+            &self
+                .timezone
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
         user_today(tz)
     }
 
@@ -364,9 +369,8 @@ impl HoldingsValuationService {
                 );
             }
 
-            // Market quotes follow each exchange's own sessions, so latest vs previous is
-            // the last session's move. A manual price only moves on the day it's entered;
-            // otherwise its last update would keep showing as today's change.
+            // A manual price only moves on the day it is entered. Market quotes
+            // still compare the latest two exchange sessions across weekends.
             let quote_is_stale =
                 instrument.pricing_mode != "MARKET" && latest_quote.timestamp.date_naive() != today;
 

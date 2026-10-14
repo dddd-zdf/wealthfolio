@@ -1,6 +1,6 @@
 // useGlobalEventListener.ts
 import {
-  isDesktop,
+  isTauri,
   listenAssetClassificationsChanged,
   listenBrokerSyncComplete,
   listenBrokerSyncError,
@@ -64,12 +64,13 @@ function getSyncSkips(payload?: MarketSyncCompletePayload | null): [string, stri
 }
 
 const useGlobalEventListener = () => {
+  usePortfolioResumeCheck();
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [areListenersReady, setAreListenersReady] = useState(false);
   const hasTriggeredInitialUpdate = useRef(false);
-  const isDesktopEnv = isDesktop;
+  const isTauriEnv = isTauri;
   const isMobileViewport = useIsMobileViewport();
   const syncContext = usePortfolioSyncOptional();
 
@@ -450,7 +451,7 @@ const useGlobalEventListener = () => {
 
       // Trigger initial portfolio update after listeners are set up. The web
       // server keeps prices and valuations current on its own schedule.
-      if (!hasTriggeredInitialUpdate.current && isDesktopEnv) {
+      if (!hasTriggeredInitialUpdate.current && isTauriEnv) {
         hasTriggeredInitialUpdate.current = true;
         logger.debug("Triggering initial portfolio update from frontend");
 
@@ -471,9 +472,34 @@ const useGlobalEventListener = () => {
       setAreListenersReady(false);
       cleanupFn?.();
     };
-  }, [isDesktopEnv]); // Only re-run if isDesktopEnv changes (which it won't)
+  }, [isTauriEnv]); // Only re-run if isTauriEnv changes (which it won't)
 
   return areListenersReady;
 };
+
+/** Hidden this long (a suspended phone, a laptop lid) means market data and
+ *  the day may have moved: ask the backend for a portfolio update on return. */
+const RESUME_CHECK_AFTER_MS = 5 * 60 * 1000;
+
+export function usePortfolioResumeCheck() {
+  useEffect(() => {
+    let hiddenAt: number | null = null;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      const hiddenFor = hiddenAt === null ? 0 : Date.now() - hiddenAt;
+      hiddenAt = null;
+      if (hiddenFor >= RESUME_CHECK_AFTER_MS) {
+        updatePortfolio().catch((error) => {
+          logger.error("Failed to request the portfolio update: " + String(error));
+        });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+}
 
 export default useGlobalEventListener;

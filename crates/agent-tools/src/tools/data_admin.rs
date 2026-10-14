@@ -7,8 +7,6 @@
 //!   (`ActivityServiceTrait::bulk_mutate_activities`, the UI's bulk editor
 //!   path). Supports `subtype` (e.g. `DIVIDEND_IN_KIND`) and `metadata`
 //!   (e.g. `{"flow":{"is_external":true}}`).
-//! - `link_transfer_activities` — pair (or unpair) a TRANSFER_IN with a
-//!   TRANSFER_OUT as an internal transfer.
 //! - `upsert_manual_quotes` — save MANUAL price points (e.g. private-fund NAVs).
 //! - `update_account_settings` — rename, regroup, hide/show, archive or change
 //!   the tracking mode of an account.
@@ -155,83 +153,6 @@ impl AgentTool for MutateActivities {
                 "deleted": ids(&result.deleted),
                 "createdMappings": result.created_mappings,
                 "errors": result.errors,
-            }),
-        })
-    }
-}
-
-// ---------------------------------------------------------------------------
-// link_transfer_activities
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LinkTransferArgs {
-    activity_a_id: String,
-    activity_b_id: String,
-    #[serde(default)]
-    unlink: bool,
-}
-
-/// Pair or unpair two transfer activities as an internal transfer.
-pub struct LinkTransferActivities;
-
-#[async_trait::async_trait]
-impl AgentTool for LinkTransferActivities {
-    fn name(&self) -> &'static str {
-        "link_transfer_activities"
-    }
-
-    fn description(&self) -> &'static str {
-        "Pair a TRANSFER_IN and a TRANSFER_OUT (in different accounts) as one internal \
-         transfer, or unpair them with unlink=true. Same service path as the UI's \
-         'match transfer' action. This MUTATES data."
-    }
-
-    fn input_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "activityAId": { "type": "string" },
-                "activityBId": { "type": "string" },
-                "unlink": { "type": "boolean", "description": "Unpair instead of pair. Default false." }
-            },
-            "required": ["activityAId", "activityBId"]
-        })
-    }
-
-    fn required_scopes(&self) -> &'static [AgentScope] {
-        &[AgentScope::ActivitiesWrite]
-    }
-
-    fn access_level(&self) -> AgentToolAccess {
-        AgentToolAccess::Write
-    }
-
-    async fn call(
-        &self,
-        env: Arc<dyn AgentEnvironment>,
-        args: serde_json::Value,
-    ) -> Result<AgentToolResult, AgentToolError> {
-        let args: LinkTransferArgs = serde_json::from_value(args)?;
-        let service = env.activity_service();
-        let outcome = if args.unlink {
-            service
-                .unlink_transfer_activities(args.activity_a_id, args.activity_b_id)
-                .await
-        } else {
-            service
-                .link_transfer_activities(args.activity_a_id, args.activity_b_id)
-                .await
-        };
-        let (a, b) = outcome.map_err(exec_err)?;
-        Ok(AgentToolResult {
-            content: serde_json::json!({
-                "activities": [
-                    { "id": a.id, "accountId": a.account_id, "sourceGroupId": a.source_group_id },
-                    { "id": b.id, "accountId": b.account_id, "sourceGroupId": b.source_group_id },
-                ],
-                "linked": !args.unlink,
             }),
         })
     }

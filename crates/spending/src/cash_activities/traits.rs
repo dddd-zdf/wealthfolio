@@ -5,7 +5,7 @@ use super::model::{CashActivity, CashActivitySearchRequest, CashActivitySearchRe
 use super::service::CashActivityService;
 use crate::activity_assignments::{ActivityTaxonomyAssignment, BulkCategoryAssignment};
 
-/// Read-only surface of `CashActivityService` consumed by agent tools.
+/// Surface of `CashActivityService` consumed by agent tools.
 /// Mirrors the inherent method signatures exactly; extend (don't change)
 /// when write tools need more of the service.
 #[async_trait]

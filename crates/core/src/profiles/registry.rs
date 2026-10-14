@@ -56,6 +56,13 @@ fn storage_error(error: impl std::fmt::Display) -> ProfileError {
     ProfileError::Unavailable(error.to_string())
 }
 
+fn storage_io_error(error: std::io::Error) -> ProfileError {
+    ProfileError::StorageIo {
+        kind: error.kind(),
+        os_code: error.raw_os_error(),
+    }
+}
+
 fn credential_error(_: crate::Error) -> ProfileError {
     ProfileError::Unavailable("The profile credential store could not be accessed.".into())
 }
@@ -152,14 +159,14 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> ProfileResult<()> {
             .write(true)
             .create_new(true)
             .open(&temporary)
-            .map_err(storage_error)?;
-        file.write_all(bytes).map_err(storage_error)?;
-        file.sync_all().map_err(storage_error)?;
-        fs::rename(&temporary, path).map_err(storage_error)?;
+            .map_err(storage_io_error)?;
+        file.write_all(bytes).map_err(storage_io_error)?;
+        file.sync_all().map_err(storage_io_error)?;
+        fs::rename(&temporary, path).map_err(storage_io_error)?;
         #[cfg(unix)]
-        File::open(path.parent().unwrap())
+        File::open(path.parent().expect("registry files live in a directory"))
             .and_then(|f| f.sync_all())
-            .map_err(storage_error)?;
+            .map_err(storage_io_error)?;
         Ok(())
     })();
     if result.is_err() {
@@ -224,7 +231,10 @@ impl ProfileRegistry {
                 if source.try_exists().map_err(storage_error)? {
                     let bytes = fs::read(source).map_err(storage_error)?;
                     fs::create_dir_all(&archive).map_err(storage_error)?;
-                    atomic_write(&archive.join(source.file_name().unwrap()), &bytes)?;
+                    let name = source
+                        .file_name()
+                        .expect("registry paths end in a file name");
+                    atomic_write(&archive.join(name), &bytes)?;
                 }
             }
             let data = RegistryData {
@@ -330,7 +340,7 @@ impl ProfileRegistry {
     pub fn deletion_paths(&self, id: Uuid) -> ProfileResult<ProfilePaths> {
         let profile: Profile = serde_json::from_slice(
             &fs::read(self.root.join(DELETIONS_DIR).join(format!("{id}.json")))
-                .map_err(storage_error)?,
+                .map_err(storage_io_error)?,
         )
         .map_err(storage_error)?;
         if profile.id != id {
@@ -402,7 +412,7 @@ impl ProfileRegistry {
         }
         let profile: Profile = serde_json::from_slice(
             &fs::read(self.root.join(DELETIONS_DIR).join(format!("{id}.json")))
-                .map_err(storage_error)?,
+                .map_err(storage_io_error)?,
         )
         .map_err(storage_error)?;
         if profile.id != id {
@@ -829,7 +839,7 @@ impl ProfileRegistry {
         data.profiles
             .iter_mut()
             .find(|p| p.id == id)
-            .unwrap()
+            .ok_or(ProfileError::NotFound)?
             .never_protected = false;
         let encoded = serde_json::to_vec_pretty(&*data).map_err(storage_error)?;
         atomic_write(&self.root.join(REGISTRY_FILE), &encoded)?;
@@ -840,7 +850,7 @@ impl ProfileRegistry {
         next.profiles
             .iter_mut()
             .find(|p| p.id == id && !self.is_deleting(id))
-            .unwrap()
+            .ok_or(ProfileError::NotFound)?
             .lock_enabled = password.is_some();
         self.save(&mut data, next)?;
         Ok(recovery)
@@ -868,7 +878,7 @@ fn new_lock_record(password: Option<&str>) -> ProfileResult<(LockRecord, Option<
         let formatted = code
             .as_bytes()
             .chunks(4)
-            .map(|part| std::str::from_utf8(part).unwrap())
+            .map(|part| std::str::from_utf8(part).expect("hex digits are ASCII"))
             .collect::<Vec<_>>()
             .join("-");
         (
@@ -895,11 +905,11 @@ fn recovery_hash(code: &str) -> String {
 fn remove_owned_path(path: &Path) -> ProfileResult<()> {
     match fs::symlink_metadata(path) {
         Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
-            fs::remove_dir_all(path).map_err(storage_error)
+            fs::remove_dir_all(path).map_err(storage_io_error)
         }
-        Ok(_) => fs::remove_file(path).map_err(storage_error),
+        Ok(_) => fs::remove_file(path).map_err(storage_io_error),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(storage_error(error)),
+        Err(error) => Err(storage_io_error(error)),
     }
 }
 

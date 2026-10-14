@@ -7,6 +7,7 @@ mod domain_events;
 pub mod error;
 pub mod events;
 pub mod features;
+mod fork_policy;
 mod main_lib;
 pub mod mcp;
 pub mod models;

@@ -1,8 +1,10 @@
+# syntax=docker/dockerfile:1
 # Global build args
 ARG RUST_IMAGE=rust:1.98.1-alpine
 
 # Stage 1: build frontend
 # Use --platform=$BUILDPLATFORM to run on the native runner (fast)
+# Keep the Node major in sync with .node-version
 FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend
 
 # Wealthfolio Connect configuration (baked into JS bundle at build time)
@@ -17,18 +19,21 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY . .
 ENV CI=1
 ENV BUILD_TARGET=web
-RUN npm install -g pnpm@9.9.0 && pnpm install --frozen-lockfile
+RUN npm install -g "$(node -p "require('./package.json').packageManager")" && pnpm install --frozen-lockfile
 # Build only the main app to avoid building workspace addons in this image
 RUN pnpm --filter frontend... build && mv dist /web-dist
 
 # Stage 2: build server with cross-compilation
-FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
+# Pinned: a new xx image invalidates the chef and deps layers that PR builds
+# import from the GHCR cache, which only rewarms on main
+FROM --platform=$BUILDPLATFORM tonistiigi/xx:1.10.0 AS xx
 
-# Toolchain shared by the dependency planner and the server build.
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS chef
 # Copy xx scripts to handle cross-compilation
 COPY --from=xx / /
 ARG TARGETPLATFORM
+
+WORKDIR /app
 
 # Install build tools for the HOST (to run cargo, build scripts)
 # clang/lld are needed for cross-linking
@@ -44,47 +49,55 @@ RUN xx-apk add --no-cache musl-dev gcc openssl-dev openssl-libs-static sqlite-de
 # Install rust target
 RUN rustup target add $(xx-cargo --print-target-triple)
 
-# cargo-chef compiles dependencies in their own cached layer, so a source
-# change rebuilds only the workspace crates instead of every dependency.
+ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
+# Set before cooking: openssl-sys rebuilds when OPENSSL_STATIC changes.
+ENV OPENSSL_STATIC=1
 RUN cargo install cargo-chef --locked --version 0.1.78
 
-WORKDIR /app
-
-# Workspace sources as the Rust build sees them
-FROM chef AS sources
+# Reduce the workspace to a dependency recipe (manifests and target layout)
+FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY apps/server ./apps/server
 # Stub out apps/tauri so the workspace resolves (not built in Docker)
 COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
+# Drop integration tests so new test files don't invalidate the cooked deps.
+# A [[test]] declared in a Cargo.toml must then set `path`, or the cook fails.
+RUN rm -rf crates/*/tests apps/server/tests && cargo chef prepare --recipe-path recipe.json
 
-# Dependency recipe: changes only when manifests or the lockfile change
-FROM sources AS planner
-RUN cargo chef prepare --recipe-path recipe.json
+# Third-party dependencies only; cache-warm.yml exports these layers for CI
+FROM chef AS deps
+COPY --from=planner /app/recipe.json recipe.json
+RUN xx-cargo chef cook --locked --release -p wealthfolio-server --recipe-path recipe.json
 
-FROM chef AS backend
+FROM deps AS backend
 # Wealthfolio Connect configuration (baked into server binary at build time)
 ARG CONNECT_AUTH_URL=
 ARG CONNECT_AUTH_PUBLISHABLE_KEY=
 ENV CONNECT_AUTH_URL=${CONNECT_AUTH_URL}
 ENV CONNECT_AUTH_PUBLISHABLE_KEY=${CONNECT_AUTH_PUBLISHABLE_KEY}
-ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
-ENV OPENSSL_STATIC=1
 
-# Build dependencies only (cached until the recipe changes)
-COPY --from=planner /app/recipe.json recipe.json
-RUN xx-cargo chef cook --release --locked -p wealthfolio-server --recipe-path recipe.json
-
-# Now build the server from the full sources
-COPY --from=sources /app ./
+# Restore the real manifests (the recipe masks workspace versions) and sources
+COPY Cargo.toml Cargo.lock ./
+COPY config ./config
+COPY crates ./crates
+COPY apps/server ./apps/server
+COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 # Build using xx-cargo which handles target flags
-RUN xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml && \
+RUN --mount=type=secret,id=connect-storage-hosts \
+    if [ -f /run/secrets/connect-storage-hosts ]; then \
+      export CONNECT_STORAGE_ALLOWED_HOSTS="$(cat /run/secrets/connect-storage-hosts)"; \
+      if [ -z "$(printf '%s' "$CONNECT_STORAGE_ALLOWED_HOSTS" | tr -d '[:space:],')" ]; then \
+        echo "The connect-storage-hosts override must contain approved hosts" >&2; exit 1; \
+      fi; \
+    fi && \
+    xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml && \
     # Move the binary to a predictable location because the target dir changes with --target
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
 # Final stage
-FROM alpine:3.19
+FROM alpine:3.19 AS runtime
 WORKDIR /app
 # Copy from backend (which is now build platform, but binary is target platform)
 COPY --from=backend /wealthfolio-server /usr/local/bin/wealthfolio-server

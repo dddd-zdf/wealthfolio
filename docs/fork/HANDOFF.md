@@ -11,16 +11,21 @@ deliberately **not** in this public repo. They live in the private Agent
 Workspace on Google Drive (`projects/wealthfolio/README.md`), which the owner
 can share with you.
 
+The authoritative host inventory and operating runbooks live in the private
+`dddd-zdf/infra` repository (local checkout `C:\Users\difei\Developer\infra`).
+Read its `README.md`, `vms/home.md`, and `vms/util.md` before server work; do
+not infer the current deployment from older application notes.
+
 ## At a glance
 
 | What         | Where                                                                         |
 | ------------ | ----------------------------------------------------------------------------- |
 | Fork         | `github.com/dddd-zdf/wealthfolio` (remote `origin`); upstream is `upstream`   |
-| Live app     | `https://dddfwealth.duckdns.org` (web build, password login)                  |
-| MCP endpoint | `https://dddfwealth.duckdns.org/mcp` (PAT or OAuth)                           |
-| Host         | Oracle Cloud Always Free A1 VM (arm64, Ubuntu 24.04), Toronto region          |
+| Live app     | `https://wealth.dfhome.dpdns.org` (web build, password login)                 |
+| MCP endpoint | `https://wealth.dfhome.dpdns.org/mcp` (PAT or OAuth)                          |
+| Host         | `home` A1 VM (arm64, Ubuntu 24.04), Toronto; shared with Immich and Nextcloud |
 | Images       | `ghcr.io/dddd-zdf/wealthfolio:mcp-<7-char sha>`, built by `docker-branch.yml` |
-| Branching    | Feature branch → PR into `main` (squash) → build image from `main` → deploy   |
+| Branching    | Feature branch → PR into `main` → build exact revision → deploy               |
 
 ## What the fork changes
 
@@ -80,39 +85,40 @@ To see the full divergence:
 - **Login sessions.** `WF_AUTH_TOKEN_TTL_MINUTES=43200` (30 days, renewed on
   use) at the owner's request.
 
-## Upstream sync status
+## Upstream integration
 
-The fork last merged upstream on 2026-09-27 (merge base `392f272c5`). Upstream
-has since moved a long way (about 266 commits by 2026-10-06), including a full
-replacement of the portfolio calculators with a new portfolio engine (upstream
-#1847), loans, and per-account cost-basis methods. Expect real conflicts in
-`apps/server/src/perf_cache.rs`, `api/performance.rs`, `api/holdings/*`,
-`crates/core/src/portfolio/*` and `crates/core/src/quotes/sync.rs`.
+The 3.10 integration merges release `v3.10.0` (`f9643209e`) from the previous
+shared ancestor `392f272c5`. Keep upstream's new engine, coordinator and
+projection invalidation. Carry fork behavior through the extension points in
+[EXTENSIONS.md](EXTENSIONS.md); do not resurrect the removed calculators.
 
-When syncing: branch from `main`, `git merge upstream/main`, re-apply each fork
-behaviour above against the new code (some, like #20 or #13, may be fixed or
-obsoleted upstream—check before porting), run the validation in AGENTS.md, then
-deploy and watch the dashboard numbers against the previous image. Don't rebase
-`main`; it is shared history.
+Use a merge commit for an upstream synchronization PR so future merges retain
+release ancestry. Routine feature PRs can still use squash. Validate on a
+disposable database copy: first startup rebuilds calculated history and can
+change derived numbers. A verified pre-upgrade database backup is required for
+production rollback; changing the image tag alone does not undo a migration.
 
 ## Build and deploy
 
 There is no build on the server. CI builds the image; the server pulls it.
 
-1. Merge the PR into `main` (squash). PR checks are `pr-check.yml`; Android and
-   iOS compile checks are skipped on PRs in this fork.
+1. Merge the validated PR into `main` (preserve merge ancestry for upstream
+   syncs). PR checks are `pr-check.yml`; Android and iOS compile checks are
+   skipped on PRs in this fork.
 2. Build the image:
    ```bash
    gh workflow run docker-branch.yml --repo dddd-zdf/wealthfolio --ref main
    ```
-   It builds arm64 only by default (tick the `amd64` input for the old x86 VM),
-   runs `.github/scripts/encryption_smoke.py` against the image, and publishes
-   `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Warm builds take
-   about 13 minutes. GHA caches are branch-scoped; if `main`'s `Cargo.lock`
-   changes, run the workflow on `main` once so branch builds stay warm.
-3. Deploy on the server:
+   It builds arm64 by default (`amd64` is optional for separate compatibility
+   checks), runs `.github/scripts/encryption_smoke.py` against the image, and
+   publishes `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Warm
+   builds take about 13 minutes. GHA caches are branch-scoped; if `main`'s
+   `Cargo.lock` changes, run the workflow on `main` once so branch builds stay
+   warm.
+3. Verify the image revision/architecture, take and verify a fresh backup, then
+   deploy on `home`:
    ```bash
-   sudo /opt/wealthfolio/deploy.sh mcp-<sha>
+   ssh home sudo /opt/wealthfolio/deploy.sh mcp-<sha>
    ```
    The script pulls the image, replaces the `wealthfolio` container
    (`--restart unless-stopped`, logs capped at 3 × 10 MB, `127.0.0.1:8088`,
@@ -144,10 +150,8 @@ The account is Pay As You Go with a $1 "stay-free" budget alert. Stay inside the
 Always Free limits (4 OCPU / 24 GB A1 total, 200 GB block storage) before
 resizing or adding volumes.
 
-The old x86 E2 micro VM (previous home, until 2026-10-03) still runs the owner's
-**Nocturne** service. Never stop, prune or delete Nocturne files, services or
-timers there. Its stopped Wealthfolio container is a rollback that can be
-cleaned up after about 2026-10-10.
+The former E2 VM was deleted. Nocturne and Wealthfolio backup reception now run
+on `util`; leave those services and the other apps on `home` untouched.
 
 ## Runbooks
 

@@ -5,7 +5,7 @@ import type { RunEnv } from "../types";
 import { RunEnvs } from "../types";
 
 // Platform constants
-export { isDesktop, isWeb, logger } from "./core";
+export { isTauri, isWeb, logger } from "./core";
 
 // Re-export types and constants from shared types
 export { RunEnvs } from "../types";
@@ -278,6 +278,12 @@ export {
   createAlternativeAsset,
   deleteAlternativeAsset,
   getAlternativeHoldings,
+  applyLoanAction,
+  calculateLoan,
+  getLoanPayments,
+  linkLoanPayment,
+  previewLoanTerms,
+  recalculateLoan,
   getNetWorth,
   getNetWorthHistory,
   linkLiability,
@@ -509,6 +515,8 @@ export {
   uninstallAddon,
   updateAddon,
   updateAddonNetworkApprovals,
+  registerDevAddonManifest,
+  unregisterDevAddonManifest,
 } from "./addons";
 
 // FIRE Planner (desktop-only — stubs throw at runtime)
@@ -536,3 +544,13 @@ export {
   syncHashPairingCode,
   syncHmacSha256,
 } from "./crypto";
+
+export {
+  cloudBackupAction,
+  captureCloudBackup,
+  type CloudBackupStatus,
+  type CloudBackupCaptureStatus,
+  type CloudBackupPoint,
+  type CloudBackupOperation,
+} from "../shared/cloud-backups";
+export { downloadCloudBackup, previewCloudBackupRestore } from "./cloud-backups";
