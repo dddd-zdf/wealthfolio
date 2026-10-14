@@ -7,6 +7,11 @@ This checkout is a personal fork. Before working on it, read
 [docs/fork/HANDOFF.md](docs/fork/HANDOFF.md) for the fork's changes, deploy
 pipeline and server operations.
 
+For this fork, default acceptance targets the self-hosted web app and ARM64
+server. See the handoff's CI scope before selecting checks. Desktop/mobile
+builds are opt-in; CI/docs-only changes do not need app E2E tests or a
+production redeploy.
+
 ## Working agreements
 
 - Resolve routine implementation choices from nearby code. State material

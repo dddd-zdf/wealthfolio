@@ -98,23 +98,50 @@ disposable database copy: first startup rebuilds calculated history and can
 change derived numbers. A verified pre-upgrade database backup is required for
 production rollback; changing the image tag alone does not undo a migration.
 
+## CI scope
+
+This fork deploys the **web app and ARM64 server**. Default PR checks cover web
+lint/types/build, two parallel frontend test shards, browser harnesses, and Rust
+Clippy/tests for the server and every shared crate
+(`--exclude wealthfolio-app`). The Rust suite includes HTTP certificate policy,
+vault/config and portable-backup tests; its Linux mounted-vault fixture runs in
+the same job. Do not add desktop or mobile builds to the acceptance gate unless
+the owner requests them.
+
+Native secret-store checks are manual. Separate server-vault and HTTP workflows
+are also manual, with optional macOS/Windows coverage. Weekly cache warming only
+builds server-check dependencies and ARM Docker dependencies.
+
+PR Docker builds run only for packaging/configuration changes and use ARM64.
+Ordinary application changes use web/server checks; the deployable image still
+gets a real ARM build and encryption smoke test before publication. Release tags
+retain both architectures; manual amd64 checks are opt-in.
+
+Keep checks proportional: CI/docs-only edits need helper tests and workflow
+validation, not a local full app E2E run or a production redeploy. A
+frontend-only PR skips Rust. If a larger PR still contains Rust changes, later
+UI edits still rerun Rust; do not treat a previous commit's success as
+validation of new code.
+
 ## Build and deploy
 
 There is no build on the server. CI builds the image; the server pulls it.
 
 1. Merge the validated PR into `main` (preserve merge ancestry for upstream
-   syncs). PR checks are `pr-check.yml`; Android and iOS compile checks are
-   skipped on PRs in this fork.
+   syncs). PR checks are `pr-check.yml`, scoped as described above.
 2. Build the image:
    ```bash
    gh workflow run docker-branch.yml --repo dddd-zdf/wealthfolio --ref main
    ```
    It builds arm64 by default (`amd64` is optional for separate compatibility
    checks), runs `.github/scripts/encryption_smoke.py` against the image, and
-   publishes `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Warm
-   builds take about 13 minutes. GHA caches are branch-scoped; if `main`'s
-   `Cargo.lock` changes, run the workflow on `main` once so branch builds stay
-   warm.
+   publishes `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Main
+   exports a shared registry cache; feature builds read it and retain their own
+   branch cache. Only main can replace the shared cache. The first run with new
+   dependencies can still be cold; measure actual times rather than promising a
+   fixed duration. If an already-tested image's source tree exactly matches
+   merged main, reuse that immutable image revision. Do not rebuild solely for a
+   new merge label.
 3. Verify the image revision/architecture, take and verify a fresh backup, then
    deploy on `home`:
    ```bash
@@ -124,8 +151,9 @@ There is no build on the server. CI builds the image; the server pulls it.
    (`--restart unless-stopped`, logs capped at 3 × 10 MB, `127.0.0.1:8088`,
    volume `wealthfolio-data` at `/data`, env from `/opt/wealthfolio/.env`,
    `CONNECT_API_URL` blank), and health-checks `http://127.0.0.1:8088/`.
-4. Rollback = run `deploy.sh` with the previous tag. Note the current and
-   previous tags somewhere (the private README keeps them).
+4. Record current/previous image revisions and the backup in the infra repo.
+   Image-only rollback is sufficient only without a schema change; otherwise
+   restore the matching pre-upgrade data and image using the infra runbook.
 
 To ship several unmerged PRs together, merge them into a throwaway
 `deploy/<date>` branch and dispatch `docker-branch.yml` on that branch.
