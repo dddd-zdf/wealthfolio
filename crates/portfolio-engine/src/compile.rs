@@ -440,7 +440,6 @@ fn attribution_for(activity: &Activity, account: &AccountFacts, action: &Action)
                 .unwrap_or(Decimal::ZERO),
             fee,
             tax,
-            ..Attributed::default()
         },
         // Cash transfers book tax to cash; asset transfers book only the fee.
         Credit | Deposit | Withdrawal => Attributed {

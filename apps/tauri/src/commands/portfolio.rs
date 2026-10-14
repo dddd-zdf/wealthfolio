@@ -455,6 +455,7 @@ pub async fn get_intraday_valuations(
                 start,
                 Some(today),
             )
+            .await
     }
     .map_err(|e| e.to_string())?;
 
