@@ -3,6 +3,10 @@
 .gitignore
 .env*
 
+# CI configuration and repository docs are not web/server build inputs.
+.github
+docs
+
 # Node workspace artifacts
 node_modules
 **/node_modules
