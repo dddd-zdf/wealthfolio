@@ -278,63 +278,59 @@ export function DashboardContent({
                 currency={baseCurrency}
                 displayCurrency={true}
               />
-              <div className="text-md flex min-h-5 items-center space-x-3">
-                {isGainLoading ? (
-                  <div className="flex items-center gap-3">
-                    <Skeleton className="h-4 w-24" />
-                    <div className="border-secondary my-1 border-r pr-2" />
-                    <Skeleton className="h-4 w-16" />
-                  </div>
-                ) : (
-                  <>
-                    {gainLossAmount == null ? (
-                      <span className="text-muted-foreground lg:text-md text-sm font-light">
-                        N/A
-                      </span>
-                    ) : (
-                      <GainAmount
-                        className="lg:text-md text-sm font-light"
-                        value={gainLossAmount}
-                        currency={baseCurrency}
-                        displayCurrency={false}
-                      />
-                    )}
-                    <div className="border-secondary my-1 border-r pr-2" />
-                    {simpleReturn == null ? (
-                      <span className="text-muted-foreground lg:text-md text-sm font-light">
-                        N/A
-                      </span>
-                    ) : (
-                      <GainPercent
-                        className="lg:text-md text-sm font-light"
-                        value={simpleReturn}
-                        animated={true}
-                      />
-                    )}
-                    {moneyWeightedReturn != null && (
-                      <>
-                        <div className="border-secondary my-1 border-r pr-2" />
-                        <span className="lg:text-md text-muted-foreground text-sm font-light">
-                          {moneyWeightedReturn.annualized
-                            ? t("performance:metric.ann_mwr_short")
-                            : t("performance:metric.mwr_short")}
-                        </span>
-                        <GainPercent
-                          className="lg:text-md !ml-1.5 text-sm font-light"
-                          value={moneyWeightedReturn.value}
-                        />
-                      </>
-                    )}
-                  </>
-                )}
-                {selectedInterval && (
-                  <span className="lg:text-md text-muted-foreground ml-1 text-sm font-light">
-                    {t(`ui:interval.${selectedInterval}`)}
-                  </span>
-                )}
-              </div>
             </PortfolioUpdateTrigger>
             <PrivacyToggle className="hover:bg-muted/50 bg-transparent" />
+          </div>
+          <div className="text-md flex min-h-5 items-center space-x-3">
+            {isGainLoading ? (
+              <div className="flex items-center gap-3">
+                <Skeleton className="h-4 w-24" />
+                <div className="border-secondary my-1 border-r pr-2" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+            ) : (
+              <>
+                {gainLossAmount == null ? (
+                  <span className="text-muted-foreground lg:text-md text-sm font-light">N/A</span>
+                ) : (
+                  <GainAmount
+                    className="lg:text-md text-sm font-light"
+                    value={gainLossAmount}
+                    currency={baseCurrency}
+                    displayCurrency={false}
+                  />
+                )}
+                <div className="border-secondary my-1 border-r pr-2" />
+                {simpleReturn == null ? (
+                  <span className="text-muted-foreground lg:text-md text-sm font-light">N/A</span>
+                ) : (
+                  <GainPercent
+                    className="lg:text-md text-sm font-light"
+                    value={simpleReturn}
+                    animated={true}
+                  />
+                )}
+                {moneyWeightedReturn != null && (
+                  <>
+                    <div className="border-secondary my-1 border-r pr-2" />
+                    <span className="lg:text-md text-muted-foreground text-sm font-light">
+                      {moneyWeightedReturn.annualized
+                        ? t("performance:metric.ann_mwr_short")
+                        : t("performance:metric.mwr_short")}
+                    </span>
+                    <GainPercent
+                      className="lg:text-md !ml-1.5 text-sm font-light"
+                      value={moneyWeightedReturn.value}
+                    />
+                  </>
+                )}
+              </>
+            )}
+            {selectedInterval && (
+              <span className="lg:text-md text-muted-foreground ml-1 text-sm font-light">
+                {t(`ui:interval.${selectedInterval}`)}
+              </span>
+            )}
           </div>
         </div>
       </div>
