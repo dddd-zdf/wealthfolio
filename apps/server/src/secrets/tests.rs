@@ -415,6 +415,7 @@ fn existing_optional_key_api_remains_compatible() {
     }
 }
 
+#[cfg(unix)]
 fn captured_logs(run: impl FnOnce()) -> String {
     #[derive(Clone, Default)]
     struct Buffer(std::sync::Arc<Mutex<Vec<u8>>>);

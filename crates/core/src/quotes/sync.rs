@@ -262,7 +262,8 @@ fn deposit_quotes(
                     DATA_SOURCE_CALCULATED
                 ),
                 asset_id: asset.id.clone(),
-                timestamp: Utc.from_utc_datetime(&day.and_hms_opt(12, 0, 0).unwrap()),
+                timestamp: Utc
+                    .from_utc_datetime(&day.and_hms_opt(12, 0, 0).expect("noon is a valid time")),
                 open: value,
                 high: value,
                 low: value,

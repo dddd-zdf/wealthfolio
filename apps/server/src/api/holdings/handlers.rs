@@ -412,7 +412,7 @@ pub async fn get_intraday_valuations(
         crate::error::ApiError::BadRequest(format!("Unsupported range: {}", parsed.range))
     })?;
 
-    let tz = parse_user_timezone_or_default(&state.timezone.read().unwrap().clone());
+    let tz = parse_user_timezone_or_default(&state.timezone()?);
     let today = user_today(tz);
     let holdings = load_holdings_for_filter(state.as_ref(), &parsed.filter, false).await?;
     let Json(daily) = get_historical_valuations_for_scope_uncached(

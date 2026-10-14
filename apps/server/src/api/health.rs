@@ -62,7 +62,13 @@ fn spawn_health_refresh(state: Arc<AppState>) {
 
 /// Recompute and cache the health status ahead of the next page view.
 pub(crate) async fn warm_health_status(state: &Arc<AppState>) {
-    let base_currency = state.base_currency.read().unwrap().clone();
+    let base_currency = match state.base_currency() {
+        Ok(base_currency) => base_currency,
+        Err(error) => {
+            tracing::debug!("Background health check skipped: {error}");
+            return;
+        }
+    };
     if let Err(error) = run_health_checks_internal(state, &base_currency, None).await {
         tracing::debug!("Background health check failed: {error}");
     }
