@@ -13,8 +13,11 @@ mod assets_model;
 mod assets_service;
 mod assets_traits;
 mod auto_classification;
+mod bond_identity;
 mod classification_service;
-mod term_deposit;
+pub mod loan;
+pub mod term_deposit;
+pub use term_deposit::{DepositCompounding, DepositSpec, DEPOSIT_METADATA_KEY};
 
 #[cfg(test)]
 mod assets_model_tests;
@@ -27,11 +30,11 @@ pub use alternative_assets_model::{
 };
 pub use alternative_assets_service::AlternativeAssetService;
 pub use alternative_assets_traits::{
-    AlternativeAssetRepositoryTrait, AlternativeAssetServiceTrait,
+    AlternativeAssetRepositoryTrait, AlternativeAssetServiceTrait, LoanChange, PaymentTagChange,
 };
 pub use asset_id::{
     parse_crypto_pair_symbol, parse_symbol_with_exchange_suffix, parse_symbol_with_known_exchange,
-    symbol_resolution_candidates, unknown_dotted_suffix_fallback,
+    symbol_resolution_candidates,
 };
 pub use asset_logo_model::{
     decode_and_validate as decode_and_validate_asset_logo, AssetLogo, AssetLogoSummary,
@@ -40,7 +43,7 @@ pub use asset_logo_model::{
 };
 pub use asset_logo_service::AssetLogoService;
 pub use asset_logo_traits::{AssetLogoRepositoryTrait, AssetLogoServiceTrait};
-pub(crate) use asset_resolution::asset_provider_alias_symbols;
+pub(crate) use asset_resolution::{asset_provider_alias_symbols, custom_provider_code};
 pub use asset_resolution::{AssetResolutionInput, AssetResolutionOutput};
 pub use assets_model::{
     build_asset_metadata, build_option_metadata, canonicalize_market_identity,
@@ -56,7 +59,7 @@ pub use assets_traits::{AssetRepositoryTrait, AssetServiceTrait};
 pub use auto_classification::{
     AutoClassificationService, ClassificationInput, ClassificationResult,
 };
+pub(crate) use bond_identity::resolve_bond_aliases;
 pub use classification_service::{
     AssetClassificationService, AssetClassifications, CategoryWithWeight,
 };
-pub use term_deposit::{DepositCompounding, DepositSpec, DEPOSIT_METADATA_KEY};

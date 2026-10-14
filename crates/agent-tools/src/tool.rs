@@ -68,6 +68,12 @@ pub trait AgentTool: Send + Sync {
     /// Scopes a caller must hold for this tool to be visible and callable.
     fn required_scopes(&self) -> &'static [AgentScope];
 
+    /// Per-call requirements for tools that retain an older input contract.
+    /// Discovery uses `required_scopes`; execution may require more for a new form.
+    fn required_call_scopes(&self, _args: &serde_json::Value) -> &'static [AgentScope] {
+        self.required_scopes()
+    }
+
     /// Access classification (read/draft/write/suggest).
     fn access_level(&self) -> AgentToolAccess;
 

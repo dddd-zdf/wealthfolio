@@ -70,3 +70,6 @@ device-sync = []
 
 [dev-dependencies]
 reqwest = { workspace = true }
+
+[lints]
+workspace = true

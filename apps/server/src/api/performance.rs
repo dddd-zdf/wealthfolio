@@ -152,7 +152,11 @@ async fn calculate_performance_history(
     let tracking_mode = parse_tracking_mode(body.tracking_mode);
     let metrics = if let (true, Some(filter)) = (body.item_type == "account", body.filter.as_ref())
     {
-        let base = state.base_currency.read().unwrap().clone();
+        let base = state
+            .base_currency
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         let resolved = state
             .portfolio_service
             .resolve_account_scope(filter, &base)
@@ -235,8 +239,6 @@ fn parse_cached_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> ApiResult<T
         .map_err(|error| ApiError::BadRequest(format!("Invalid request body: {error}")))
 }
 
-/// Cache key for a parsed summary request. Built from the parsed fields (not
-/// the raw bytes) so the server-side warm-up matches client requests.
 fn summary_cache_key(state: &Arc<AppState>, body: &PerfBody) -> u64 {
     let canonical = serde_json::json!({
         "itemType": body.item_type,
@@ -251,8 +253,6 @@ fn summary_cache_key(state: &Arc<AppState>, body: &PerfBody) -> u64 {
     crate::perf_cache::key("summary", Arc::as_ptr(state) as usize, canonical.as_bytes())
 }
 
-/// Serves `/performance/summary` from the summary cache when the same request
-/// was answered (or warmed) since the last portfolio update.
 async fn calculate_performance_summary(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     body: axum::body::Bytes,
@@ -270,10 +270,8 @@ async fn calculate_performance_summary(
     Ok(Json(value))
 }
 
-/// Dashboard headline periods, mirroring the frontend interval selector
-/// (`packages/ui/src/components/financial/interval-selector.tsx`).
 fn dashboard_period_ranges(today: NaiveDate) -> Vec<(Option<NaiveDate>, Option<NaiveDate>)> {
-    let months = |n: u32| today.checked_sub_months(Months::new(n));
+    let months = |count| today.checked_sub_months(Months::new(count));
     vec![
         (today.checked_sub_days(Days::new(1)), Some(today)),
         (today.checked_sub_days(Days::new(7)), Some(today)),
@@ -283,16 +281,17 @@ fn dashboard_period_ranges(today: NaiveDate) -> Vec<(Option<NaiveDate>, Option<N
         (today.with_ordinal(1), Some(today)),
         (months(12), Some(today)),
         (months(60), Some(today)),
-        // ALL sends no dates.
         (None, None),
     ]
 }
 
-/// Precompute the dashboard headline for every standard period so switching
-/// periods after a portfolio update is served from cache.
 pub(crate) async fn warm_dashboard_summaries(state: &Arc<AppState>) {
     let today = {
-        let timezone = state.timezone.read().unwrap().clone();
+        let timezone = state
+            .timezone
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         wealthfolio_core::utils::time_utils::user_today(
             wealthfolio_core::utils::time_utils::parse_user_timezone_or_default(&timezone),
         )
@@ -319,9 +318,7 @@ pub(crate) async fn warm_dashboard_summaries(state: &Arc<AppState>) {
                     crate::perf_cache::put(key, generation, value);
                 }
             }
-            Err(error) => {
-                tracing::debug!("Dashboard summary warm-up skipped a period: {error}");
-            }
+            Err(error) => tracing::debug!("Dashboard summary warm-up skipped a period: {error}"),
         }
     }
     tracing::info!(
@@ -341,7 +338,11 @@ async fn calculate_performance_summary_uncached(
     let summary_start = Instant::now();
     let metrics = if let (true, Some(filter)) = (body.item_type == "account", body.filter.as_ref())
     {
-        let base = state.base_currency.read().unwrap().clone();
+        let base = state
+            .base_currency
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         let resolved = state
             .portfolio_service
             .resolve_account_scope(filter, &base)
@@ -368,36 +369,19 @@ async fn calculate_performance_summary_uncached(
             performance_account_tracking_modes_from_map(&accounts_by_id, &account_ids);
         let account_types = performance_account_types_from_map(&accounts_by_id, &account_ids);
         let tracking_composition = performance_tracking_composition(&tracking_modes, &account_ids);
-        let performance_service = Arc::clone(&state.performance_service);
-        let handle = tokio::runtime::Handle::current();
-        let scope_id_for_task = resolved.scope_id.clone();
-        let base_for_task = resolved.base_currency.clone();
-        let account_ids_for_task = account_ids.clone();
-        let tracking_modes_for_task = tracking_modes.clone();
-        let account_types_for_task = account_types.clone();
-        let mut result = tokio::task::spawn_blocking(move || {
-            handle.block_on(async move {
-                performance_service
-                    .calculate_performance_summary_for_accounts(
-                        &scope_id_for_task,
-                        &account_ids_for_task,
-                        &base_for_task,
-                        &tracking_modes_for_task,
-                        &account_types_for_task,
-                        start,
-                        end,
-                        profile,
-                    )
-                    .await
-            })
-        })
-        .await
-        .map_err(|e| {
-            ApiError::Internal(format!(
-                "Failed to join performance summary calculation for {}: {}",
-                resolved.scope_id, e
-            ))
-        })??;
+        let mut result = state
+            .performance_service
+            .calculate_performance_summary_for_accounts(
+                &resolved.scope_id,
+                &account_ids,
+                &resolved.base_currency,
+                &tracking_modes,
+                &account_types,
+                start,
+                end,
+                profile,
+            )
+            .await?;
         tracing::debug!(
             item_type = %body.item_type,
             scope_id = %resolved.scope_id,
@@ -461,8 +445,6 @@ async fn calculate_performance_summary_uncached(
     Ok(Json(metrics))
 }
 
-/// Serves `/performance/summaries` from the short-lived summary cache when the
-/// same request was answered since the last portfolio update.
 async fn get_performance_summaries(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     body: axum::body::Bytes,
@@ -486,7 +468,11 @@ async fn get_performance_summaries_uncached(
 ) -> ApiResult<Json<HashMap<String, PerformanceResult>>> {
     let start = parse_date_optional(body.start_date, "startDate")?;
     let end = parse_date_optional(body.end_date, "endDate")?;
-    let base = state.base_currency.read().unwrap().clone();
+    let base = state
+        .base_currency
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
     let profile = body.profile.unwrap_or_default();
     let requested_account_ids = unique_account_ids(
         body.scopes
@@ -625,7 +611,11 @@ async fn get_income_summary(
             .map(|account| account.id)
             .collect(),
         Some(filter) => {
-            let base = state.base_currency.read().unwrap().clone();
+            let base = state
+                .base_currency
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone();
             let resolved = state
                 .portfolio_service
                 .resolve_account_scope(filter, &base)

@@ -1,6 +1,9 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { calculatePerformanceSummary, getIntradayValuations } from "@/adapters";
+import { AccountsSummary } from "./accounts-summary";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
@@ -12,10 +15,21 @@ import { DashboardContent } from "./dashboard-content";
 const uiMocks = vi.hoisted(() => ({
   realIntervals: false,
   intervalCode: "3M" as "1D" | "3M" | "ALL",
+  togglePrivacy: vi.fn(),
 }));
 
 vi.mock("@/adapters", () => ({
   calculatePerformanceSummary: vi.fn(),
+  getIntradayValuations: vi.fn(),
+}));
+
+vi.mock("@/components/privacy-toggle", () => ({
+  PrivacyToggle: () => <button onClick={uiMocks.togglePrivacy}>Hide Balance</button>,
+}));
+
+vi.mock("@/hooks/use-calculate-portfolio", () => ({
+  useUpdatePortfolioMutation: () => ({ mutate: vi.fn(), isPending: false }),
+  useRecalculatePortfolioMutation: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("@/components/history-chart", () => ({
@@ -77,6 +91,7 @@ vi.mock("@wealthfolio/ui", async () => {
             },
     IntervalSelector: () => <div>interval-selector</div>,
     usePersistentState: () => [uiMocks.intervalCode, vi.fn()],
+    useDateFormatting: () => ({ formatDate: () => "Jun 1, 2026", formatTime: () => "12:30" }),
   };
 });
 
@@ -84,26 +99,32 @@ vi.mock("@wealthfolio/ui/components/ui/skeleton", () => ({
   Skeleton: () => <div>loading</div>,
 }));
 
-vi.mock("@/pages/dashboard/portfolio-update-trigger", () => ({
-  PortfolioUpdateTrigger: ({
-    children,
-    lastCalculatedAt,
-    notices,
-  }: {
-    children: ReactNode;
-    lastCalculatedAt?: string;
-    notices?: string[];
-  }) => (
-    <div>
-      <div data-testid="portfolio-notices">{JSON.stringify(notices ?? [])}</div>
-      <div data-testid="portfolio-as-of">{lastCalculatedAt ?? ""}</div>
-      {children}
-    </div>
-  ),
-}));
+vi.mock("@/pages/dashboard/portfolio-update-trigger", async (importOriginal) => {
+  const { PortfolioUpdateTrigger } =
+    await importOriginal<typeof import("./portfolio-update-trigger")>();
+  return {
+    PortfolioUpdateTrigger: ({
+      children,
+      lastCalculatedAt,
+      notices,
+    }: {
+      children: ReactNode;
+      lastCalculatedAt?: string;
+      notices?: string[];
+    }) => (
+      <div>
+        <div data-testid="portfolio-notices">{JSON.stringify(notices ?? [])}</div>
+        <div data-testid="portfolio-as-of">{lastCalculatedAt ?? ""}</div>
+        <PortfolioUpdateTrigger lastCalculatedAt={lastCalculatedAt} notices={notices}>
+          {children}
+        </PortfolioUpdateTrigger>
+      </div>
+    ),
+  };
+});
 
 vi.mock("./accounts-summary", () => ({
-  AccountsSummary: () => <div>accounts-summary</div>,
+  AccountsSummary: vi.fn(() => <div>accounts-summary</div>),
 }));
 
 vi.mock("./balance", () => ({
@@ -343,7 +364,7 @@ describe("DashboardContent", () => {
 
     render(<DashboardContent />);
 
-    expect(mockUseValuationHistory).toHaveBeenCalledWith(undefined);
+    expect(mockUseValuationHistory).toHaveBeenCalledWith(undefined, { type: "all" });
   });
 
   it("starts dashboard performance queries while valuation history is loading", () => {
@@ -439,12 +460,79 @@ describe("DashboardContent", () => {
         typeof useQuery
       >);
       render(<DashboardContent />);
-      expect(mockUseValuationHistory).toHaveBeenLastCalledWith({
-        from: new Date(2026, 9, 1),
-        to: new Date(2027, 0, 1),
-      });
+      expect(mockUseValuationHistory).toHaveBeenLastCalledWith(
+        {
+          from: new Date(2026, 9, 1),
+          to: new Date(2027, 0, 1),
+        },
+        { type: "all" },
+      );
     } finally {
       vi.useRealTimers();
     }
+  });
+  it.each(["3M", "1D"] as const)(
+    "uses one portfolio scope for all dashboard data in %s",
+    async (interval) => {
+      uiMocks.intervalCode = interval;
+      mockCurrentValuation();
+      mockUseSettingsContext.mockReturnValue({ settings: { baseCurrency: "USD" } } as ReturnType<
+        typeof useSettingsContext
+      >);
+      mockUseHoldings.mockReturnValue({ holdings: [], isLoading: false } as unknown as ReturnType<
+        typeof useHoldings
+      >);
+      mockUseValuationHistory.mockReturnValue({ valuationHistory: [], isLoading: false });
+      mockUseQuery.mockReturnValue({ data: null, isLoading: false } as ReturnType<typeof useQuery>);
+      const scope = { type: "portfolio", portfolioId: "retirement" } as const;
+      render(<DashboardContent scope={scope} scopeLabel="Retirement" accountIds={["account-1"]} />);
+      expect(mockUseHoldings).toHaveBeenCalledWith(scope);
+      expect(mockUseCurrentValuation).toHaveBeenCalledWith(scope, { includeAccounts: true });
+      expect(mockUseValuationHistory.mock.calls.at(-1)?.[1]).toEqual(scope);
+      expect(vi.mocked(AccountsSummary).mock.calls.at(-1)?.[0]).toMatchObject({
+        accountIds: ["account-1"],
+      });
+      const query = mockUseQuery.mock.calls.find(
+        ([options]) => options.queryKey[0] === QueryKeys.PERFORMANCE_SUMMARY,
+      )?.[0];
+      expect(query?.queryKey).toContain("portfolio:retirement");
+      await (query?.queryFn as () => Promise<unknown>)();
+      expect(calculatePerformanceSummary).toHaveBeenCalledWith(
+        expect.objectContaining({ itemId: "portfolio:retirement", filter: scope }),
+      );
+      const intraday = mockUseQuery.mock.calls.find(
+        ([options]) => options.queryKey[1] === "intraday",
+      )?.[0];
+      expect(intraday?.queryKey).toContain("portfolio:retirement");
+      if (interval === "1D") {
+        await (intraday?.queryFn as () => Promise<unknown>)();
+        expect(getIntradayValuations).toHaveBeenCalledWith(scope, "1D");
+      }
+      expect(screen.getByText("Retirement")).toBeInTheDocument();
+    },
+  );
+
+  it("keeps privacy keyboard focus and activation separate from the update hover card", async () => {
+    mockCurrentValuation();
+    mockUseSettingsContext.mockReturnValue({ settings: { baseCurrency: "USD" } } as ReturnType<
+      typeof useSettingsContext
+    >);
+    mockUseHoldings.mockReturnValue({ holdings: [], isLoading: false } as unknown as ReturnType<
+      typeof useHoldings
+    >);
+    mockUseValuationHistory.mockReturnValue({ valuationHistory: [], isLoading: false });
+    mockUseQuery.mockReturnValue({ data: null, isLoading: false } as ReturnType<typeof useQuery>);
+    render(<DashboardContent scopeLabel="All Accounts" />);
+    expect(screen.queryByText("All Accounts")).not.toBeInTheDocument();
+
+    const privacy = screen.getByRole("button", { name: "Hide Balance" });
+    expect(privacy.closest("a")).toBeNull();
+    await userEvent.tab();
+    expect(privacy).toHaveFocus();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(screen.queryByRole("button", { name: "Update prices" })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    expect(uiMocks.togglePrivacy).toHaveBeenCalledOnce();
+    expect(screen.getByText("balance:125")).toBeInTheDocument();
   });
 });

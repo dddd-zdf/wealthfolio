@@ -64,7 +64,9 @@ struct SyncLockGuard {
 impl SyncLockGuard {
     /// Try to acquire sync lock for an asset. Returns Some(guard) if acquired, None if already locked.
     fn try_acquire(asset_id: &str) -> Option<Self> {
-        let mut locks = SYNC_LOCKS.lock().unwrap();
+        let mut locks = SYNC_LOCKS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         if locks.contains(asset_id) {
             None
         } else {
@@ -78,7 +80,9 @@ impl SyncLockGuard {
 
 impl Drop for SyncLockGuard {
     fn drop(&mut self) {
-        let mut locks = SYNC_LOCKS.lock().unwrap();
+        let mut locks = SYNC_LOCKS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         locks.remove(&self.asset_id);
     }
 }
@@ -714,8 +718,15 @@ where
         let quotes = client
             .fetch_history_for_reset(
                 asset,
-                Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap()),
-                Utc.from_utc_datetime(&end.and_hms_opt(23, 59, 59).unwrap()),
+                Utc.from_utc_datetime(
+                    &start
+                        .and_hms_opt(0, 0, 0)
+                        .expect("00:00:00 is a valid time"),
+                ),
+                Utc.from_utc_datetime(
+                    &end.and_hms_opt(23, 59, 59)
+                        .expect("23:59:59 is a valid time"),
+                ),
             )
             .await?;
         // Hold the client read lock through commit, keeping in-memory provider configuration stable.
@@ -906,8 +917,15 @@ where
     async fn _sync_splits(&self, asset: &Asset, start: NaiveDate, end: NaiveDate) {
         use crate::activities::compute_idempotency_key;
 
-        let start_dt = Utc.from_utc_datetime(&start.and_hms_opt(0, 0, 0).unwrap());
-        let end_dt = Utc.from_utc_datetime(&end.and_hms_opt(23, 59, 59).unwrap());
+        let start_dt = Utc.from_utc_datetime(
+            &start
+                .and_hms_opt(0, 0, 0)
+                .expect("00:00:00 is a valid time"),
+        );
+        let end_dt = Utc.from_utc_datetime(
+            &end.and_hms_opt(23, 59, 59)
+                .expect("23:59:59 is a valid time"),
+        );
 
         let client = self.client.read().await;
         let splits = client.fetch_splits(asset, start_dt, end_dt).await;
@@ -941,7 +959,12 @@ where
 
         let mut upserts: Vec<ActivityUpsert> = Vec::new();
         for split in &splits {
-            let split_dt = Utc.from_utc_datetime(&split.date.and_hms_opt(12, 0, 0).unwrap());
+            let split_dt = Utc.from_utc_datetime(
+                &split
+                    .date
+                    .and_hms_opt(12, 0, 0)
+                    .expect("12:00:00 is a valid time"),
+            );
 
             for account_id in &account_ids {
                 let key = compute_idempotency_key(
@@ -1029,8 +1052,18 @@ where
         );
 
         // Convert dates to DateTime<Utc>
-        let start_dt = Utc.from_utc_datetime(&plan.start_date.and_hms_opt(0, 0, 0).unwrap());
-        let end_dt = Utc.from_utc_datetime(&plan.end_date.and_hms_opt(23, 59, 59).unwrap());
+        let start_dt = Utc.from_utc_datetime(
+            &plan
+                .start_date
+                .and_hms_opt(0, 0, 0)
+                .expect("00:00:00 is a valid time"),
+        );
+        let end_dt = Utc.from_utc_datetime(
+            &plan
+                .end_date
+                .and_hms_opt(23, 59, 59)
+                .expect("23:59:59 is a valid time"),
+        );
 
         // Term deposits are priced from their terms; everything else via MarketDataClient
         let fetched = match asset.deposit_spec() {

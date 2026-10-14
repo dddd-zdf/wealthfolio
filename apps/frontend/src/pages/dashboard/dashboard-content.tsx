@@ -23,6 +23,9 @@ import { usePersistentState } from "@/hooks/use-persistent-state";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { format } from "date-fns";
 import { useMemo } from "react";
+import { PrivacyToggle } from "@/components/privacy-toggle";
+import type { AccountScope } from "@/lib/types";
+import { accountScopeKey } from "@/pages/allocation-targets/components/target-scope";
 import { useTranslation } from "react-i18next";
 import { AccountsSummary } from "./accounts-summary";
 import Balance from "./balance";
@@ -77,7 +80,17 @@ function getDashboardNetContributionMaxDomainSpanRatio(period: UITimePeriod): nu
   }
 }
 
-export function DashboardContent() {
+interface DashboardContentProps {
+  scope?: AccountScope;
+  scopeLabel?: string;
+  accountIds?: string[];
+}
+
+export function DashboardContent({
+  scope = { type: "all" },
+  scopeLabel,
+  accountIds,
+}: DashboardContentProps) {
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const todayISO = formatZonedDateKey(new Date(), settings?.timezone);
@@ -94,12 +107,12 @@ export function DashboardContent() {
   // totals, which stay flat over weekends and holidays.
   const isDayChange = selectedInterval === "1D";
 
-  const { holdings: allHoldings, isLoading: isHoldingsLoading } = useHoldings({ type: "all" });
+  const { holdings: allHoldings, isLoading: isHoldingsLoading } = useHoldings(scope);
   const {
     currentValuation: portfolioCurrentValuation,
     isLoading: isCurrentValuationLoading,
     error: currentValuationError,
-  } = useCurrentValuation({ type: "all" }, { includeAccounts: true });
+  } = useCurrentValuation(scope, { includeAccounts: true });
   const { triggerHaptic } = useHapticFeedback();
 
   // Filter holdings for display (exclude alternative assets and cash for TopHoldings)
@@ -117,8 +130,10 @@ export function DashboardContent() {
   const totalValue = portfolioCurrentValuation?.summary.totalValueBase ?? 0;
 
   const valuationHistoryRange = isAllTime ? undefined : dateRange;
-  const { valuationHistory, isLoading: isValuationHistoryLoading } =
-    useValuationHistory(valuationHistoryRange);
+  const { valuationHistory, isLoading: isValuationHistoryLoading } = useValuationHistory(
+    valuationHistoryRange,
+    scope,
+  );
 
   const baseCurrency = settings?.baseCurrency ?? "USD";
 
@@ -127,15 +142,16 @@ export function DashboardContent() {
   const endDate = !isAllTime && dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
   const datesReady = isAllTime || (!!startDate && !!endDate);
 
+  const scopeKey = accountScopeKey(scope);
   const { data: portfolioPerformance, isLoading: isPortfolioPerformanceLoading } = useQuery({
-    queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", "all", startDate, endDate],
+    queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", scopeKey, startDate, endDate],
     queryFn: () =>
       calculatePerformanceSummary({
         itemType: "account",
-        itemId: "portfolio:all",
+        itemId: scope.type === "all" ? "portfolio:all" : scopeKey,
         startDate,
         endDate,
-        filter: { type: "all" },
+        filter: scope,
         profile: "dashboard",
       }),
     enabled: datesReady && !isDayChange,
@@ -173,8 +189,8 @@ export function DashboardContent() {
   const intradayRange =
     selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
   const { data: intradayPoints } = useQuery({
-    queryKey: [QueryKeys.HISTORY_VALUATION, "intraday", intradayRange],
-    queryFn: () => getIntradayValuations({ type: "all" }, intradayRange!),
+    queryKey: [QueryKeys.HISTORY_VALUATION, "intraday", scopeKey, intradayRange],
+    queryFn: () => getIntradayValuations(scope, intradayRange!),
     enabled: intradayRange !== null,
     staleTime: 5 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
@@ -196,12 +212,16 @@ export function DashboardContent() {
       }));
     }
     return (
-      valuationHistory?.map((item) => ({
-        date: item.valuationDate,
-        totalValue: item.totalValueBase,
-        netContribution: item.netContributionBase,
-        currency: item.baseCurrency ?? baseCurrency,
-      })) ?? []
+      valuationHistory
+        // A day the engine could not fully convert carries a partial value;
+        // it is not plotted rather than drawn as if it were complete.
+        ?.filter((item) => item.valueStatus !== "unavailable")
+        .map((item) => ({
+          date: item.valuationDate,
+          totalValue: item.totalValueBase,
+          netContribution: item.netContributionBase,
+          currency: item.baseCurrency ?? baseCurrency,
+        })) ?? []
     );
   }, [intradayRange, intradayPoints, totalValue, valuationHistory, baseCurrency]);
 
@@ -240,12 +260,17 @@ export function DashboardContent() {
   return (
     <div className="flex min-h-full flex-col">
       <div className="px-4 pb-1 pt-2 md:px-6 lg:px-8">
-        <PortfolioUpdateTrigger
-          lastCalculatedAt={portfolioSourceDataAsOf}
-          notices={portfolioCurrentValuation?.summary.warnings}
-        >
-          <div className="flex items-start gap-2">
-            <div>
+        <div className="min-w-0">
+          {scope.type === "portfolio" && scopeLabel && (
+            <p className="text-muted-foreground mb-1 truncate text-xs" title={scopeLabel}>
+              {scopeLabel}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <PortfolioUpdateTrigger
+              lastCalculatedAt={portfolioSourceDataAsOf}
+              notices={portfolioCurrentValuation?.summary.warnings}
+            >
               <Balance
                 isLoading={isCurrentValuationLoading}
                 isUnavailable={isCurrentValuationUnavailable}
@@ -308,9 +333,10 @@ export function DashboardContent() {
                   </span>
                 )}
               </div>
-            </div>
+            </PortfolioUpdateTrigger>
+            <PrivacyToggle className="hover:bg-muted/50 bg-transparent" />
           </div>
-        </PortfolioUpdateTrigger>
+        </div>
       </div>
 
       <div
@@ -348,6 +374,7 @@ export function DashboardContent() {
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-3 lg:gap-20">
             <div className="lg:col-span-2">
               <AccountsSummary
+                accountIds={accountIds}
                 dateRange={dateRange}
                 isAllTime={isAllTime}
                 isDayChange={isDayChange}

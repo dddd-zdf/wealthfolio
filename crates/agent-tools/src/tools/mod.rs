@@ -7,6 +7,7 @@
 pub mod accounts;
 pub mod activities;
 pub mod activity_import;
+pub mod activity_updates;
 pub mod allocation;
 pub mod asset_classification;
 pub mod asset_taxonomies;
@@ -17,10 +18,12 @@ pub mod commit_asset_classification;
 pub mod commit_categories;
 pub mod commit_categorization_rule;
 pub mod commit_reviewed_categorization_rule;
+pub mod commit_transaction_categories;
 pub mod contribution_limits;
 pub mod create_account;
 pub mod create_categorization_rule;
 pub mod data_admin;
+mod fork_commits;
 pub mod goals;
 pub mod health;
 pub mod holdings;
@@ -29,8 +32,11 @@ pub mod net_worth;
 pub mod performance;
 pub mod portfolios;
 pub mod propose_categories;
+pub mod quote_import;
 pub mod record_activities;
 pub mod record_activity;
+pub mod transfer_compat;
+pub mod transfer_links;
 pub mod valuation;
 
 pub use accounts::{AccountDto, GetAccounts, GetAccountsArgs, GetAccountsOutput};
@@ -117,8 +123,32 @@ pub use commit_reviewed_categorization_rule::{
     CommitReviewedCategorizationRule, CommitReviewedCategorizationRuleArgs,
     CommitReviewedCategorizationRuleOutput,
 };
+pub use commit_transaction_categories::{
+    CommitTransactionCategories, CommitTransactionCategoriesArgs, CommitTransactionCategoriesOutput,
+};
 pub use create_account::{
     CreateAccount, CreateAccountArgs, CreateAccountOutput, CreatedAccountDto,
+};
+
+// MCP-only transfer linking tools.
+pub use transfer_compat::LinkTransferActivities;
+pub use transfer_links::{
+    FindTransferMatches, FindTransferMatchesArgs, FindTransferMatchesOutput, LinkTransfersOutput,
+    TransferCandidateDto, TransferDto, TransferPairDto, TransferPairError,
+    UnlinkTransferActivities, UnlinkTransfersOutput, UnlinkedTransferDto,
+};
+
+// MCP-only quote import tools.
+pub use quote_import::{
+    CommitQuoteImport, CommitQuoteImportOutput, PrepareQuoteImport, PrepareQuoteImportOutput,
+    QuoteImportArgs, QuoteImportInput, QuoteImportSummary, QuoteRowResult,
+};
+
+// MCP-only activity update tools (preview, then apply in place).
+pub use activity_updates::{
+    ActivityUpdateError, ActivityUpdatePreviewRow, ActivityUpdatePreviewSummary,
+    CommitActivityUpdates, CommitActivityUpdatesOutput, FieldChange, PrepareActivityUpdates,
+    PrepareActivityUpdatesOutput, StoredChange, UpdatedActivity,
 };
 
 // MCP-only CSV import tools (validate + dedup-safe import pipeline).
@@ -172,22 +202,15 @@ pub fn draft_suggest_tools() -> Vec<Arc<dyn AgentTool>> {
 /// The MCP-only commit tools that persist reviewed drafts. Never exposed to the
 /// in-app assistant (which writes through its confirmation widget instead).
 pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
-    vec![
+    let mut tools: Vec<Arc<dyn AgentTool>> = vec![
         Arc::new(CommitActivityDraft),
         Arc::new(CommitActivityDrafts),
         Arc::new(CommitAssetClassificationDraft),
-        Arc::new(CommitCategoryAssignments),
-        Arc::new(CommitCategorizationRule),
         Arc::new(CommitReviewedCategorizationRule),
-        Arc::new(CreateAccount),
-        Arc::new(data_admin::MutateActivities),
-        Arc::new(data_admin::LinkTransferActivities),
-        Arc::new(data_admin::UpsertManualQuotes),
-        Arc::new(data_admin::UpdateAccountSettings),
-        Arc::new(data_admin::SetAssetQuoteMode),
-        Arc::new(data_admin::SetTermDeposit),
-        Arc::new(data_admin::RecalculatePortfolio),
-    ]
+        Arc::new(CommitTransactionCategories),
+    ];
+    tools.extend(fork_commits::tools());
+    tools
 }
 
 /// The MCP-only CSV import tools: fetch an account's mapping, preview rows
@@ -198,6 +221,34 @@ pub fn import_tools() -> Vec<Arc<dyn AgentTool>> {
         Arc::new(GetImportMapping),
         Arc::new(PrepareActivityImport),
         Arc::new(CommitActivityImport),
+    ]
+}
+
+/// The MCP-only transfer linking tools: find unlinked transfers with their
+/// candidates, then link or unlink pairs. Not exposed to the in-app assistant,
+/// which links through the Link Transfer dialog.
+pub fn transfer_link_tools() -> Vec<Arc<dyn AgentTool>> {
+    vec![
+        Arc::new(FindTransferMatches),
+        Arc::new(LinkTransferActivities),
+        Arc::new(UnlinkTransferActivities),
+    ]
+}
+
+/// The MCP-only quote import tools: preview reviewed closing prices for
+/// existing assets, then save them as manual quotes. Not exposed to the in-app
+/// assistant, which has no confirmation card for quotes.
+pub fn quote_import_tools() -> Vec<Arc<dyn AgentTool>> {
+    vec![Arc::new(PrepareQuoteImport), Arc::new(CommitQuoteImport)]
+}
+
+/// The MCP-only activity update tools: preview corrections to existing
+/// activities, then apply them in place. Not exposed to the in-app assistant,
+/// which has no confirmation step for them; users edit in the activity grid.
+pub fn activity_update_tools() -> Vec<Arc<dyn AgentTool>> {
+    vec![
+        Arc::new(PrepareActivityUpdates),
+        Arc::new(CommitActivityUpdates),
     ]
 }
 
