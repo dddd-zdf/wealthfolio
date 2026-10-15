@@ -595,6 +595,28 @@ impl YahooProvider {
     }
 
     /// Fetch latest quote using primary method (library API).
+    fn latest_quote_currency(
+        &self,
+        provided: Option<String>,
+        context: &QuoteContext,
+    ) -> Result<String, MarketDataError> {
+        if let Some(currency) = provided.filter(|currency| !currency.trim().is_empty()) {
+            return Ok(currency);
+        }
+        // A raw Yahoo symbol has no trustworthy default currency: FINN.NE,
+        // VOD.L, and FINN cannot all inherit an assumed USD currency.
+        if context
+            .currency_hint
+            .as_ref()
+            .is_some_and(|hint| !hint.trim().is_empty())
+        {
+            return Ok(self.get_currency(context));
+        }
+        Err(MarketDataError::ValidationFailed {
+            message: "Yahoo latest quote did not identify its currency".into(),
+        })
+    }
+
     async fn fetch_latest_quote_primary(
         &self,
         symbol: &str,
@@ -614,11 +636,8 @@ impl YahooProvider {
         };
 
         // Prefer Yahoo's own currency from response metadata over resolver chain
-        let currency = response
-            .metadata()
-            .ok()
-            .and_then(|m| m.currency)
-            .unwrap_or_else(|| self.get_currency(context));
+        let currency =
+            self.latest_quote_currency(response.metadata().ok().and_then(|m| m.currency), context)?;
 
         let yahoo_quote = response.last_quote().map_err(|e| {
             warn!("No quotes returned for {}: {}", symbol, e);
@@ -689,10 +708,7 @@ impl YahooProvider {
             .ok_or_else(|| MarketDataError::SymbolNotFound(symbol.to_string()))?;
 
         // Extract currency: API response > context hint (derived from MIC)
-        let currency = price
-            .currency
-            .clone()
-            .unwrap_or_else(|| self.get_currency(context));
+        let currency = self.latest_quote_currency(price.currency.clone(), context)?;
 
         let close = price
             .regular_market_price
@@ -1762,6 +1778,36 @@ mod tests {
             "YAHOO".into(),
         );
         assert!(!should_seed_latest(now, &future));
+    }
+
+    #[test]
+    fn raw_quote_never_guesses_usd_when_yahoo_omits_currency() {
+        let provider = YahooProvider {
+            connector: yahoo::YahooConnector::new().expect("test client"),
+        };
+        let mut context = create_test_context();
+        context.currency_hint = None;
+        assert!(provider.latest_quote_currency(None, &context).is_err());
+        assert!(provider
+            .latest_quote_currency(Some(String::new()), &context)
+            .is_err());
+        assert_eq!(
+            provider
+                .latest_quote_currency(Some("CAD".into()), &context)
+                .unwrap(),
+            "CAD"
+        );
+        assert_eq!(
+            provider
+                .latest_quote_currency(Some("GBp".into()), &context)
+                .unwrap(),
+            "GBp"
+        );
+        context.currency_hint = Some("USD".into());
+        assert_eq!(
+            provider.latest_quote_currency(None, &context).unwrap(),
+            "USD"
+        );
     }
 
     #[test]
