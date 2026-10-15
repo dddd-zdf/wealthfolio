@@ -34,6 +34,7 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| #32    | Cached Yahoo quotes through MCP; shared pacing/cooldown; existing `holdings:read` tokens  | Fork modules and upstream merge checklist in [market-quotes-mcp.md](market-quotes-mcp.md)                                          |
 | #27    | 1D/1W intraday curve cached in `perf_cache`, so portfolio updates clear it                | `apps/server/src/api/holdings/handlers.rs`, `apps/server/src/perf_cache.rs`                                                        |
 | #26    | No "skipping orphan cleanup" warning for fully sold accounts (count open lots only)       | `crates/storage-sqlite/src/lots.rs`                                                                                                |
 | #25    | GICs/term deposits valued from their terms (daily accrual); MCP `set_term_deposit`        | `crates/core/src/assets/term_deposit.rs`, `crates/core/src/quotes/sync.rs`, `crates/agent-tools/src/tools/data_admin.rs`           |

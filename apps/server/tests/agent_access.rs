@@ -306,8 +306,9 @@ async fn mcp_pat_lifecycle() {
 
     let session = mcp_initialize(&server, &pat).await;
 
-    // tools/list -> the read-only catalog: 16 read tools + get_import_mapping
-    // and find_transfer_matches (also activities:read) = 18.
+    // tools/list -> the read-only catalog: 16 read tools + get_market_quote
+    // and get_import_mapping and find_transfer_matches (also
+    // activities:read) = 19.
     let response = mcp_post(
         &server,
         Some(&pat),
@@ -320,9 +321,56 @@ async fn mcp_pat_lifecycle() {
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        18,
-        "read-only catalog must expose 18 tools (incl. get_import_mapping): {tools:?}"
+        19,
+        "read-only catalog must expose 19 tools (incl. get_market_quote and get_import_mapping): {tools:?}"
     );
+    let read_names: Vec<&str> = tools
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap())
+        .collect();
+    assert!(read_names.contains(&"get_market_quote"));
+
+    // A token without holdings:read cannot discover or call the quote tool.
+    let (status, limited) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({ "name": "accounts only", "scopes": ["accounts:read"] }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let limited_pat = limited["token"].as_str().unwrap().to_string();
+    let limited_session = mcp_initialize(&server, &limited_pat).await;
+    let response = mcp_post(
+        &server,
+        Some(&limited_pat),
+        Some(&limited_session),
+        serde_json::json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/list" }),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    let limited_list = parse_sse_data(&response.text().await.unwrap());
+    let limited_tools = limited_list["result"]["tools"].as_array().unwrap();
+    assert!(!limited_tools
+        .iter()
+        .any(|tool| tool["name"] == "get_market_quote"));
+
+    let response = mcp_post(
+        &server,
+        Some(&limited_pat),
+        Some(&limited_session),
+        serde_json::json!({
+            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": { "name": "get_market_quote", "arguments": { "symbol": "SHOP.TO" } }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    let denied = parse_sse_data(&response.text().await.unwrap());
+    assert_eq!(denied["result"]["isError"], true);
+    assert!(denied["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("holdings:read"));
 
     // (h) tools/call succeeds and writes an audit row (awaited before the
     // response returns; the poll just tolerates sink latency).
@@ -468,9 +516,9 @@ async fn mcp_pat_lifecycle() {
 
 /// A write/suggest-scoped token sees the draft, suggest, commit, AND import
 /// tools via `tools/list` — proving scope-gated visibility extends past the
-/// read-only catalog. (Read-only tokens see 18; the full MCP catalog is
-/// 16 read + 5 draft/suggest + 14 commit + 3 import + 3 transfer linking +
-/// 2 quote import + 2 activity updates = 45.)
+/// read-only catalog. (Read-only tokens see 19; the full MCP catalog is
+/// 17 read + 5 draft/suggest + 14 commit + 3 import + 3 transfer linking +
+/// 2 quote import + 2 activity updates = 46.)
 #[tokio::test]
 async fn mcp_write_scoped_token_sees_write_tools() {
     let server = spawn_server(true, false).await;
@@ -513,8 +561,8 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools.len(),
-        45,
-        "full-scope token must see all 45 tools: {names:?}"
+        46,
+        "full-scope token must see all 46 tools: {names:?}"
     );
     for name in [
         "find_transfer_matches",
@@ -524,6 +572,7 @@ async fn mcp_write_scoped_token_sees_write_tools() {
         "commit_quote_import",
         "prepare_activity_updates",
         "commit_activity_updates",
+        "get_market_quote",
     ] {
         assert!(names.contains(&name), "{name} visible");
     }
