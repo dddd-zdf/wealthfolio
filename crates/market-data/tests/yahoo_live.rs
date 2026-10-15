@@ -20,6 +20,43 @@ fn context(instrument: InstrumentId) -> QuoteContext {
 }
 
 #[tokio::test]
+#[ignore = "one live Yahoo symbol lookup; run explicitly when changing quote transport"]
+async fn yahoo_cboe_quote_cache_survives_provider_reconstruction() {
+    let ctx = context(InstrumentId::Equity {
+        ticker: "FINN".into(),
+        mic: Some("NEOE".into()),
+    });
+    let instrument = ProviderInstrument::EquitySymbol {
+        symbol: "FINN.NE".into(),
+    };
+    let first = YahooProvider::new()
+        .await
+        .unwrap()
+        .get_latest_quote(&ctx, instrument.clone())
+        .await
+        .unwrap();
+    assert!(first.close > Decimal::ZERO);
+    assert_eq!(first.currency, "CAD");
+    let fetched_at = YahooProvider::cached_quote("FINN.NE").unwrap().fetched_at;
+    let second = YahooProvider::new()
+        .await
+        .unwrap()
+        .get_latest_quote(&ctx, instrument)
+        .await
+        .unwrap();
+    assert_eq!(second.close, first.close);
+    assert_eq!(second.timestamp, first.timestamp);
+    assert_eq!(
+        YahooProvider::cached_quote("FINN.NE").unwrap().fetched_at,
+        fetched_at
+    );
+    eprintln!(
+        "FINN.NE: CAD, quote time {}, reconstructed provider reused fetch at {}",
+        first.timestamp, fetched_at
+    );
+}
+
+#[tokio::test]
 #[ignore = "requires live Yahoo HTTPS access; run explicitly for dependency upgrades"]
 async fn yahoo_search_quotes_history_and_corporate_actions() {
     tokio::time::timeout(std::time::Duration::from_secs(120), async {

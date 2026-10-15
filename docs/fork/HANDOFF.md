@@ -65,6 +65,13 @@ To see the full divergence:
 
 ### Behaviour worth knowing
 
+- **Shared Yahoo quotes for agents.** The fork's read-only `get_market_quote`
+  MCP tool serves stored Yahoo quotes first and uses the shared provider cache
+  for other symbols. Yahoo traffic protection covers background updates and
+  agent lookups. Preserve the small fork integration hooks when merging
+  upstream; see [market-quotes-mcp.md](market-quotes-mcp.md) for the request
+  policy, response contract, and merge checklist.
+
 - **Background updates (#15).** The server refreshes prices every 5 minutes
   during NYSE/TSX hours and hourly otherwise, and skips the portfolio recalc if
   no price changed (#10). Page loads no longer trigger a sync, and background

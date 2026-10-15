@@ -40,6 +40,7 @@ pub mod client;
 pub mod constants;
 pub mod custom_scraper_provider;
 pub mod errors;
+pub mod fork_market_quotes;
 pub mod import;
 pub mod model;
 pub mod provider_settings;
@@ -53,6 +54,7 @@ pub mod types;
 mod service_tests;
 
 // Re-export commonly used types for convenience
+pub use fork_market_quotes::MarketQuoteSnapshot;
 pub use model::{
     LatestQuotePair, ProviderHistoryResetContext, ProviderHistoryResetFailure,
     ProviderHistoryResetSkipped, Quote, ResetAllProviderHistoryResult, ResetProviderHistoryResult,
