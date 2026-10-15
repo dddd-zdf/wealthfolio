@@ -321,8 +321,8 @@ async fn mcp_pat_lifecycle() {
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        19,
-        "read-only catalog must expose 19 tools (incl. get_market_quote and get_import_mapping): {tools:?}"
+        11,
+        "read-only catalog must expose 11 tools (incl. get_market_quote): {tools:?}"
     );
     let read_names: Vec<&str> = tools
         .iter()
@@ -559,58 +559,14 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let list = parse_sse_data(&response.text().await.unwrap());
     let tools = list["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    let mut expected = wealthfolio_agent_tools::fork_mcp_listing::MCP_LISTED_TOOLS.to_vec();
+    let mut listed = names.clone();
+    expected.sort_unstable();
+    listed.sort_unstable();
     assert_eq!(
-        tools.len(),
-        46,
-        "full-scope token must see all 46 tools: {names:?}"
+        listed, expected,
+        "full-scope token sees exactly the listed tools"
     );
-    for name in [
-        "find_transfer_matches",
-        "link_transfer_activities",
-        "unlink_transfer_activities",
-        "prepare_quote_import",
-        "commit_quote_import",
-        "prepare_activity_updates",
-        "commit_activity_updates",
-        "get_market_quote",
-    ] {
-        assert!(names.contains(&name), "{name} visible");
-    }
-    assert!(
-        names.contains(&"commit_activity_import"),
-        "import tool visible"
-    );
-    assert!(names.contains(&"record_activity"), "draft tool visible");
-    assert!(
-        names.contains(&"commit_categorization_rule"),
-        "categorization rule commit tool visible"
-    );
-    assert!(names.contains(&"commit_transaction_categories"));
-    assert!(
-        names.contains(&"commit_reviewed_categorization_rule"),
-        "reviewed categorization rule commit tool visible"
-    );
-    assert!(
-        names.contains(&"prepare_asset_classification"),
-        "suggest tool visible"
-    );
-    assert!(
-        names.contains(&"commit_activity_draft"),
-        "commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_activity_drafts"),
-        "batch commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_asset_classification_draft"),
-        "classification commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_categorization_rule"),
-        "rule commit tool visible"
-    );
-    assert!(names.contains(&"create_account"), "account tool visible");
 }
 
 /// Exercise the actual MCP tools, shared resolver, writer and SQLite storage.
@@ -2600,7 +2556,7 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         &server,
         &pat,
         &session,
-        10,
+        11,
         "create_account",
         serde_json::json!({ "name": "Test Cash", "accountType": "CASH", "currency": "CAD" }),
     )

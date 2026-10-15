@@ -51,11 +51,17 @@ impl McpServerBuilder {
     }
 
     pub fn build_handler(self) -> WealthfolioMcpHandler {
-        let catalog = match self.tools {
-            Some(tools) => AgentToolCatalog::new(tools),
-            None => AgentToolCatalog::mcp_catalog(),
+        let (catalog, routine_listing) = match self.tools {
+            Some(tools) => (AgentToolCatalog::new(tools), false),
+            None => (AgentToolCatalog::mcp_catalog(), true),
         };
-        WealthfolioMcpHandler::new(self.env, Arc::new(catalog), self.audit, self.instructions)
+        let handler =
+            WealthfolioMcpHandler::new(self.env, Arc::new(catalog), self.audit, self.instructions);
+        if routine_listing {
+            handler.list_routine_tools_only()
+        } else {
+            handler
+        }
     }
 
     /// Build the tower service to mount (e.g. `Router::nest_service("/mcp", svc)`).

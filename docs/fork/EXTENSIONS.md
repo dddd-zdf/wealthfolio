@@ -43,6 +43,10 @@ isolated by moving the caller:
   upstream's reviewed draft contract is registered as
   `commit_reviewed_categorization_rule`. Avoid silently reusing one name for
   incompatible schemas.
+- MCP `tools/list` shows only the check and fix tools named in
+  `crates/agent-tools/src/fork_mcp_listing.rs`, to keep clients' context small;
+  every other tool stays registered and callable by name. A new upstream MCP
+  tool stays unlisted until it is added there.
 
 The old snapshot calculators and their lot-cleanup/backfill patches were removed
 with 3.10. Recheck the original failure against the new engine before restoring
