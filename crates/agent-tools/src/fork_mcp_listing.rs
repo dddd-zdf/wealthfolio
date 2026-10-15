@@ -19,7 +19,6 @@ pub const MCP_LISTED_TOOLS: &[&str] = &[
     "get_health_status",
     "get_asset_allocation",
     "get_income",
-    "get_market_quote",
     // One-off fixes. The importers call their tools by name, unlisted.
     "mutate_activities",
     "link_transfer_activities",

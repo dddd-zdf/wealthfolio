@@ -5,11 +5,7 @@
 //! - Cryptocurrencies (e.g., BTC-USD)
 //! - Foreign exchange rates (e.g., EURUSD=X)
 
-mod fork_chart_transport;
-mod fork_request_policy;
 mod models;
-
-pub use fork_request_policy::CachedYahooQuote;
 
 use std::sync::RwLock;
 use std::time::Duration;
@@ -38,11 +34,6 @@ use crate::resolver::{yahoo_equity_search_queries, yahoo_exchange_to_mic, Resolv
 use models::{
     YahooPriceDetail, YahooQuoteSummaryResponse, YahooQuoteSummaryResult, YahooTopHoldings,
 };
-
-use fork_chart_transport::{chart, Window};
-use fork_request_policy::{global_policy, http_client, rate_limited_error};
-
-const YAHOO_USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 // ============================================================================
 // Crumb/Cookie Authentication
@@ -93,46 +84,12 @@ pub struct YahooProvider {
     connector: yahoo::YahooConnector,
 }
 
-fn retry_after(response: &reqwest::Response) -> Option<Duration> {
-    response
-        .headers()
-        .get(header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| {
-            value
-                .trim()
-                .parse::<u64>()
-                .ok()
-                .map(Duration::from_secs)
-                .or_else(|| {
-                    DateTime::parse_from_rfc2822(value)
-                        .ok()
-                        .and_then(|time| (time.with_timezone(&Utc) - Utc::now()).to_std().ok())
-                })
-        })
-        .map(|duration| duration.min(Duration::from_secs(24 * 60 * 60)))
-}
-
-fn is_rate_limited(error: &MarketDataError) -> bool {
-    matches!(error, MarketDataError::RateLimited { .. })
-}
-
-fn should_seed_latest(end: DateTime<Utc>, quote: &Quote) -> bool {
-    let now = Utc::now();
-    end.date_naive() >= now.date_naive()
-        && quote.timestamp <= now
-        && quote.timestamp >= now - chrono::Duration::days(7)
-        && quote.source == "YAHOO"
-        && !quote.currency.trim().is_empty()
-        && quote.close > Decimal::ZERO
-}
-
 impl YahooProvider {
     /// Create a new Yahoo Finance provider.
     pub async fn new() -> Result<Self, MarketDataError> {
         let client = wealthfolio_http::client_builder()
             .https_only(true)
-            .user_agent(YAHOO_USER_AGENT)
+            .user_agent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| MarketDataError::ProviderError {
@@ -146,15 +103,6 @@ impl YahooProvider {
             }
         })?;
         Ok(Self { connector })
-    }
-
-    /// Return the process-wide cached latest quote, including stale entries.
-    ///
-    /// The quote timestamp remains Yahoo's provider timestamp. `fetched_at`
-    /// describes when this process received it, and `is_stale` is based on the
-    /// cache TTL rather than the quote's trading date.
-    pub fn cached_quote(symbol: &str) -> Option<CachedYahooQuote> {
-        global_policy().cached_quote(symbol)
     }
 
     // ========================================================================
@@ -188,8 +136,8 @@ impl YahooProvider {
         }
 
         // Detect rate limiting from error message
-        if error_msg.to_ascii_lowercase().contains("too many requests")
-            || error_msg.to_ascii_lowercase().contains("rate limit")
+        if error_msg.contains("Too many requests")
+            || error_msg.contains("rate limit")
             || error_msg.contains("429")
         {
             return MarketDataError::RateLimited {
@@ -230,11 +178,9 @@ impl YahooProvider {
 
     /// Fetch a new Yahoo authentication crumb.
     async fn fetch_crumb(&self) -> Result<CrumbData, MarketDataError> {
-        let client = http_client()?;
-        let policy = global_policy();
+        let client = wealthfolio_http::client();
 
         // Step 1: Get cookie from fc.yahoo.com
-        let request_permit = policy.acquire().await?;
         let response = client
             .get("https://fc.yahoo.com")
             .send()
@@ -243,11 +189,6 @@ impl YahooProvider {
                 provider: "YAHOO".to_string(),
                 message: format!("Failed to get cookie: {}", e),
             })?;
-
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&response)).await;
-            return Err(rate_limited_error());
-        }
 
         let cookie = response
             .headers()
@@ -260,9 +201,7 @@ impl YahooProvider {
             })?;
 
         // Step 2: Get crumb using cookie
-        drop(request_permit);
-        let _request_permit = policy.acquire().await?;
-        let crumb_response = client
+        let crumb = client
             .get("https://query1.finance.yahoo.com/v1/test/getcrumb")
             .header(
                 header::USER_AGENT,
@@ -274,12 +213,7 @@ impl YahooProvider {
             .map_err(|e| MarketDataError::ProviderError {
                 provider: "YAHOO".to_string(),
                 message: format!("Failed to get crumb: {}", e),
-            })?;
-        if crumb_response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&crumb_response)).await;
-            return Err(rate_limited_error());
-        }
-        let crumb = crumb_response
+            })?
             .text()
             .await
             .map_err(|e| MarketDataError::ProviderError {
@@ -330,9 +264,7 @@ impl YahooProvider {
             urlencoding::encode(&crumb_data.crumb)
         );
 
-        let client = http_client()?;
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
+        let client = wealthfolio_http::client();
         let resp = client
             .get(&url)
             .header(header::ACCEPT, "application/json")
@@ -349,10 +281,6 @@ impl YahooProvider {
             })?;
 
         let status = resp.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&resp)).await;
-            return Err(rate_limited_error());
-        }
         if status == reqwest::StatusCode::UNAUTHORIZED {
             self.clear_crumb();
         }
@@ -565,9 +493,7 @@ impl YahooProvider {
             encoded_query
         );
 
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let response = http_client()?
+        let payload = wealthfolio_http::client()
             .get(&url)
             .header(
                 header::USER_AGENT,
@@ -578,12 +504,7 @@ impl YahooProvider {
             .map_err(|e| MarketDataError::ProviderError {
                 provider: "YAHOO".to_string(),
                 message: format!("Yahoo raw search request failed: {}", e),
-            })?;
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&response)).await;
-            return Err(rate_limited_error());
-        }
-        let payload = response
+            })?
             .text()
             .await
             .map_err(|e| MarketDataError::ProviderError {
@@ -595,49 +516,23 @@ impl YahooProvider {
     }
 
     /// Fetch latest quote using primary method (library API).
-    fn latest_quote_currency(
-        &self,
-        provided: Option<String>,
-        context: &QuoteContext,
-    ) -> Result<String, MarketDataError> {
-        if let Some(currency) = provided.filter(|currency| !currency.trim().is_empty()) {
-            return Ok(currency);
-        }
-        // A raw Yahoo symbol has no trustworthy default currency: FINN.NE,
-        // VOD.L, and FINN cannot all inherit an assumed USD currency.
-        if context
-            .currency_hint
-            .as_ref()
-            .is_some_and(|hint| !hint.trim().is_empty())
-        {
-            return Ok(self.get_currency(context));
-        }
-        Err(MarketDataError::ValidationFailed {
-            message: "Yahoo latest quote did not identify its currency".into(),
-        })
-    }
-
     async fn fetch_latest_quote_primary(
         &self,
         symbol: &str,
         context: &QuoteContext,
     ) -> Result<Quote, MarketDataError> {
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let response = match chart(symbol, "1d", Window::Range("1mo")).await {
-            Ok(response) => response,
-            Err(error) => {
-                let error = self.convert_yahoo_error(error, symbol);
-                if is_rate_limited(&error) {
-                    policy.note_rate_limited(None).await;
-                }
-                return Err(error);
-            }
-        };
+        let response = self
+            .connector
+            .get_latest_quotes(symbol, "1d")
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, symbol))?;
 
         // Prefer Yahoo's own currency from response metadata over resolver chain
-        let currency =
-            self.latest_quote_currency(response.metadata().ok().and_then(|m| m.currency), context)?;
+        let currency = response
+            .metadata()
+            .ok()
+            .and_then(|m| m.currency)
+            .unwrap_or_else(|| self.get_currency(context));
 
         let yahoo_quote = response.last_quote().map_err(|e| {
             warn!("No quotes returned for {}: {}", symbol, e);
@@ -661,9 +556,7 @@ impl YahooProvider {
             encode(&crumb.crumb)
         );
 
-        let client = http_client()?;
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
+        let client = wealthfolio_http::client();
         let response = client
             .get(&url)
             .header(
@@ -677,11 +570,6 @@ impl YahooProvider {
                 provider: "YAHOO".to_string(),
                 message: format!("Backup quote request failed: {}", e),
             })?;
-
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&response)).await;
-            return Err(rate_limited_error());
-        }
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             self.clear_crumb();
@@ -708,7 +596,10 @@ impl YahooProvider {
             .ok_or_else(|| MarketDataError::SymbolNotFound(symbol.to_string()))?;
 
         // Extract currency: API response > context hint (derived from MIC)
-        let currency = self.latest_quote_currency(price.currency.clone(), context)?;
+        let currency = price
+            .currency
+            .clone()
+            .unwrap_or_else(|| self.get_currency(context));
 
         let close = price
             .regular_market_price
@@ -722,9 +613,7 @@ impl YahooProvider {
         let timestamp = price
             .regular_market_time
             .and_then(|ts| Utc.timestamp_opt(ts, 0).single())
-            .ok_or_else(|| MarketDataError::ValidationFailed {
-                message: "No valid provider timestamp in backup response".into(),
-            })?;
+            .unwrap_or_else(Utc::now);
 
         Ok(Quote {
             timestamp,
@@ -771,9 +660,7 @@ impl YahooProvider {
             encode(&crumb.crumb)
         );
 
-        let client = http_client()?;
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
+        let client = wealthfolio_http::client();
         let response = client
             .get(&url)
             .header(
@@ -787,11 +674,6 @@ impl YahooProvider {
                 provider: "YAHOO".to_string(),
                 message: format!("Profile request failed: {}", e),
             })?;
-
-        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            policy.note_rate_limited(retry_after(&response)).await;
-            return Err(rate_limited_error());
-        }
 
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             self.clear_crumb();
@@ -837,22 +719,14 @@ impl YahooProvider {
     /// Fetch profile using search (last resort, minimal data).
     async fn fetch_search_profile(&self, symbol: &str) -> Result<AssetProfile, MarketDataError> {
         let encoded_symbol = encode(symbol);
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let result = match self.connector.search_ticker(&encoded_symbol).await {
-            Ok(result) => result,
-            Err(error) => {
-                let message = error.to_string();
-                if message.contains("429") || message.to_ascii_lowercase().contains("rate limit") {
-                    policy.note_rate_limited(None).await;
-                    return Err(rate_limited_error());
-                }
-                return Err(MarketDataError::ProviderError {
-                    provider: "YAHOO".to_string(),
-                    message,
-                });
-            }
-        };
+        let result = self
+            .connector
+            .search_ticker(&encoded_symbol)
+            .await
+            .map_err(|e| MarketDataError::ProviderError {
+                provider: "YAHOO".to_string(),
+                message: e.to_string(),
+            })?;
 
         let item = result
             .quotes
@@ -1007,29 +881,20 @@ impl YahooProvider {
                 "Yahoo raw search returned no quotes for '{}', falling back to connector API",
                 query
             ),
-            Err(error) if is_rate_limited(&error) => return Err(error),
             Err(e) => debug!(
                 "Yahoo raw search failed for '{}': {}. Falling back to connector API",
                 query, e
             ),
         }
 
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let result = match self.connector.search_ticker(&encoded_query).await {
-            Ok(result) => result,
-            Err(error) => {
-                let message = error.to_string();
-                if message.contains("429") || message.to_ascii_lowercase().contains("rate limit") {
-                    policy.note_rate_limited(None).await;
-                    return Err(rate_limited_error());
-                }
-                return Err(MarketDataError::ProviderError {
-                    provider: "YAHOO".to_string(),
-                    message,
-                });
-            }
-        };
+        let result = self
+            .connector
+            .search_ticker(&encoded_query)
+            .await
+            .map_err(|e| MarketDataError::ProviderError {
+                provider: "YAHOO".to_string(),
+                message: e.to_string(),
+            })?;
 
         let search_results = result
             .quotes
@@ -1100,22 +965,22 @@ impl MarketDataProvider for YahooProvider {
         instrument: ProviderInstrument,
     ) -> Result<Quote, MarketDataError> {
         let symbol = self.extract_symbol(&instrument)?;
-        let policy = global_policy();
-        policy
-            .latest_or_fetch(&symbol, async {
-                match self.fetch_latest_quote_primary(&symbol, context).await {
-                    Ok(quote) => Ok(quote),
-                    Err(error) if is_rate_limited(&error) => Err(error),
-                    Err(error) => {
-                        debug!(
-                            "Primary quote fetch failed for {}: {}, trying backup",
-                            symbol, error
-                        );
-                        self.fetch_latest_quote_backup(&symbol, context).await
-                    }
-                }
-            })
-            .await
+
+        debug!("Fetching latest quote for {} from Yahoo", symbol);
+
+        // Try primary method first
+        match self.fetch_latest_quote_primary(&symbol, context).await {
+            Ok(quote) => return Ok(quote),
+            Err(e) => {
+                debug!(
+                    "Primary quote fetch failed for {}: {}, trying backup",
+                    symbol, e
+                );
+            }
+        }
+
+        // Fallback to quoteSummary price data
+        self.fetch_latest_quote_backup(&symbol, context).await
     }
 
     async fn get_historical_quotes(
@@ -1142,27 +1007,11 @@ impl MarketDataProvider for YahooProvider {
         let start_time = Self::chrono_to_offset_datetime(start);
         let end_time = Self::chrono_to_offset_datetime(end);
 
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let response = match chart(
-            &symbol,
-            "1d",
-            Window::Period {
-                start: start_time.unix_timestamp(),
-                end: end_time.unix_timestamp(),
-            },
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                let error = self.convert_yahoo_error(error, &symbol);
-                if is_rate_limited(&error) {
-                    policy.note_rate_limited(None).await;
-                }
-                return Err(error);
-            }
-        };
+        let response = self
+            .connector
+            .get_quote_history(&symbol, start_time, end_time)
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
 
         // Prefer Yahoo's own currency from response metadata over resolver chain
         let currency = response
@@ -1186,12 +1035,6 @@ impl MarketDataProvider for YahooProvider {
 
                 if quotes.is_empty() {
                     return Err(MarketDataError::NoDataForRange);
-                }
-
-                if let Some(latest) = quotes.iter().max_by_key(|quote| quote.timestamp) {
-                    if should_seed_latest(end, latest) {
-                        global_policy().put_latest_quote(&symbol, latest.clone(), Utc::now());
-                    }
                 }
 
                 Ok(quotes)
@@ -1220,18 +1063,11 @@ impl MarketDataProvider for YahooProvider {
         if symbol.starts_with("CASH:") {
             return Ok(vec![]);
         }
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let response = match chart(&symbol, interval, Window::Range(range)).await {
-            Ok(response) => response,
-            Err(error) => {
-                let error = self.convert_yahoo_error(error, &symbol);
-                if is_rate_limited(&error) {
-                    policy.note_rate_limited(None).await;
-                }
-                return Err(error);
-            }
-        };
+        let response = self
+            .connector
+            .get_quote_range(&symbol, interval, range)
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
         let currency = response
             .metadata()
             .ok()
@@ -1267,27 +1103,11 @@ impl MarketDataProvider for YahooProvider {
 
         // Use 3mo interval to minimize OHLCV data in the response (~200 bars max)
         // while still returning all split events within the requested date range.
-        let policy = global_policy();
-        let _request_permit = policy.acquire().await?;
-        let response = match chart(
-            &symbol,
-            "3mo",
-            Window::Period {
-                start: start_time.unix_timestamp(),
-                end: end_time.unix_timestamp(),
-            },
-        )
-        .await
-        {
-            Ok(response) => response,
-            Err(error) => {
-                let error = self.convert_yahoo_error(error, &symbol);
-                if is_rate_limited(&error) {
-                    policy.note_rate_limited(None).await;
-                }
-                return Err(error);
-            }
-        };
+        let response = self
+            .connector
+            .get_quote_history_interval(&symbol, start_time, end_time, "3mo")
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
 
         let splits = match response.splits() {
             Ok(splits) => splits,
@@ -1341,7 +1161,6 @@ impl MarketDataProvider for YahooProvider {
             match self.search_single(&provider_query).await {
                 Ok(results) if !results.is_empty() => return Ok(results),
                 Ok(_) => {}
-                Err(error) if is_rate_limited(&error) => return Err(error),
                 Err(e) => last_error = Some(e),
             }
         }
@@ -1362,7 +1181,6 @@ impl MarketDataProvider for YahooProvider {
                 debug!("[YAHOO] quoteSummary succeeded for {}", symbol);
                 return Ok(profile);
             }
-            Err(error) if is_rate_limited(&error) => return Err(error),
             Err(e) => {
                 debug!(
                     "quoteSummary failed for {}: {}, trying search fallback",
@@ -1746,68 +1564,6 @@ mod tests {
             custom_provider_code: None,
         };
         assert_eq!(provider.get_currency(&context), "GBp");
-    }
-
-    #[test]
-    fn history_seed_requires_current_coverage_and_recent_provider_quote() {
-        let now = Utc::now();
-        let recent = Quote::new(
-            now - chrono::Duration::hours(2),
-            Decimal::new(123, 0),
-            "USD".into(),
-            "YAHOO".into(),
-        );
-        assert!(should_seed_latest(now, &recent));
-        assert!(!should_seed_latest(
-            now - chrono::Duration::days(1),
-            &recent
-        ));
-
-        let old = Quote::new(
-            now - chrono::Duration::days(8),
-            Decimal::new(123, 0),
-            "USD".into(),
-            "YAHOO".into(),
-        );
-        assert!(!should_seed_latest(now, &old));
-
-        let future = Quote::new(
-            now + chrono::Duration::hours(1),
-            Decimal::new(123, 0),
-            "USD".into(),
-            "YAHOO".into(),
-        );
-        assert!(!should_seed_latest(now, &future));
-    }
-
-    #[test]
-    fn raw_quote_never_guesses_usd_when_yahoo_omits_currency() {
-        let provider = YahooProvider {
-            connector: yahoo::YahooConnector::new().expect("test client"),
-        };
-        let mut context = create_test_context();
-        context.currency_hint = None;
-        assert!(provider.latest_quote_currency(None, &context).is_err());
-        assert!(provider
-            .latest_quote_currency(Some(String::new()), &context)
-            .is_err());
-        assert_eq!(
-            provider
-                .latest_quote_currency(Some("CAD".into()), &context)
-                .unwrap(),
-            "CAD"
-        );
-        assert_eq!(
-            provider
-                .latest_quote_currency(Some("GBp".into()), &context)
-                .unwrap(),
-            "GBp"
-        );
-        context.currency_hint = Some("USD".into());
-        assert_eq!(
-            provider.latest_quote_currency(None, &context).unwrap(),
-            "USD"
-        );
     }
 
     #[test]

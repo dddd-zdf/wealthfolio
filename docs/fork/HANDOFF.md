@@ -34,8 +34,8 @@ first:
 
 | PR     | Change                                                                                    | Main files                                                                                                                         |
 | ------ | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| #33    | MCP `tools/list` shows only 13 check/fix tools; importers call the rest by name           | `crates/agent-tools/src/fork_mcp_listing.rs`, `crates/wealthfolio-mcp/src/handler.rs`                                              |
-| #32    | Cached Yahoo quotes through MCP; shared pacing/cooldown; existing `holdings:read` tokens  | Fork modules and upstream merge checklist in [market-quotes-mcp.md](market-quotes-mcp.md)                                          |
+| #33    | MCP `tools/list` shows only 12 check/fix tools; importers call the rest by name           | `crates/agent-tools/src/fork_mcp_listing.rs`, `crates/wealthfolio-mcp/src/handler.rs`                                              |
+| #32    | Reverted in #34 (MCP Yahoo quote tool and request pacer slowed the 1D/1W chart)           | —                                                                                                                                  |
 | #27    | 1D/1W intraday curve cached in `perf_cache`, so portfolio updates clear it                | `apps/server/src/api/holdings/handlers.rs`, `apps/server/src/perf_cache.rs`                                                        |
 | #26    | No "skipping orphan cleanup" warning for fully sold accounts (count open lots only)       | `crates/storage-sqlite/src/lots.rs`                                                                                                |
 | #25    | GICs/term deposits valued from their terms (daily accrual); MCP `set_term_deposit`        | `crates/core/src/assets/term_deposit.rs`, `crates/core/src/quotes/sync.rs`, `crates/agent-tools/src/tools/data_admin.rs`           |
@@ -66,13 +66,6 @@ To see the full divergence:
 `git diff --stat upstream/main...main`.
 
 ### Behaviour worth knowing
-
-- **Shared Yahoo quotes for agents.** The fork's read-only `get_market_quote`
-  MCP tool serves stored Yahoo quotes first and uses the shared provider cache
-  for other symbols. Yahoo traffic protection covers background updates and
-  agent lookups. Preserve the small fork integration hooks when merging
-  upstream; see [market-quotes-mcp.md](market-quotes-mcp.md) for the request
-  policy, response contract, and merge checklist.
 
 - **Background updates (#15).** The server refreshes prices every 5 minutes
   during NYSE/TSX hours and hourly otherwise, and skips the portfolio recalc if

@@ -24,7 +24,6 @@ pub mod create_account;
 pub mod create_categorization_rule;
 pub mod data_admin;
 mod fork_commits;
-pub mod fork_market_quotes;
 pub mod goals;
 pub mod health;
 pub mod holdings;
@@ -66,7 +65,6 @@ pub use contribution_limits::{
     ContributionLimitDto, GetContributionLimits, GetContributionLimitsArgs,
     GetContributionLimitsOutput,
 };
-pub use fork_market_quotes::GetMarketQuote;
 pub use goals::{GetGoals, GetGoalsArgs, GetGoalsOutput, GoalDto};
 pub use health::{GetHealthStatus, GetHealthStatusArgs, GetHealthStatusOutput, HealthIssueDto};
 pub use holdings::{GetHoldings, GetHoldingsArgs, GetHoldingsOutput, HoldingDto};
