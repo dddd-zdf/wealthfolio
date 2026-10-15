@@ -3,10 +3,10 @@ name: Warm Rust Cache
 # Dependency artifacts (the only thing rust-cache keeps - workspace crates are
 # pruned) only change when Cargo.lock, a manifest's features, or the toolchain
 # changes, hence the narrow path filter. The weekly run keeps caches alive
-# (GitHub evicts caches unused for 7 days) and re-warms after stable rustc
-# bumps.
+# (GitHub evicts caches unused for 7 days). The toolchain is pinned in
+# rust-toolchain.toml, which is part of the cache key.
 #
-# warm-pr-check seeds the cache that pr-check.yml's Rust Check restores; PR
+# warm-pr-check seeds the cache that pr-check.yml's Rust jobs restore; PR
 # runs restore it without saving.
 #
 # warm-docker-deps exports the Dockerfile's dependency layers to the
@@ -36,7 +36,8 @@ concurrency:
 jobs:
   warm-pr-check:
     # Keep runs-on, env, toolchain setup, cache inputs and cargo builds in sync
-    # with the rust-check job in pr-check.yml; any drift makes PRs build cold.
+    # with the rust-clippy and rust-tests jobs in pr-check.yml; any drift makes
+    # PRs build cold.
     runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: 0
@@ -47,22 +48,23 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Rust setup
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+        # Installs the pinned toolchain and components from rust-toolchain.toml.
+        run: rustup toolchain install
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          shared-key: pr-server-check-v1
+          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key: pr-server-check
+          add-rust-environment-hash-key: false
 
       - name: Build PR check dependencies
-        # Rust Check's builds without running tests. The desktop app is
-        # excluded because this fork ships the server/web build only.
+        # The Rust Clippy and Rust Tests builds, without running tests. The
+        # desktop app is excluded because this fork ships the server/web build
+        # only.
         run: |
           cargo clippy --locked --workspace --exclude wealthfolio-app --all-targets --all-features
-          CONNECT_API_URL=http://test.local cargo test --locked --workspace --exclude wealthfolio-app --no-run
-          cargo test --locked -p wealthfolio-ai --features test-utils --no-run
+          CONNECT_API_URL=http://test.local cargo test --locked --workspace --exclude wealthfolio-app --features wealthfolio-ai/test-utils --no-run
 
   warm-docker-deps:
     # Unlike Actions caches, these registry tags are shared by every ref, so

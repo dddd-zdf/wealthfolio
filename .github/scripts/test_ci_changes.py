@@ -110,7 +110,7 @@ class BuildStatusTests(unittest.TestCase):
         workflow = (Path(__file__).parents[1] / "workflows/pr-check.yml").read_text()
         script = textwrap.dedent(workflow.split('      - name: Check build status\n')[1].split('        run: |\n')[1])
         env = dict(os.environ, CHANGES_RESULT="success")
-        for job in ["FRONTEND", "FRONTEND_TESTS", "RUST", "FORMATTING"]:
+        for job in ["FRONTEND", "FRONTEND_TESTS", "RUST", "RUST_CLIPPY", "RUST_TESTS", "FORMATTING"]:
             env[job + "_REQUIRED"] = "false"
             env[job + "_RESULT"] = "skipped"
         env["TRANSLATION_RESULT"] = "skipped"
@@ -147,10 +147,19 @@ class BuildStatusTests(unittest.TestCase):
         ), 0)
 
     def test_required_server_checks_must_succeed(self):
-        for result in ["failure", "cancelled", "skipped"]:
-            with self.subTest(result=result):
-                self.assertNotEqual(self.run_gate(RUST_REQUIRED="true", RUST_RESULT=result), 0)
-        self.assertEqual(self.run_gate(RUST_REQUIRED="true", RUST_RESULT="success"), 0)
+        for job, other in [("RUST_CLIPPY", "RUST_TESTS"), ("RUST_TESTS", "RUST_CLIPPY")]:
+            for result in ["failure", "cancelled", "skipped"]:
+                with self.subTest(job=job, result=result):
+                    self.assertNotEqual(self.run_gate(**{
+                        "RUST_REQUIRED": "true",
+                        job + "_RESULT": result,
+                        other + "_RESULT": "success",
+                    }), 0)
+        self.assertEqual(self.run_gate(
+            RUST_REQUIRED="true",
+            RUST_CLIPPY_RESULT="success",
+            RUST_TESTS_RESULT="success",
+        ), 0)
 
     def test_failed_detection_blocks_merge(self):
         self.assertNotEqual(self.run_gate(CHANGES_RESULT="failure"), 0)

@@ -108,11 +108,13 @@ production rollback; changing the image tag alone does not undo a migration.
 
 This fork deploys the **web app and ARM64 server**. Default PR checks cover web
 lint/types/build, two parallel frontend test shards, browser harnesses, and Rust
-Clippy/tests for the server and every shared crate
-(`--exclude wealthfolio-app`). The Rust suite includes HTTP certificate policy,
-vault/config and portable-backup tests; its Linux mounted-vault fixture runs in
-the same job. Do not add desktop or mobile builds to the acceptance gate unless
-the owner requests them.
+Clippy and tests (parallel jobs, tests via `cargo nextest`) for the server and
+every shared crate (`--exclude wealthfolio-app`). The Rust suite includes HTTP
+certificate policy, vault/config and portable-backup tests; its Linux
+mounted-vault fixture runs in the tests job. Both Rust jobs restore the cache
+that `cache-warm.yml` seeds, keyed on `rust-toolchain.toml` and `Cargo.lock`;
+keep their build flags in sync or PRs compile cold. Do not add desktop or mobile
+builds to the acceptance gate unless the owner requests them.
 
 Native secret-store checks are manual. Separate server-vault and HTTP workflows
 are also manual, with optional macOS/Windows coverage. Weekly cache warming only
@@ -142,8 +144,9 @@ There is no build on the server. CI builds the image; the server pulls it.
    It builds arm64 by default (`amd64` is optional for separate compatibility
    checks), runs `.github/scripts/encryption_smoke.py` against the image, and
    publishes `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Main
-   exports a shared registry cache; feature builds read it and retain their own
-   branch cache. Only main can replace the shared cache. The first run with new
+   exports a shared registry cache; feature builds read it but save no cache of
+   their own, so they stay out of the 10 GB Actions cache that holds the Rust
+   check cache. Only main can replace the shared cache. The first run with new
    dependencies can still be cold; measure actual times rather than promising a
    fixed duration. If an already-tested image's source tree exactly matches
    merged main, reuse that immutable image revision. Do not rebuild solely for a
