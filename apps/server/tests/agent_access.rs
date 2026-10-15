@@ -321,8 +321,8 @@ async fn mcp_pat_lifecycle() {
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        12,
-        "read-only catalog must expose 12 tools (incl. get_market_quote and get_import_mapping): {tools:?}"
+        11,
+        "read-only catalog must expose 11 tools (incl. get_market_quote): {tools:?}"
     );
     let read_names: Vec<&str> = tools
         .iter()
@@ -2556,7 +2556,7 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         &server,
         &pat,
         &session,
-        10,
+        11,
         "create_account",
         serde_json::json!({ "name": "Test Cash", "accountType": "CASH", "currency": "CAD" }),
     )

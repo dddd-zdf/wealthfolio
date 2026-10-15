@@ -1,7 +1,7 @@
 //! Fork-only: the tools MCP `tools/list` shows, to keep clients' context small.
 //!
 //! Every listed tool costs each MCP client its name, description and schema in
-//! context, so only routine portfolio checks and imports are listed (chosen from
+//! context, so only portfolio checks and one-off fixes are listed (chosen from
 //! the server's MCP audit log, 2026-09-22 to 2026-10-15, and the owner's
 //! scripts). Every other tool stays registered: scripts can still call one by
 //! name, and the in-app assistant is unaffected. Agents do occasional admin
@@ -20,14 +20,9 @@ pub const MCP_LISTED_TOOLS: &[&str] = &[
     "get_asset_allocation",
     "get_income",
     "get_market_quote",
-    // Imports and corrections.
-    "get_import_mapping",
-    "prepare_activity_import",
-    "commit_activity_import",
+    // One-off fixes. The importers call their tools by name, unlisted.
     "mutate_activities",
     "link_transfer_activities",
-    "create_account",
-    "update_account_settings",
 ];
 
 pub fn is_listed_over_mcp(name: &str) -> bool {

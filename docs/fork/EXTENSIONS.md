@@ -43,7 +43,7 @@ isolated by moving the caller:
   upstream's reviewed draft contract is registered as
   `commit_reviewed_categorization_rule`. Avoid silently reusing one name for
   incompatible schemas.
-- MCP `tools/list` shows only the routine tools named in
+- MCP `tools/list` shows only the check and fix tools named in
   `crates/agent-tools/src/fork_mcp_listing.rs`, to keep clients' context small;
   every other tool stays registered and callable by name. A new upstream MCP
   tool stays unlisted until it is added there.
