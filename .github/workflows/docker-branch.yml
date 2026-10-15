@@ -56,17 +56,17 @@ jobs:
           load: true
           tags: wealthfolio-branch:ci
           labels: ${{ steps.meta.outputs.labels }}
-          # Main's registry cache is readable across refs. Feature builds keep
-          # their own GHA cache and cannot replace the trusted shared cache.
+          # Main's registry cache is readable across refs and only main
+          # replaces it. Feature builds read it but save nothing: a feature
+          # branch's GHA cache (~6 GB) is readable only by that branch and
+          # evicted pr-check's shared Rust cache from the 10 GB Actions budget.
           cache-from: |
-            type=gha,scope=docker-branch-${{ matrix.arch }}
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/wealthfolio-build-cache:branch-${{ matrix.arch }}
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/wealthfolio-build-cache:deps-${{ matrix.arch }}
           cache-to: >-
             ${{ github.ref == 'refs/heads/main' &&
             format('type=registry,ref=ghcr.io/{0}/wealthfolio-build-cache:branch-{1},mode=max,image-manifest=true,oci-mediatypes=true',
-            github.repository_owner, matrix.arch) ||
-            format('type=gha,mode=max,scope=docker-branch-{0}', matrix.arch) }}
+            github.repository_owner, matrix.arch) || '' }}
 
       - name: Test encryption in the built image
         run: python3 .github/scripts/encryption_smoke.py --image wealthfolio-branch:ci
