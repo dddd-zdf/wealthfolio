@@ -46,6 +46,7 @@ impl AgentToolCatalog {
         tools.extend(crate::tools::transfer_link_tools());
         tools.extend(crate::tools::quote_import_tools());
         tools.extend(crate::tools::activity_update_tools());
+        tools.push(Arc::new(crate::tools::GetMarketQuote));
         Self::new(tools)
     }
 
@@ -97,6 +98,7 @@ impl AgentToolCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scope::AgentScope;
     use std::sync::Mutex;
     use wealthfolio_spending::categorization_rules::{CategorizationRule, NewCategorizationRule};
 
@@ -276,6 +278,7 @@ mod tests {
         assert!(!names.contains(&"commit_quote_import"));
         assert!(!names.contains(&"prepare_activity_updates"));
         assert!(!names.contains(&"commit_activity_updates"));
+        assert!(!names.contains(&"get_market_quote"));
     }
 
     #[test]
@@ -300,7 +303,8 @@ mod tests {
         assert!(names.contains(&"commit_quote_import"));
         assert!(names.contains(&"prepare_activity_updates"));
         assert!(names.contains(&"commit_activity_updates"));
-        // Read-only token still sees exactly 16 read tools.
+        assert!(names.contains(&"get_market_quote"));
+        // The new MCP-only tool does not alter the historical read catalog.
         assert_eq!(crate::tools::v1_read_tools().len(), 16);
     }
 
@@ -318,6 +322,25 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn market_quote_is_mcp_discoverable_with_holdings_read_and_denied_without_it() {
+        let catalog = AgentToolCatalog::mcp_catalog();
+        let tool = catalog.get("get_market_quote").expect("MCP quote tool");
+        assert_eq!(tool.required_scopes(), &[AgentScope::HoldingsRead]);
+        assert_eq!(tool.access_level(), crate::tool::AgentToolAccess::Read);
+
+        let denied = catalog
+            .execute(
+                Arc::new(PanicEnv::default()),
+                &AgentScopeSet::new(),
+                "get_market_quote",
+                serde_json::json!({"symbol": "SHOP.TO"}),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(denied, AgentToolError::ScopeDenied { .. }));
     }
 
     #[tokio::test]

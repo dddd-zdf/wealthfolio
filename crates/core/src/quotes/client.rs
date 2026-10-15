@@ -429,6 +429,52 @@ impl MarketDataClient {
             .collect())
     }
 
+    /// Resolve a stored asset's exact Yahoo listing without a provider request.
+    pub(crate) fn yahoo_symbol(&self, asset: &Asset) -> Option<String> {
+        use wealthfolio_market_data::{ResolutionSource, SymbolResolver};
+        let context = self.build_quote_context(asset).ok()?;
+        let resolved = ResolverChain::new()
+            .resolve(&Cow::Borrowed(DATA_SOURCE_YAHOO), &context)
+            .ok()?;
+        (resolved.source != ResolutionSource::RulesFallback)
+            .then(|| resolved.instrument.to_symbol_string())
+    }
+
+    /// Fork lookup: use only the configured Yahoo provider, never provider failover.
+    /// The provider's process-wide policy also covers the normal sync path.
+    pub(crate) async fn fetch_yahoo_quote(&self, symbol: &str) -> Result<MarketQuote> {
+        use wealthfolio_market_data::{InstrumentId, ProviderInstrument};
+        let provider = self
+            .registry
+            .providers()
+            .iter()
+            .find(|provider| provider.id() == DATA_SOURCE_YAHOO)
+            .ok_or(MarketDataClientError::MarketData(
+                wealthfolio_market_data::errors::MarketDataError::NoProvidersAvailable,
+            ))?;
+        let context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from(symbol),
+                mic: None,
+            },
+            identifiers: QuoteIdentifiers::default(),
+            overrides: None,
+            currency_hint: None,
+            preferred_provider: Some(Cow::Borrowed(DATA_SOURCE_YAHOO)),
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+        provider
+            .get_latest_quote(
+                &context,
+                ProviderInstrument::EquitySymbol {
+                    symbol: Arc::from(symbol),
+                },
+            )
+            .await
+            .map_err(|error| MarketDataClientError::from(error).into())
+    }
+
     /// Fetch the latest quote for an asset.
     pub async fn fetch_latest_quote(&self, asset: &Asset) -> Result<Quote> {
         let context = self.build_quote_context(asset)?;

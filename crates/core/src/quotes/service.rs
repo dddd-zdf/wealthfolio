@@ -351,6 +351,13 @@ pub struct SparseAssetMarketFacts {
 /// Unified trait for all quote operations.
 #[async_trait]
 pub trait QuoteServiceTrait: Send + Sync {
+    /// Fork extension: cached Yahoo lookup without creating assets or syncing a portfolio.
+    async fn get_market_quote(&self, _symbol: &str) -> Result<super::MarketQuoteSnapshot> {
+        Err(Error::Unexpected(
+            "Market quote lookup is not supported".into(),
+        ))
+    }
+
     async fn reset_provider_history(
         &self,
         _asset_id: &str,
@@ -1051,6 +1058,16 @@ where
     A: AssetRepositoryTrait + 'static,
     R: ActivityRepositoryTrait + 'static,
 {
+    async fn get_market_quote(&self, symbol: &str) -> Result<super::MarketQuoteSnapshot> {
+        super::fork_market_quotes::get_market_quote(
+            self.quote_store.as_ref(),
+            self.asset_repo.as_ref(),
+            &*self.client.read().await,
+            symbol,
+        )
+        .await
+    }
+
     // =========================================================================
     // Quote CRUD
     // =========================================================================
@@ -2862,6 +2879,7 @@ pub(crate) fn fill_missing_quotes(
 
 #[cfg(test)]
 mod tests {
+    include!("fork_market_quotes_service_tests.rs");
     use super::*;
     use crate::activities::{
         Activity, ActivityBulkMutationResult, ActivityRepositoryTrait, ActivityUpdate,
