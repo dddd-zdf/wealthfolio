@@ -84,6 +84,10 @@ To see the full divergence:
   which also deletes the asset's manual prices and switches it to MARKET.
 - **Login sessions.** `WF_AUTH_TOKEN_TTL_MINUTES=43200` (30 days, renewed on
   use) at the owner's request.
+- **Negative-balance health checks.** Ignore cash and total-value residues below
+  half the account currency's smallest unit. A real one-cent CAD deficit still
+  warns, and an earlier precision residue does not hide a later real deficit.
+  This only filters health warnings; stored balances and returns are unchanged.
 
 ## Upstream integration
 
