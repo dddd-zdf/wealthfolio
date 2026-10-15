@@ -321,8 +321,8 @@ async fn mcp_pat_lifecycle() {
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        19,
-        "read-only catalog must expose 19 tools (incl. get_market_quote and get_import_mapping): {tools:?}"
+        12,
+        "read-only catalog must expose 12 tools (incl. get_market_quote and get_import_mapping): {tools:?}"
     );
     let read_names: Vec<&str> = tools
         .iter()
@@ -559,26 +559,14 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let list = parse_sse_data(&response.text().await.unwrap());
     let tools = list["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    let mut expected = wealthfolio_agent_tools::fork_mcp_listing::MCP_LISTED_TOOLS.to_vec();
+    let mut listed = names.clone();
+    expected.sort_unstable();
+    listed.sort_unstable();
     assert_eq!(
-        tools.len(),
-        28,
-        "full-scope token must see all 28 listed tools: {names:?}"
+        listed, expected,
+        "full-scope token sees exactly the listed tools"
     );
-    for name in [
-        "link_transfer_activities",
-        "get_market_quote",
-        "commit_activity_import",
-        "commit_categorization_rule",
-        "commit_category_assignments",
-        "mutate_activities",
-        "upsert_manual_quotes",
-    ] {
-        assert!(names.contains(&name), "{name} visible");
-    }
-    for name in wealthfolio_agent_tools::fork_mcp_listing::MCP_UNLISTED_TOOLS {
-        assert!(!names.contains(name), "{name} left out of tools/list");
-    }
-    assert!(names.contains(&"create_account"), "account tool visible");
 }
 
 /// Exercise the actual MCP tools, shared resolver, writer and SQLite storage.

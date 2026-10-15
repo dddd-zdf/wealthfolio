@@ -29,6 +29,8 @@ pub struct WealthfolioMcpHandler {
     catalog: Arc<AgentToolCatalog>,
     audit: Option<Arc<dyn AuditSink>>,
     instructions: Option<String>,
+    /// Fork: list only `fork_mcp_listing::MCP_LISTED_TOOLS` in `tools/list`.
+    list_routine_tools_only: bool,
 }
 
 impl WealthfolioMcpHandler {
@@ -43,7 +45,14 @@ impl WealthfolioMcpHandler {
             catalog,
             audit,
             instructions,
+            list_routine_tools_only: false,
         }
+    }
+
+    /// Fork: show only the routine tools in `tools/list`; all stay callable.
+    pub fn list_routine_tools_only(mut self) -> Self {
+        self.list_routine_tools_only = true;
+        self
     }
 
     /// Pull the auth context the host middleware injected; fail closed.
@@ -137,7 +146,8 @@ impl ServerHandler for WealthfolioMcpHandler {
             .iter()
             .filter(|tool| auth.granted_scopes.grants_all(tool.required_scopes()))
             .filter(|tool| {
-                wealthfolio_agent_tools::fork_mcp_listing::is_listed_over_mcp(tool.name())
+                !self.list_routine_tools_only
+                    || wealthfolio_agent_tools::fork_mcp_listing::is_listed_over_mcp(tool.name())
             })
             .map(Self::to_mcp_tool)
             .collect();

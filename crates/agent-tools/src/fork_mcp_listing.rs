@@ -1,41 +1,37 @@
-//! Fork-only: tools left out of MCP `tools/list` to keep clients' context small.
+//! Fork-only: the tools MCP `tools/list` shows, to keep clients' context small.
 //!
-//! Each listed tool costs every MCP client its name, description and schema in
-//! context. These were unused or duplicated by another tool in the server's MCP
-//! audit log (2026-09-22 to 2026-10-15). They stay registered, so a client that
-//! still calls one by name keeps working, and the in-app assistant is unaffected.
+//! Every listed tool costs each MCP client its name, description and schema in
+//! context, so only routine portfolio checks and imports are listed (chosen from
+//! the server's MCP audit log, 2026-09-22 to 2026-10-15, and the owner's
+//! scripts). Every other tool stays registered: scripts can still call one by
+//! name, and the in-app assistant is unaffected. Agents do occasional admin
+//! work over SSH. A new upstream tool stays unlisted until it is added here.
 
-pub const MCP_UNLISTED_TOOLS: &[&str] = &[
-    // Draft flow; MCP clients write through mutate_activities and the CSV import.
-    "record_activity",
-    "record_activities",
-    "commit_activity_draft",
-    "commit_activity_drafts",
-    // Rule drafts; commit_categorization_rule saves a rule directly.
-    "create_categorization_rule",
-    "commit_reviewed_categorization_rule",
-    // Same job as commit_category_assignments.
-    "commit_transaction_categories",
-    // Never called.
-    "prepare_asset_classification",
-    "commit_asset_classification_draft",
-    // Same job as mutate_activities.
-    "prepare_activity_updates",
-    "commit_activity_updates",
-    // Same job as upsert_manual_quotes.
-    "prepare_quote_import",
-    "commit_quote_import",
-    // Never called; link_transfer_activities with unlink=true unpairs.
-    "find_transfer_matches",
-    "unlink_transfer_activities",
-    // Asset classification and portfolios: barely or never used over MCP.
-    "list_asset_taxonomies",
-    "get_asset_taxonomy_assignments",
-    "get_portfolios",
+pub const MCP_LISTED_TOOLS: &[&str] = &[
+    // Portfolio checks.
+    "get_accounts",
+    "get_holdings",
+    "get_cash_balances",
+    "search_activities",
+    "get_valuation_history",
+    "get_performance",
+    "get_net_worth",
+    "get_health_status",
+    "get_asset_allocation",
+    "get_income",
+    "get_market_quote",
+    // Imports and corrections.
+    "get_import_mapping",
+    "prepare_activity_import",
+    "commit_activity_import",
+    "mutate_activities",
+    "link_transfer_activities",
+    "create_account",
+    "update_account_settings",
 ];
 
 pub fn is_listed_over_mcp(name: &str) -> bool {
-    !MCP_UNLISTED_TOOLS.contains(&name)
+    MCP_LISTED_TOOLS.contains(&name)
 }
 
 #[cfg(test)]
@@ -44,9 +40,9 @@ mod tests {
     use crate::AgentToolCatalog;
 
     #[test]
-    fn unlisted_tools_are_registered_in_the_mcp_catalog() {
+    fn listed_tools_are_registered_in_the_mcp_catalog() {
         let catalog = AgentToolCatalog::mcp_catalog();
-        for name in MCP_UNLISTED_TOOLS {
+        for name in MCP_LISTED_TOOLS {
             assert!(catalog.get(name).is_some(), "{name} is not an MCP tool");
         }
     }
