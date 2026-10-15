@@ -561,55 +561,23 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
     assert_eq!(
         tools.len(),
-        46,
-        "full-scope token must see all 46 tools: {names:?}"
+        28,
+        "full-scope token must see all 28 listed tools: {names:?}"
     );
     for name in [
-        "find_transfer_matches",
         "link_transfer_activities",
-        "unlink_transfer_activities",
-        "prepare_quote_import",
-        "commit_quote_import",
-        "prepare_activity_updates",
-        "commit_activity_updates",
         "get_market_quote",
+        "commit_activity_import",
+        "commit_categorization_rule",
+        "commit_category_assignments",
+        "mutate_activities",
+        "upsert_manual_quotes",
     ] {
         assert!(names.contains(&name), "{name} visible");
     }
-    assert!(
-        names.contains(&"commit_activity_import"),
-        "import tool visible"
-    );
-    assert!(names.contains(&"record_activity"), "draft tool visible");
-    assert!(
-        names.contains(&"commit_categorization_rule"),
-        "categorization rule commit tool visible"
-    );
-    assert!(names.contains(&"commit_transaction_categories"));
-    assert!(
-        names.contains(&"commit_reviewed_categorization_rule"),
-        "reviewed categorization rule commit tool visible"
-    );
-    assert!(
-        names.contains(&"prepare_asset_classification"),
-        "suggest tool visible"
-    );
-    assert!(
-        names.contains(&"commit_activity_draft"),
-        "commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_activity_drafts"),
-        "batch commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_asset_classification_draft"),
-        "classification commit tool visible"
-    );
-    assert!(
-        names.contains(&"commit_categorization_rule"),
-        "rule commit tool visible"
-    );
+    for name in wealthfolio_agent_tools::fork_mcp_listing::MCP_UNLISTED_TOOLS {
+        assert!(!names.contains(name), "{name} left out of tools/list");
+    }
     assert!(names.contains(&"create_account"), "account tool visible");
 }
 

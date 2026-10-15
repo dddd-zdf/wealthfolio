@@ -136,6 +136,9 @@ impl ServerHandler for WealthfolioMcpHandler {
             .catalog
             .iter()
             .filter(|tool| auth.granted_scopes.grants_all(tool.required_scopes()))
+            .filter(|tool| {
+                wealthfolio_agent_tools::fork_mcp_listing::is_listed_over_mcp(tool.name())
+            })
             .map(Self::to_mcp_tool)
             .collect();
         Ok(ListToolsResult {
