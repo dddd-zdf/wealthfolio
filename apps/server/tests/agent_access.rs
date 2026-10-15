@@ -306,9 +306,8 @@ async fn mcp_pat_lifecycle() {
 
     let session = mcp_initialize(&server, &pat).await;
 
-    // tools/list -> the read-only catalog: 16 read tools + get_market_quote
-    // and get_import_mapping and find_transfer_matches (also
-    // activities:read) = 19.
+    // tools/list -> the listed read tools a read-only token can use: the
+    // 10 portfolio checks in fork_mcp_listing.
     let response = mcp_post(
         &server,
         Some(&pat),
@@ -321,56 +320,9 @@ async fn mcp_pat_lifecycle() {
     let tools = list["result"]["tools"].as_array().unwrap();
     assert_eq!(
         tools.len(),
-        11,
-        "read-only catalog must expose 11 tools (incl. get_market_quote): {tools:?}"
+        10,
+        "read-only catalog must expose 10 tools: {tools:?}"
     );
-    let read_names: Vec<&str> = tools
-        .iter()
-        .map(|tool| tool["name"].as_str().unwrap())
-        .collect();
-    assert!(read_names.contains(&"get_market_quote"));
-
-    // A token without holdings:read cannot discover or call the quote tool.
-    let (status, limited) = create_pat(
-        &server,
-        &cookie,
-        serde_json::json!({ "name": "accounts only", "scopes": ["accounts:read"] }),
-    )
-    .await;
-    assert_eq!(status, 201);
-    let limited_pat = limited["token"].as_str().unwrap().to_string();
-    let limited_session = mcp_initialize(&server, &limited_pat).await;
-    let response = mcp_post(
-        &server,
-        Some(&limited_pat),
-        Some(&limited_session),
-        serde_json::json!({ "jsonrpc": "2.0", "id": 4, "method": "tools/list" }),
-    )
-    .await;
-    assert_eq!(response.status(), 200);
-    let limited_list = parse_sse_data(&response.text().await.unwrap());
-    let limited_tools = limited_list["result"]["tools"].as_array().unwrap();
-    assert!(!limited_tools
-        .iter()
-        .any(|tool| tool["name"] == "get_market_quote"));
-
-    let response = mcp_post(
-        &server,
-        Some(&limited_pat),
-        Some(&limited_session),
-        serde_json::json!({
-            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
-            "params": { "name": "get_market_quote", "arguments": { "symbol": "SHOP.TO" } }
-        }),
-    )
-    .await;
-    assert_eq!(response.status(), 200);
-    let denied = parse_sse_data(&response.text().await.unwrap());
-    assert_eq!(denied["result"]["isError"], true);
-    assert!(denied["result"]["content"][0]["text"]
-        .as_str()
-        .unwrap()
-        .contains("holdings:read"));
 
     // (h) tools/call succeeds and writes an audit row (awaited before the
     // response returns; the poll just tolerates sink latency).
