@@ -336,3 +336,50 @@ async fn mcp_recalculate_portfolio_is_queued() {
     .await;
     assert_eq!(result["queued"], true, "{result}");
 }
+
+/// The fork's routes for valuation history (cached) and the 1D/1W intraday
+/// curve answer with the expected payloads, and the curve rejects other ranges.
+#[tokio::test]
+async fn fork_valuation_routes_answer_and_validate_the_range() {
+    let server = spawn_server(true, false).await;
+    let cookie = login(&server).await;
+    let (account, _asset_id, _pat, _session) = fund_holding_session(&server, &cookie).await;
+    let account_id = account["id"].as_str().unwrap();
+    let filter = serde_json::json!({ "type": "account", "accountId": account_id });
+
+    let history =
+        serde_json::json!({ "filter": filter, "startDate": "2026-08-01", "endDate": "2026-08-31" });
+    let first = api_post(
+        &server,
+        &cookie,
+        "valuations/history/query",
+        history.clone(),
+    )
+    .await;
+    assert!(
+        first.as_array().is_some_and(|days| !days.is_empty()),
+        "{first}"
+    );
+    // A repeat is served from the fork's cache with the same payload.
+    let second = api_post(&server, &cookie, "valuations/history/query", history).await;
+    assert_eq!(first, second);
+
+    let intraday = api_post(
+        &server,
+        &cookie,
+        "valuations/intraday/query",
+        serde_json::json!({ "filter": filter, "range": "1D" }),
+    )
+    .await;
+    assert!(intraday.is_array(), "{intraday}");
+
+    let rejected = server
+        .client
+        .post(format!("{}/api/v1/valuations/intraday/query", server.base))
+        .header(header::COOKIE, format!("wf_session={cookie}"))
+        .json(&serde_json::json!({ "filter": filter, "range": "1M" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejected.status(), 400);
+}
