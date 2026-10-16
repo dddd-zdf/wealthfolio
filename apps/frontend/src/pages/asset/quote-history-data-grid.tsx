@@ -27,7 +27,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QuoteHistoryToolbar } from "./quote-history-toolbar";
 import { toQuoteEntry, type QuoteEntry } from "./quote-history-utils";
-import { UpdateTotalValueDialog } from "./update-total-value-dialog";
+import { useTotalValueEntry } from "./fork-total-value";
 
 // Helper to normalize date values (handles both Date objects and strings from DateCell)
 const normalizeDate = (value: Date | string): Date => {
@@ -84,6 +84,7 @@ const toQuote = (entry: QuoteEntry, assetId: string): Quote => {
 // Manual quotes are stored under one ID per asset and day
 const canonicalQuoteId = (entry: QuoteEntry, assetId: string): string =>
   `${assetId}_${format(entry.date, "yyyy-MM-dd")}_MANUAL`;
+
 // Create draft entry
 const createDraftEntry = (currency: string): QuoteEntry => ({
   id: generateTempId(),
@@ -398,42 +399,15 @@ export function QuoteHistoryDataGrid({
     dataGrid.table.resetRowSelection();
   }, [initialEntries, dataGrid.table]);
 
-  // Save the price that values the held units at the entered total.
-  const [totalValueOpen, setTotalValueOpen] = useState(false);
-  const handleTotalValue = useCallback(
-    (date: Date, price: number) => {
-      const day = format(date, "yyyy-MM-dd");
-      const existing = initialEntries.find((e) => format(e.date, "yyyy-MM-dd") === day);
-      onSaveQuote(
-        toQuote(
-          {
-            id: existing?.id ?? generateTempId(),
-            date,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: 0,
-            currency,
-          },
-          assetId,
-        ),
-      );
-    },
-    [initialEntries, onSaveQuote, currency, assetId],
-  );
-  const showUpdateValue = isManualDataSource && unitsOn != null;
-  const totalValueDialog = showUpdateValue ? (
-    <UpdateTotalValueDialog
-      open={totalValueOpen}
-      onOpenChange={setTotalValueOpen}
-      currency={currency}
-      unitsOn={unitsOn}
-      onSave={handleTotalValue}
-    />
-  ) : null;
+  const { onUpdateValue, totalValueDialog } = useTotalValueEntry({
+    isManualDataSource,
+    unitsOn,
+    initialEntries,
+    onSaveQuote,
+    currency,
+    assetId,
+  });
 
-  // Mobile state
   // Mobile state: one quote is edited at a time and saved on its own.
   const [mobilePage, setMobilePage] = useState(0);
   const [mobileDraft, setMobileDraft] = useState<QuoteEntry | null>(null);
@@ -544,7 +518,7 @@ export function QuoteHistoryDataGrid({
           onSave={handleSave}
           onCancel={handleCancel}
           onChangeDataSource={onChangeDataSource}
-          onUpdateValue={showUpdateValue ? () => setTotalValueOpen(true) : undefined}
+          onUpdateValue={onUpdateValue}
         />
         {totalValueDialog}
 
@@ -786,7 +760,7 @@ export function QuoteHistoryDataGrid({
         onSave={handleSave}
         onCancel={handleCancel}
         onChangeDataSource={onChangeDataSource}
-        onUpdateValue={showUpdateValue ? () => setTotalValueOpen(true) : undefined}
+        onUpdateValue={onUpdateValue}
       />
       {totalValueDialog}
 

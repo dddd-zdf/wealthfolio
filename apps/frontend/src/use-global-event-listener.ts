@@ -17,6 +17,7 @@ import {
 import { usePortfolioSyncOptional } from "@/context/portfolio-sync-context";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { assetLogoRegistry } from "@/lib/asset-logo-registry";
+import { isBackgroundEvent } from "@/lib/fork-background-events";
 import {
   invalidateAfterAssetClassificationsChanged,
   shouldInvalidateAfterPortfolioUpdate,
@@ -44,15 +45,6 @@ interface MarketSyncCompletePayload {
   failed_syncs?: [string, string][];
   skipped_reasons?: [string, string][];
   show_skipped_reasons?: boolean;
-}
-
-/** Scheduled server runs keep data fresh silently: refresh, but no notifications. */
-function isBackgroundEvent(payload: unknown): boolean {
-  return (
-    typeof payload === "object" &&
-    payload !== null &&
-    (payload as { background?: unknown }).background === true
-  );
 }
 
 function getSyncFailures(payload?: MarketSyncCompletePayload | null): [string, string][] {
@@ -449,18 +441,17 @@ const useGlobalEventListener = () => {
         Array.from(POST_LOGIN_REQUIRED_LISTENERS).every((name) => readyListeners.has(name)),
       );
 
-      // Trigger initial portfolio update after listeners are set up. The web
-      // server keeps prices and valuations current on its own schedule.
-      if (!hasTriggeredInitialUpdate.current && isTauriEnv) {
-        hasTriggeredInitialUpdate.current = true;
-        logger.debug("Triggering initial portfolio update from frontend");
+      // Fork: the web server keeps prices and valuations current on its own schedule.
+      if (!isTauriEnv || hasTriggeredInitialUpdate.current) return;
+      hasTriggeredInitialUpdate.current = true;
 
-        // Trigger portfolio update
-        updatePortfolio().catch((error) => {
-          logger.error("Failed to trigger initial portfolio update: " + String(error));
-        });
-        // Note: Update check is now handled by useCheckUpdateOnStartup query in UpdateDialog
-      }
+      // Listeners are live: request the start-up portfolio update (market sync
+      // plus a rebuild of whatever is stale). Its progress arrives through the
+      // events registered above, so nothing is missed.
+      updatePortfolio().catch((error) => {
+        logger.error("Failed to request the portfolio update: " + String(error));
+      });
+      // Note: Update check is handled by useCheckUpdateOnStartup query in UpdateDialog
     };
 
     setupListeners().catch((error) => {

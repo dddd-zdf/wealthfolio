@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Inserisci il valore totale della posizione. Il prezzo unitario viene calcolato dalle quote detenute in quella data.",
     "units_at_price": "{{units}} quote a {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Anni solari"
   }
 }

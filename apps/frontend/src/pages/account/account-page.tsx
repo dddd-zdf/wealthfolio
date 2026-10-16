@@ -28,7 +28,7 @@ import { useTranslation } from "react-i18next";
 
 import { ActionPalette, type ActionPaletteGroup } from "@/components/action-palette";
 import { ManagedValueEdit } from "@/components/managed-value-edit";
-import { managedHoldings } from "@/lib/managed-account";
+import { useManagedAccountHoldings } from "@/pages/dashboard/fork-accounts-summary";
 import { PrivacyToggle } from "@/components/privacy-toggle";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useRecalculatePortfolioMutation } from "@/hooks/use-calculate-portfolio";
@@ -269,11 +269,7 @@ const AccountPage = () => {
   }, [holdings]);
 
   // Managed accounts (manually priced holdings) get an in-place total editor.
-  const { holdings: allHoldings } = useHoldings({ type: "all" });
-  const managed = useMemo(
-    () => (account ? managedHoldings(allHoldings, account.id, account.currency) : null),
-    [allHoldings, account],
-  );
+  const managed = useManagedAccountHoldings(account);
 
   const shouldShowSnapshotHistory =
     (isHoldingsMode && hasHoldings && !isHoldingsLoading) || isInvalidSnapshotContext;

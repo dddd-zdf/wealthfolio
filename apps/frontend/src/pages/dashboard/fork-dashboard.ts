@@ -6,12 +6,8 @@
 //   stored daily totals, with a faint guide where the period started.
 // - Other periods: money-weighted return beside the simple return.
 import { getIntradayValuations } from "@/adapters";
-import { summarizeDayChange } from "@/lib/holding-performance";
-import {
-  performanceMoneyWeightedReturn,
-  performancePeriodPnl,
-  performanceSummaryReturn,
-} from "@/lib/performance";
+import { performanceMoneyWeightedReturn, summarizeDayChange } from "@/lib/fork-performance";
+import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import type { AccountScope, Holding } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";

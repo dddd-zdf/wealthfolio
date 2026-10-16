@@ -48,6 +48,7 @@ mod device_sync;
 #[cfg(feature = "device-sync")]
 pub(crate) mod device_sync_engine;
 mod exchange_rates;
+pub mod fork_router;
 mod goals;
 pub(crate) mod health;
 mod holdings;
@@ -175,16 +176,6 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> anyhow::Result<Route
 
 pub async fn app_router_from_config(config: &Config) -> anyhow::Result<Router> {
     let profiles = crate::profiles::WebProfiles::open(config).await?;
-    let auth = profiles.auth_state();
-    app_router_with_profiles(profiles, auth, config)
-}
-
-/// Like [`app_router_from_config`], but starts the default profile before any
-/// request is served, so background work begins at boot without racing a
-/// visitor's own startup of the same profile.
-pub async fn serving_router_from_config(config: &Config) -> anyhow::Result<Router> {
-    let profiles = crate::profiles::WebProfiles::open(config).await?;
-    profiles.start_default_profile().await;
     let auth = profiles.auth_state();
     app_router_with_profiles(profiles, auth, config)
 }

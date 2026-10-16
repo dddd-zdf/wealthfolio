@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Authentication disabled");
     }
     let static_dir = std::path::PathBuf::from(&config.static_dir);
-    let router = api::serving_router_from_config(&config)
+    let router = api::fork_router::serving_router_from_config(&config)
         .await
         .inspect_err(|error| {
             tracing::error!(error = %format!("{error:#}"), "Server startup failed; no requests were served");

@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "輸入持倉的總價值。單價將根據該日期持有的份額計算。",
     "units_at_price": "{{units}} 份，單價 {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "自然年"
   }
 }

@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Introduza o valor total da posição. O preço unitário é calculado a partir das unidades detidas nessa data.",
     "units_at_price": "{{units}} unidades a {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Anos civis"
   }
 }

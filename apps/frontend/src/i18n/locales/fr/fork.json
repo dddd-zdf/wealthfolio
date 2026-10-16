@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Saisissez la valeur totale de la position. Le prix unitaire est calculé à partir des parts détenues à cette date.",
     "units_at_price": "{{units}} parts à {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Années civiles"
   }
 }

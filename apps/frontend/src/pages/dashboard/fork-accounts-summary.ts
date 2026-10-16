@@ -4,7 +4,7 @@
 // - Managed accounts (manually priced holdings) get an in-place total editor.
 import { getHoldingsList, performanceSummaryScopeKey } from "@/adapters";
 import { useHoldings } from "@/hooks/use-holdings";
-import { summarizeDayChange } from "@/lib/holding-performance";
+import { summarizeDayChange } from "@/lib/fork-performance";
 import { managedHoldings } from "@/lib/managed-account";
 import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
@@ -113,5 +113,14 @@ export function useManagedHoldingsByAccount(accounts: Account[]) {
         ]),
       ),
     [accounts, allHoldings],
+  );
+}
+
+/** Manually priced holdings of one managed account (account page), or null. */
+export function useManagedAccountHoldings(account: Account | undefined) {
+  const { holdings: allHoldings } = useHoldings({ type: "all" });
+  return useMemo(
+    () => (account ? managedHoldings(allHoldings, account.id, account.currency) : null),
+    [allHoldings, account],
   );
 }
