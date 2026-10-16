@@ -126,3 +126,28 @@ pub(crate) async fn warm_dashboard_summaries(state: &Arc<AppState>) {
         started.elapsed()
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_warm_up_covers_every_interval_the_dashboard_offers() {
+        let today = NaiveDate::from_ymd_opt(2026, 10, 16).expect("valid date");
+        let day = |y, m, d| NaiveDate::from_ymd_opt(y, m, d);
+        assert_eq!(
+            dashboard_period_ranges(today),
+            vec![
+                (day(2026, 10, 15), Some(today)),
+                (day(2026, 10, 9), Some(today)),
+                (day(2026, 9, 16), Some(today)),
+                (day(2026, 7, 16), Some(today)),
+                (day(2026, 4, 16), Some(today)),
+                (day(2026, 1, 1), Some(today)),
+                (day(2025, 10, 16), Some(today)),
+                (day(2021, 10, 16), Some(today)),
+                (None, None),
+            ]
+        );
+    }
+}
