@@ -74,8 +74,9 @@ To see the full divergence:
 
 - **Background updates (#15).** The server refreshes prices every 5 minutes
   during NYSE/TSX hours and hourly otherwise, and skips the portfolio recalc if
-  no price changed (#10). Page loads no longer trigger a sync, and background
-  runs show no toasts. Don't add per-request or per-page-load background work.
+  no price changed (#10). Page loads and returning to a hidden tab no longer
+  trigger a sync (3.10's resume check is desktop-only), and background runs show
+  no toasts. Don't add per-request or per-page-load background work.
 - **MCP auth (#17).** `/mcp` accepts a personal access token (Settings → AI
   Agent Access) or OAuth. Approving the consent screen (`/oauth/consent`, behind
   the normal login) creates an ordinary PAT named `<client> (OAuth)`; revoke it
