@@ -474,6 +474,8 @@ const RESUME_CHECK_AFTER_MS = 5 * 60 * 1000;
 
 export function usePortfolioResumeCheck() {
   useEffect(() => {
+    // Fork: the web server keeps data current on its own schedule (#15).
+    if (!isTauri) return;
     let hiddenAt: number | null = null;
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
