@@ -73,26 +73,26 @@ pub(super) fn needs_review_issue(review_issues: &[&ConsistencyIssueInfo]) -> Hea
         .collect();
 
     HealthIssue::builder()
-            .id(format!("activities_need_review:{data_hash}"))
-            .severity(Severity::Warning)
-            .category(HealthCategory::DataConsistency)
-            .code("data_activities_need_review")
-            .param("count", count as u32)
-            .title(if count == 1 {
-                "Transaction needs review".to_string()
-            } else {
-                format!("{count} transactions need review")
-            })
-            .message(
-                "Some imported or synced transactions are waiting for your review. Drafts aren't counted in balances or performance until you approve them. Approve, edit, or delete them in the review list.",
-            )
-            .affected_count(count as u32)
-            .affected_items(affected_items)
-            .navigate_action(NavigateAction {
-                route: "/activities".to_string(),
-                query: Some(serde_json::json!({ "needsReview": "true" })),
-                label: "Review Transactions".to_string(),
-            })
-            .data_hash(data_hash)
-            .build()
+        .id(format!("activities_need_review:{data_hash}"))
+        .severity(Severity::Warning)
+        .category(HealthCategory::DataConsistency)
+        .code("data_activities_need_review")
+        .param("count", count as u32)
+        .title(if count == 1 {
+            "Transaction needs review".to_string()
+        } else {
+            format!("{count} transactions need review")
+        })
+        .message(
+            "Some imported or synced transactions are waiting for your review. Drafts aren't counted in balances or performance until you approve them. Approve, edit, or delete them in the review list.",
+        )
+        .affected_count(count as u32)
+        .affected_items(affected_items)
+        .navigate_action(NavigateAction {
+            route: "/activities".to_string(),
+            query: Some(serde_json::json!({ "needsReview": "true" })),
+            label: "Review Transactions".to_string(),
+        })
+        .data_hash(data_hash)
+        .build()
 }

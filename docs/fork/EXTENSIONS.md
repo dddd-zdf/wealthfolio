@@ -109,15 +109,20 @@ any old workaround.
    deployment locations, service ownership, backup and restore procedures.
 2. Preserve the upstream engine/coordinator. Port behaviors through these seams;
    keep conflicts in upstream files small and explain unavoidable differences.
-3. Verify unique catalog names, existing payloads and saved scope grants.
+3. Compare the hooks that mirror or rely on upstream internals, which compile
+   even when upstream's behavior changes: `fork_sync::is_recently_closed` copies
+   the recently-closed rule in `sync_state::determine_sync_category`, and
+   `health/fork_refresh.rs` relies on upstream's `get_health_status` checking
+   the cache before running checks.
+4. Verify unique catalog names, existing payloads and saved scope grants.
    Exercise legacy and new transfer forms, direct/reviewed rules, OAuth and PAT
    access.
-4. Test saved portfolio scope in daily and intraday charts, manual values, GICs,
+5. Test saved portfolio scope in daily and intraday charts, manual values, GICs,
    quiet background updates, cache invalidation and the engine regressions
    above.
-5. Run repository checks and validate first startup on a disposable database
+6. Run repository checks and validate first startup on a disposable database
    copy. Compare source records and spending totals; investigate changed derived
    values.
-6. Preserve merge ancestry when promoting the upstream integration. Record the
+7. Preserve merge ancestry when promoting the upstream integration. Record the
    deployed image revision and verified pre-upgrade backup in the infra
    changelog.
