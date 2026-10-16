@@ -22,6 +22,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 use wealthfolio_core::profiles::{ProfileRegistry, ProfileSession, PROFILE_SCOPE_HEADER};
 
+mod fork_startup;
+
 type Result<T> = std::result::Result<T, (StatusCode, String)>;
 fn failure(error: impl ToString) -> (StatusCode, String) {
     (StatusCode::LOCKED, error.to_string())
@@ -330,24 +332,6 @@ impl WebProfiles {
         crate::scheduler::start_background_workers(runtime.clone());
         Ok(runtime)
     }
-    /// Starts the unlocked default profile so its background price updates
-    /// run without waiting for a first visit. Failures are left for that
-    /// visit to retry and report.
-    pub async fn start_default_profile(&self) {
-        let Ok(id) = self.registry.default_id() else {
-            return;
-        };
-        let unlocked = self
-            .registry
-            .profile(id)
-            .is_ok_and(|profile| !profile.lock_enabled);
-        if unlocked {
-            if let Err((status, _)) = self.runtime(id).await {
-                tracing::warn!(%status, "Default profile startup deferred to first request");
-            }
-        }
-    }
-
     pub fn start_connected_profiles(self: &Arc<Self>) {
         let root = self.clone();
         tokio::spawn(async move {
@@ -479,11 +463,7 @@ async fn command(
             if let Some(session) = &session {
                 // Gate financial UI startup on the runtime, not just the grant.
                 // Failed initialization remains retryable with the same session.
-                // Detached so a client timeout doesn't cancel a slow cold start.
-                let (runtime_root, profile_id) = (root.clone(), session.profile_id);
-                tokio::spawn(async move { runtime_root.runtime(profile_id).await })
-                    .await
-                    .map_err(failure)??;
+                root.runtime_detached(session.profile_id).await?;
                 registry
                     .sessions
                     .admit(&owner.0, session.scope_id)

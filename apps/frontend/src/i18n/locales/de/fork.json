@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Geben Sie den Gesamtwert der Position ein. Der Stückpreis wird aus den an diesem Datum gehaltenen Anteilen berechnet.",
     "units_at_price": "{{units}} Anteile zu {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Kalenderjahre"
   }
 }

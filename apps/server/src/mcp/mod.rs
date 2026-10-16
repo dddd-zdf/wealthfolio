@@ -5,12 +5,13 @@
 
 pub mod audit_sink;
 pub mod auth;
+mod fork_compat;
 pub mod oauth;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::{http::StatusCode, middleware, response::Response, Router};
+use axum::{middleware, Router};
 use rmcp::transport::streamable_http_server::StreamableHttpServerConfig;
 use wealthfolio_mcp::McpServerBuilder;
 
@@ -51,20 +52,12 @@ pub fn router(state: Arc<AppState>, config: &Config) -> Router {
 
     Router::new()
         .nest_service("/mcp", service)
-        .layer(middleware::map_response(legacy_fallback_status))
+        .layer(middleware::map_response(
+            fork_compat::legacy_fallback_status,
+        ))
         .layer(middleware::from_fn_with_state(
             auth::PatAuthState::new(state.pat_repository.clone()),
             auth::require_pat,
         ))
-}
-
-/// rmcp answers a session-less request that isn't `initialize` with 422.
-/// Clients speaking MCP 2026-07-28 (e.g. ChatGPT, which opens with
-/// `server/discover`) only fall back to the `initialize` handshake on a 400
-/// without a modern JSON-RPC error body, so report it as 400.
-async fn legacy_fallback_status(mut response: Response) -> Response {
-    if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
-        *response.status_mut() = StatusCode::BAD_REQUEST;
-    }
-    response
+        .layer(middleware::from_fn(fork_compat::resource_challenge))
 }

@@ -6,15 +6,15 @@
 use std::sync::{Arc, RwLock};
 
 use wealthfolio_ai::{AgentEnvironment, AiEnvironment, ChatRepositoryTrait};
+use wealthfolio_core::events::DomainEventSink;
 use wealthfolio_core::{
     accounts::AccountServiceTrait, activities::ActivityServiceTrait,
-    allocation::AllocationServiceTrait, assets::AssetServiceTrait, events::DomainEventSink,
-    goals::GoalServiceTrait, health::HealthServiceTrait, holdings::HoldingsServiceTrait,
-    income::IncomeServiceTrait, limits::ContributionLimitServiceTrait,
-    performance::PerformanceServiceTrait, portfolio::net_worth::NetWorthServiceTrait,
-    portfolios::PortfolioServiceTrait, quotes::QuoteServiceTrait, secrets::SecretStore,
-    settings::SettingsServiceTrait, taxonomies::TaxonomyServiceTrait,
-    valuation::ValuationServiceTrait,
+    allocation::AllocationServiceTrait, assets::AssetServiceTrait, goals::GoalServiceTrait,
+    health::HealthServiceTrait, holdings::HoldingsServiceTrait, income::IncomeServiceTrait,
+    limits::ContributionLimitServiceTrait, performance::PerformanceServiceTrait,
+    portfolio::net_worth::NetWorthServiceTrait, portfolios::PortfolioServiceTrait,
+    quotes::QuoteServiceTrait, secrets::SecretStore, settings::SettingsServiceTrait,
+    taxonomies::TaxonomyServiceTrait, valuation::ValuationServiceTrait,
 };
 use wealthfolio_spending::activity_assignments::ActivityTaxonomyAssignmentService;
 use wealthfolio_spending::cash_activities::{CashActivityService, CashActivityServiceTrait};

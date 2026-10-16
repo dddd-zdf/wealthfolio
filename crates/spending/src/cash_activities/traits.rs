@@ -1,9 +1,9 @@
+use crate::activity_assignments::{ActivityTaxonomyAssignment, BulkCategoryAssignment};
 use anyhow::Result;
 use async_trait::async_trait;
 
 use super::model::{CashActivity, CashActivitySearchRequest, CashActivitySearchResponse};
 use super::service::CashActivityService;
-use crate::activity_assignments::{ActivityTaxonomyAssignment, BulkCategoryAssignment};
 
 /// Surface of `CashActivityService` consumed by agent tools.
 /// Mirrors the inherent method signatures exactly; extend (don't change)

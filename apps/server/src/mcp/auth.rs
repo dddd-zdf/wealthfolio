@@ -59,8 +59,11 @@ pub async fn require_pat(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "));
 
-    let Some(context) = presented.and_then(|presented| authenticate(&auth.0, presented)) else {
-        return unauthorized(req.headers());
+    let Some(presented) = presented else {
+        return unauthorized();
+    };
+    let Some(context) = authenticate(&auth.0, presented) else {
+        return unauthorized();
     };
 
     req.extensions_mut().insert(context);
@@ -135,19 +138,11 @@ fn touch_last_used(inner: &Inner, token_id: &str) {
     }
 }
 
-/// 401 with a JSON-RPC-shaped body so MCP clients surface a useful error,
-/// pointing OAuth-capable clients at the protected-resource metadata.
-fn unauthorized(headers: &header::HeaderMap) -> Response {
-    let challenge = format!(
-        r#"Bearer resource_metadata="{}""#,
-        super::oauth::resource_metadata_url(headers)
-    );
+/// 401 with a JSON-RPC-shaped body so MCP clients surface a useful error.
+fn unauthorized() -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        [
-            (header::CONTENT_TYPE, "application/json".to_string()),
-            (header::WWW_AUTHENTICATE, challenge),
-        ],
+        [(header::CONTENT_TYPE, "application/json")],
         r#"{"jsonrpc":"2.0","error":{"code":-32000,"message":"Unauthorized: a valid personal access token is required"},"id":null}"#,
     )
         .into_response()

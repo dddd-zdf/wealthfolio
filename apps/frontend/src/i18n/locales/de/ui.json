@@ -128,8 +128,7 @@
       "3Y": "Letzte 3 Jahre",
       "5Y": "Letzte 5 Jahre",
       "ALL": "Gesamter Zeitraum"
-    },
-    "calendarYears": "Kalenderjahre"
+    }
   },
   "dialog": {
     "close": "Schließen",

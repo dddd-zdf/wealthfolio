@@ -9,7 +9,6 @@ use super::service::CategorizationRulesService;
 #[async_trait]
 pub trait CategorizationRulesServiceTrait: Send + Sync {
     async fn list(&self) -> Result<Vec<CategorizationRule>>;
-    /// Persist a new rule (validates scope, pattern, and amount condition).
     async fn create(&self, new_rule: NewCategorizationRule) -> Result<CategorizationRule>;
 }
 

@@ -128,8 +128,7 @@
       "3Y": "Últimos 3 años",
       "5Y": "Últimos 5 años",
       "ALL": "Todo el tiempo"
-    },
-    "calendarYears": "Años naturales"
+    }
   },
   "dialog": {
     "close": "Cerrar",

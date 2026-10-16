@@ -3,7 +3,7 @@ import { managedPrices } from "@/lib/managed-account";
 import { invalidatePerformanceCaches } from "@/lib/performance-cache";
 import { QueryKeys } from "@/lib/query-keys";
 import type { Holding } from "@/lib/types";
-import { generateTempId, toQuote } from "@/pages/asset/quote-history-utils";
+import { generateTempId, toQuote } from "@/pages/asset/fork-total-value";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Icons, MoneyInput, PrivacyAmount } from "@wealthfolio/ui";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";

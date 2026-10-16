@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Introduce el valor total de la posición. El precio por unidad se calcula con las unidades que tenías en esa fecha.",
     "units_at_price": "{{units}} unidades a {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Años naturales"
   }
 }

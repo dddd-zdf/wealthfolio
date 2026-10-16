@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "Enter the holding's total value. The unit price is worked out from the units you held on that date.",
     "units_at_price": "{{units}} units at {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "Calendar years"
   }
 }

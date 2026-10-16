@@ -10,5 +10,8 @@
   "updateTotalValue": {
     "description": "보유 자산의 총 가치를 입력하세요. 단가는 해당 날짜의 보유 수량으로 계산됩니다.",
     "units_at_price": "{{units}}좌 × {{price}}"
+  },
+  "dateRange": {
+    "calendarYears": "연도별"
   }
 }
