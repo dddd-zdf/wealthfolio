@@ -295,7 +295,7 @@ baseline:
         annualized_value_return: ~
         irr: ~
         twr: ~
-        value_return: ~
+        value_return: "2"
       risk:
         drawdown_duration_days: ~
         max_drawdown: ~
@@ -310,8 +310,8 @@ baseline:
         basis: mixed
         basis_status: complete
         method: valueReturn
-        percent: ~
-        percent_status: unavailable
+        percent: "2"
+        percent_status: complete
         quality: partial
   portfolio_flows: []
 scenario: EDGE-SPLIT-03
