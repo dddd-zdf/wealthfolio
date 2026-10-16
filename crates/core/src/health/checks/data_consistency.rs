@@ -13,6 +13,9 @@ use crate::health::model::{
 };
 use crate::health::traits::{HealthCheck, HealthContext};
 
+mod fork_needs_review;
+pub(crate) use fork_needs_review::needs_review_activities_from_data;
+
 const MAX_VALUATION_DIAGNOSTICS: usize = 100;
 
 /// Types of data consistency issues.
@@ -795,51 +798,7 @@ impl DataConsistencyCheck {
         }
 
         if let Some(review_issues) = by_type.get(&ConsistencyIssueType::ActivityNeedsReview) {
-            let count = review_issues.len();
-            let record_ids: Vec<String> = review_issues
-                .iter()
-                .map(|issue| issue.record_id.clone())
-                .collect();
-            let data_hash = compute_data_hash(&record_ids);
-            let affected_items = review_issues
-                .iter()
-                .map(|issue| {
-                    let date = issue
-                        .activity_date
-                        .map(|date| date.format("%Y-%m-%d").to_string())
-                        .unwrap_or_else(|| "unknown date".to_string());
-                    AffectedItem::activity(
-                        issue.record_id.clone(),
-                        format!("{} — {}", issue.description, date),
-                    )
-                })
-                .collect();
-
-            health_issues.push(
-                HealthIssue::builder()
-                    .id(format!("activities_need_review:{data_hash}"))
-                    .severity(Severity::Warning)
-                    .category(HealthCategory::DataConsistency)
-                    .code("data_activities_need_review")
-                    .param("count", count as u32)
-                    .title(if count == 1 {
-                        "Transaction needs review".to_string()
-                    } else {
-                        format!("{count} transactions need review")
-                    })
-                    .message(
-                        "Some imported or synced transactions are waiting for your review. Drafts aren't counted in balances or performance until you approve them. Approve, edit, or delete them in the review list.",
-                    )
-                    .affected_count(count as u32)
-                    .affected_items(affected_items)
-                    .navigate_action(NavigateAction {
-                        route: "/activities".to_string(),
-                        query: Some(serde_json::json!({ "needsReview": "true" })),
-                        label: "Review Transactions".to_string(),
-                    })
-                    .data_hash(data_hash)
-                    .build(),
-            );
+            health_issues.push(fork_needs_review::needs_review_issue(review_issues));
         }
 
         if let Some(missing_issues) = by_type.get(&ConsistencyIssueType::MissingGeneratedValuation)

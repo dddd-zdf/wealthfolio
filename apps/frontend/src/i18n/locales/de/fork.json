@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "{{client}} verbinden",
+    "description": "{{client}} möchte auf deine Wealthfolio-Daten zugreifen. Nach der Freigabe geht es zurück zu {{host}}.",
+    "invalid": "Diese Verbindungsanfrage ist unvollständig. Starte erneut in der App, die du verbindest.",
+    "revoke_hint": "Du kannst den Zugriff jederzeit unter Einstellungen → KI-Agentenzugriff widerrufen.",
+    "allow": "Zulassen",
+    "deny": "Ablehnen"
+  },
+  "updateTotalValue": {
+    "description": "Geben Sie den Gesamtwert der Position ein. Der Stückpreis wird aus den an diesem Datum gehaltenen Anteilen berechnet.",
+    "units_at_price": "{{units}} Anteile zu {{price}}"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "連接 {{client}}",
+    "description": "{{client}} 想要使用你的 Wealthfolio 資料。允許後將返回 {{host}}。",
+    "invalid": "此連線請求不完整。請從要連接的應用程式重新開始。",
+    "revoke_hint": "你可以隨時在 設定 → AI 代理存取 中撤銷存取權限。",
+    "allow": "允許",
+    "deny": "拒絕"
+  },
+  "updateTotalValue": {
+    "description": "輸入持倉的總價值。單價將根據該日期持有的份額計算。",
+    "units_at_price": "{{units}} 份，單價 {{price}}"
+  }
+}

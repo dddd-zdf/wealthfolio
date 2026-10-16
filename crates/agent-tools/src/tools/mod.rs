@@ -15,15 +15,11 @@ pub mod cash_balances;
 pub mod categorization_context;
 pub mod commit_activity;
 pub mod commit_asset_classification;
-pub mod commit_categories;
 pub mod commit_categorization_rule;
-pub mod commit_reviewed_categorization_rule;
 pub mod commit_transaction_categories;
 pub mod contribution_limits;
-pub mod create_account;
 pub mod create_categorization_rule;
-pub mod data_admin;
-mod fork_commits;
+pub mod fork;
 pub mod goals;
 pub mod health;
 pub mod holdings;
@@ -35,7 +31,6 @@ pub mod propose_categories;
 pub mod quote_import;
 pub mod record_activities;
 pub mod record_activity;
-pub mod transfer_compat;
 pub mod transfer_links;
 pub mod valuation;
 
@@ -112,30 +107,19 @@ pub use commit_asset_classification::{
     CommitAssetClassificationDraftArgs, CommitAssetClassificationDraftOutput,
     CommittedAssetClassificationAssignment,
 };
-pub use commit_categories::{
-    CategoryAssignmentInput, CommitCategoryAssignments, CommitCategoryAssignmentsArgs,
-    CommitCategoryAssignmentsOutput, CommittedCategoryAssignment,
-};
 pub use commit_categorization_rule::{
-    CommitCategorizationRule, CommitCategorizationRuleOutput, CommittedRuleDto,
-};
-pub use commit_reviewed_categorization_rule::{
-    CommitReviewedCategorizationRule, CommitReviewedCategorizationRuleArgs,
-    CommitReviewedCategorizationRuleOutput,
+    CommitCategorizationRule, CommitCategorizationRuleArgs, CommitCategorizationRuleOutput,
 };
 pub use commit_transaction_categories::{
     CommitTransactionCategories, CommitTransactionCategoriesArgs, CommitTransactionCategoriesOutput,
 };
-pub use create_account::{
-    CreateAccount, CreateAccountArgs, CreateAccountOutput, CreatedAccountDto,
-};
 
 // MCP-only transfer linking tools.
-pub use transfer_compat::LinkTransferActivities;
 pub use transfer_links::{
-    FindTransferMatches, FindTransferMatchesArgs, FindTransferMatchesOutput, LinkTransfersOutput,
-    TransferCandidateDto, TransferDto, TransferPairDto, TransferPairError,
-    UnlinkTransferActivities, UnlinkTransfersOutput, UnlinkedTransferDto,
+    FindTransferMatches, FindTransferMatchesArgs, FindTransferMatchesOutput,
+    LinkTransferActivities, LinkTransfersOutput, TransferCandidateDto, TransferDto,
+    TransferPairDto, TransferPairError, UnlinkTransferActivities, UnlinkTransfersOutput,
+    UnlinkedTransferDto,
 };
 
 // MCP-only quote import tools.
@@ -202,15 +186,13 @@ pub fn draft_suggest_tools() -> Vec<Arc<dyn AgentTool>> {
 /// The MCP-only commit tools that persist reviewed drafts. Never exposed to the
 /// in-app assistant (which writes through its confirmation widget instead).
 pub fn commit_tools() -> Vec<Arc<dyn AgentTool>> {
-    let mut tools: Vec<Arc<dyn AgentTool>> = vec![
+    vec![
         Arc::new(CommitActivityDraft),
         Arc::new(CommitActivityDrafts),
         Arc::new(CommitAssetClassificationDraft),
-        Arc::new(CommitReviewedCategorizationRule),
+        Arc::new(CommitCategorizationRule),
         Arc::new(CommitTransactionCategories),
-    ];
-    tools.extend(fork_commits::tools());
-    tools
+    ]
 }
 
 /// The MCP-only CSV import tools: fetch an account's mapping, preview rows

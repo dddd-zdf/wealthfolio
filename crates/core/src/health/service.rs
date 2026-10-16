@@ -630,11 +630,13 @@ impl HealthService {
             &health_activities,
             effective_timezone,
         ));
-        consistency_issues.extend(needs_review_activities_from_data(
-            &health_activities,
-            &account_name_map,
-            effective_timezone,
-        ));
+        consistency_issues.extend(
+            super::checks::data_consistency::needs_review_activities_from_data(
+                &health_activities,
+                &account_name_map,
+                effective_timezone,
+            ),
+        );
         if let Some(freshness) = &self.projection_freshness {
             match freshness.stale_accounts() {
                 Ok(stale) => consistency_issues.extend(stale.into_iter().map(|stale| {
@@ -1295,43 +1297,6 @@ fn missing_currency_activities_from_data(
                 snapshot_min_date: None,
                 snapshot_max_date: None,
             })
-        })
-        .collect()
-}
-
-fn needs_review_activities_from_data(
-    activities: &[Activity],
-    account_name_map: &HashMap<String, String>,
-    timezone: Option<&str>,
-) -> Vec<ConsistencyIssueInfo> {
-    let tz = parse_user_timezone_or_default(timezone.unwrap_or_default());
-    activities
-        .iter()
-        .filter(|activity| activity.needs_review)
-        .map(|activity| ConsistencyIssueInfo {
-            issue_type: ConsistencyIssueType::ActivityNeedsReview,
-            record_id: activity.id.clone(),
-            description: account_name_map
-                .get(&activity.account_id)
-                .cloned()
-                .unwrap_or_else(|| activity.account_id.clone()),
-            account_id: Some(activity.account_id.clone()),
-            asset_id: activity.asset_id.clone(),
-            first_negative_date: None,
-            cash_balance: None,
-            total_value_at_date: None,
-            account_currency: None,
-            activity_date: Some(activity_date_in_tz(activity.activity_date, tz)),
-            asset_symbol: None,
-            asset_name: None,
-            quantity: activity.quantity,
-            proceeds: None,
-            reason: None,
-            activity_id: Some(activity.id.clone()),
-            snapshot_date_raw: None,
-            snapshot_source: None,
-            snapshot_min_date: None,
-            snapshot_max_date: None,
         })
         .collect()
 }
@@ -2646,7 +2611,11 @@ mod tests {
         activity.needs_review = true;
         let names = HashMap::from([("acc-1".to_string(), "TFSA".to_string())]);
 
-        let issues = needs_review_activities_from_data(&[activity], &names, Some("UTC"));
+        let issues = crate::health::checks::data_consistency::needs_review_activities_from_data(
+            &[activity],
+            &names,
+            Some("UTC"),
+        );
 
         assert_eq!(issues.len(), 1);
         assert_eq!(

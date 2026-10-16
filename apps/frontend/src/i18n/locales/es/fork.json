@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "Conectar {{client}}",
+    "description": "{{client}} quiere usar tus datos de Wealthfolio. Después de permitirlo, volverás a {{host}}.",
+    "invalid": "Esta solicitud de conexión está incompleta. Empieza de nuevo desde la app que estás conectando.",
+    "revoke_hint": "Puedes revocar el acceso en cualquier momento en Ajustes → Acceso de agentes de IA.",
+    "allow": "Permitir",
+    "deny": "Rechazar"
+  },
+  "updateTotalValue": {
+    "description": "Introduce el valor total de la posición. El precio por unidad se calcula con las unidades que tenías en esa fecha.",
+    "units_at_price": "{{units}} unidades a {{price}}"
+  }
+}

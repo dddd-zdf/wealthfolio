@@ -74,7 +74,7 @@ export function UpdateTotalValueDialog({
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <DialogHeader>
               <DialogTitle>{t("asset:updateValuation.update_value")}</DialogTitle>
-              <DialogDescription>{t("asset:updateValuation.total_description")}</DialogDescription>
+              <DialogDescription>{t("fork:updateTotalValue.description")}</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <FormField
@@ -110,7 +110,7 @@ export function UpdateTotalValueDialog({
               />
               {price != null && (
                 <p className="text-muted-foreground text-sm">
-                  {t("asset:updateValuation.units_at_price", {
+                  {t("fork:updateTotalValue.units_at_price", {
                     units: units.toLocaleString(undefined, { maximumFractionDigits: 6 }),
                     price: formatting.formatPrice(price, currency, false),
                   })}

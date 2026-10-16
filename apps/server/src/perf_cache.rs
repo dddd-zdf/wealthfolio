@@ -142,8 +142,8 @@ fn schedule_warm_up() {
                 .map(|targets| targets.iter().filter_map(Weak::upgrade).collect())
                 .unwrap_or_default();
             for state in targets {
-                crate::api::health::warm_health_status(&state).await;
-                crate::api::performance::warm_dashboard_summaries(&state).await;
+                crate::api::health::fork_refresh::warm_health_status(&state).await;
+                crate::api::performance::fork_cache::warm_dashboard_summaries(&state).await;
             }
             if !WARM_AGAIN.load(Ordering::SeqCst) {
                 break;

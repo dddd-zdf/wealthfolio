@@ -1,18 +1,12 @@
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 import { parseLocalDate } from "@/lib/utils";
-import { calculatePerformanceSummary, getIntradayValuations } from "@/adapters";
+import { calculatePerformanceSummary } from "@/adapters";
 import { HistoryChart } from "@/components/history-chart";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
-import { summarizeDayChange } from "@/lib/holding-performance";
-import {
-  performanceMoneyWeightedReturn,
-  performancePeriodPnl,
-  performanceSummaryReturn,
-} from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { PortfolioUpdateTrigger } from "@/pages/dashboard/portfolio-update-trigger";
@@ -28,13 +22,13 @@ import type { AccountScope } from "@/lib/types";
 import { accountScopeKey } from "@/pages/allocation-targets/components/target-scope";
 import { useTranslation } from "react-i18next";
 import { AccountsSummary } from "./accounts-summary";
+import { useDashboardChart, useDashboardGain } from "./fork-dashboard";
+import { DashboardMoneyWeightedReturn } from "./fork-dashboard-parts";
 import Balance from "./balance";
 import SavingGoals from "./goals";
 import TopHoldings from "./top-holdings";
 
 const DEFAULT_INTERVAL: UITimePeriod = "3M";
-// Regular North American session (9:30-16:00 ET); bars exclude extended hours.
-const REGULAR_SESSION_MS = 6.5 * 60 * 60 * 1000;
 const INTERVAL_STORAGE_KEY = "dashboard-interval";
 
 function getDashboardChartMinDomainSpanRatio(period: UITimePeriod): number {
@@ -160,22 +154,16 @@ export function DashboardContent({
     retry: 1,
   });
 
-  const dayChange = useMemo(
-    () => (isDayChange ? summarizeDayChange(allHoldings ?? [], totalValue) : null),
-    [isDayChange, allHoldings, totalValue],
-  );
-  const gainLossAmount = isDayChange
-    ? (dayChange?.amount ?? null)
-    : performancePeriodPnl(portfolioPerformance);
-  const simpleReturn = isDayChange
-    ? (dayChange?.percent ?? null)
-    : performanceSummaryReturn(portfolioPerformance);
-  const moneyWeightedReturn = isDayChange
-    ? null
-    : performanceMoneyWeightedReturn(portfolioPerformance);
-  const isGainLoading = isDayChange
-    ? isHoldingsLoading || isCurrentValuationLoading
-    : isPortfolioPerformanceLoading;
+  const { dayChange, gainLossAmount, simpleReturn, moneyWeightedReturn, isGainLoading } =
+    useDashboardGain({
+      isDayChange,
+      holdings: allHoldings,
+      totalValue,
+      performance: portfolioPerformance,
+      isPerformanceLoading: isPortfolioPerformanceLoading,
+      isHoldingsLoading,
+      isCurrentValuationLoading,
+    });
   const isCurrentValuationUnavailable =
     !isCurrentValuationLoading && !portfolioCurrentValuation && Boolean(currentValuationError);
   const portfolioSourceDataAsOf =
@@ -184,33 +172,7 @@ export function DashboardContent({
       ? valuationHistory?.[valuationHistory.length - 1]?.calculatedAt
       : undefined);
 
-  // 1D/1W: daily valuations only give a point per day, so draw the curve from
-  // live intraday prices instead (falls back to the daily points if empty).
-  const intradayRange =
-    selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
-  const { data: intradayPoints } = useQuery({
-    queryKey: [QueryKeys.HISTORY_VALUATION, "intraday", scopeKey, intradayRange],
-    queryFn: () => getIntradayValuations(scope, intradayRange!),
-    enabled: intradayRange !== null,
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-    retry: 1,
-  });
-
   const chartData = useMemo(() => {
-    if (intradayRange && intradayPoints && intradayPoints.length > 1) {
-      // The curve is anchored to the stored daily total; shift the latest
-      // session so it ends on the live headline value.
-      const last = intradayPoints[intradayPoints.length - 1];
-      const lastDay = last.timestamp.slice(0, 10);
-      const offset = totalValue > 0 ? totalValue - last.totalValueBase : 0;
-      return intradayPoints.map((point) => ({
-        date: point.timestamp,
-        totalValue: point.totalValueBase + (point.timestamp.startsWith(lastDay) ? offset : 0),
-        netContribution: point.netContributionBase,
-        currency: baseCurrency,
-      }));
-    }
     return (
       valuationHistory
         // A day the engine could not fully convert carries a partial value;
@@ -223,18 +185,17 @@ export function DashboardContent({
           currency: item.baseCurrency ?? baseCurrency,
         })) ?? []
     );
-  }, [intradayRange, intradayPoints, totalValue, valuationHistory, baseCurrency]);
-
-  // 1D shows a single session: span all of it so a half-finished day fills half
-  // the chart instead of stretching across the full width.
-  const sessionTimeDomain = useMemo((): [number, number] | undefined => {
-    if (selectedInterval !== "1D" || !intradayPoints || intradayPoints.length < 2) {
-      return undefined;
-    }
-    const open = Date.parse(intradayPoints[0].timestamp);
-    const lastPoint = Date.parse(intradayPoints[intradayPoints.length - 1].timestamp);
-    return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
-  }, [selectedInterval, intradayPoints]);
+  }, [valuationHistory, baseCurrency]);
+  const forkChart = useDashboardChart({
+    selectedInterval,
+    scope,
+    scopeKey,
+    totalValue,
+    baseCurrency,
+    dailyChartData: chartData,
+    dayChange,
+    isAllTime,
+  });
 
   const chartMinDomainSpanRatio = useMemo(
     () => getDashboardChartMinDomainSpanRatio(selectedInterval),
@@ -244,16 +205,6 @@ export function DashboardContent({
     () => getDashboardNetContributionMaxDomainSpanRatio(selectedInterval),
     [selectedInterval],
   );
-
-  // Faint guide at where the period started: yesterday's close on 1D (live
-  // total minus today's move), the first point otherwise. ALL starts near zero.
-  const periodStartValue = isDayChange
-    ? sessionTimeDomain && dayChange
-      ? totalValue - dayChange.amount
-      : undefined
-    : !isAllTime && chartData.length > 1
-      ? chartData[0].totalValue
-      : undefined;
 
   const isNegative = totalValue < 0;
 
@@ -310,20 +261,7 @@ export function DashboardContent({
                     animated={true}
                   />
                 )}
-                {moneyWeightedReturn != null && (
-                  <>
-                    <div className="border-secondary my-1 border-r pr-2" />
-                    <span className="lg:text-md text-muted-foreground text-sm font-light">
-                      {moneyWeightedReturn.annualized
-                        ? t("performance:metric.ann_mwr_short")
-                        : t("performance:metric.mwr_short")}
-                    </span>
-                    <GainPercent
-                      className="lg:text-md !ml-1.5 text-sm font-light"
-                      value={moneyWeightedReturn.value}
-                    />
-                  </>
-                )}
+                <DashboardMoneyWeightedReturn value={moneyWeightedReturn} />
               </>
             )}
             {selectedInterval && (
@@ -345,15 +283,15 @@ export function DashboardContent({
       >
         <div className="h-70">
           <HistoryChart
-            data={chartData}
+            data={forkChart.chartData}
             isLoading={isValuationHistoryLoading}
             scaleMode="fit-visible"
             minDomainSpanRatio={chartMinDomainSpanRatio}
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
-            timeDomain={sessionTimeDomain}
-            referenceValue={periodStartValue}
+            timeDomain={forkChart.timeDomain}
+            referenceValue={forkChart.referenceValue}
           />
-          {valuationHistory && chartData.length > 0 && (
+          {valuationHistory && forkChart.chartData.length > 0 && (
             <div className="flex w-full justify-center">
               <IntervalSelector
                 className="pointer-events-auto relative z-20 w-full max-w-screen-sm sm:max-w-screen-md md:max-w-2xl lg:max-w-3xl"

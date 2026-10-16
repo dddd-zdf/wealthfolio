@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "Connect {{client}}",
+    "description": "{{client}} wants to use your Wealthfolio data. After you allow it, you'll go back to {{host}}.",
+    "invalid": "This connection request is incomplete. Start again from the app you're connecting.",
+    "revoke_hint": "You can revoke access anytime in Settings → AI Agent Access.",
+    "allow": "Allow",
+    "deny": "Deny"
+  },
+  "updateTotalValue": {
+    "description": "Enter the holding's total value. The unit price is worked out from the units you held on that date.",
+    "units_at_price": "{{units}} units at {{price}}"
+  }
+}
