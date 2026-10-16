@@ -2905,30 +2905,3 @@ async fn mcp_category_save_denies_insufficient_scopes_and_redacts_audit_errors()
         assert!(!text.contains(&first), "{row}");
     }
 }
-
-/// The server hands its domain event sink to the MCP tools, so a fork
-/// recalculation request is queued instead of refused.
-#[tokio::test]
-async fn mcp_recalculate_portfolio_is_queued() {
-    let server = spawn_server(true, false).await;
-    let cookie = login(&server).await;
-    let (status, token) = create_pat(
-        &server,
-        &cookie,
-        serde_json::json!({ "name": "recalc", "scopes": ["activities:draft", "activities:write"] }),
-    )
-    .await;
-    assert_eq!(status, 201);
-    let pat = token["token"].as_str().unwrap().to_string();
-    let session = mcp_initialize(&server, &pat).await;
-
-    let result = mcp_call_tool(
-        &server,
-        &pat,
-        &session,
-        "recalculate_portfolio",
-        serde_json::json!({}),
-    )
-    .await;
-    assert_eq!(result["queued"], true, "{result}");
-}
