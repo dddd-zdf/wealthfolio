@@ -18,6 +18,8 @@ use crate::error::EngineError;
 use crate::model::*;
 use crate::value::{aggregate_scope, has_started, Window};
 
+mod fork_mixed;
+
 const DAYS_PER_YEAR: Decimal = dec!(365.25);
 const MIN_ANNUALIZATION_DAYS: i64 = 30;
 const MIN_RETURN_BASE: Decimal = Decimal::ONE;
@@ -2519,6 +2521,7 @@ fn build_mixed_result(
                     account: component.account.as_str().to_string(),
                 });
             }
+            None if fork_mixed::skip_missing_denominator(component, components) => {}
             None if amount_available => {
                 coverage_complete = false;
                 warnings.push(QualityNote::MixedPercentNoDenominator {
