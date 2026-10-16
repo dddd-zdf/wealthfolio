@@ -25,11 +25,11 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         )
         .route(
             "/valuations/history/query",
-            post(handlers::get_historical_valuations_for_scope),
+            post(handlers::fork_intraday::get_cached_historical_valuations_for_scope),
         )
         .route(
             "/valuations/intraday/query",
-            post(handlers::get_intraday_valuations),
+            post(handlers::fork_intraday::get_intraday_valuations),
         )
         .route("/valuations/latest", get(handlers::get_latest_valuations))
         .route(

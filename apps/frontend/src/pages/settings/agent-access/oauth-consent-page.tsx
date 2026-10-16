@@ -115,14 +115,14 @@ export default function OAuthConsentPage() {
     <ApplicationShell className="fixed inset-0 flex items-center justify-center overflow-y-auto p-6">
       <Card className="my-auto w-full max-w-lg">
         <CardHeader>
-          <CardTitle>{t("settings:agentAccess.oauth_title", { client: clientName })}</CardTitle>
+          <CardTitle>{t("fork:oauthConsent.title", { client: clientName })}</CardTitle>
           <CardDescription>
             {valid
-              ? t("settings:agentAccess.oauth_description", {
+              ? t("fork:oauthConsent.description", {
                   client: clientName,
                   host: redirectHost,
                 })
-              : t("settings:agentAccess.oauth_invalid")}
+              : t("fork:oauthConsent.invalid")}
           </CardDescription>
         </CardHeader>
         {valid && (
@@ -130,9 +130,7 @@ export default function OAuthConsentPage() {
             <CardContent className="space-y-4">
               {renderGroup("read", t("settings:agentAccess.dialog_read_access"))}
               {renderGroup("write", t("settings:agentAccess.dialog_write_access"))}
-              <p className="text-muted-foreground text-xs">
-                {t("settings:agentAccess.oauth_revoke_hint")}
-              </p>
+              <p className="text-muted-foreground text-xs">{t("fork:oauthConsent.revoke_hint")}</p>
               {error && (
                 <p className="text-destructive text-sm" role="alert">
                   {error}
@@ -141,10 +139,10 @@ export default function OAuthConsentPage() {
             </CardContent>
             <CardFooter className="flex justify-end gap-2">
               <Button variant="outline" disabled={pending} onClick={() => decide(false)}>
-                {t("settings:agentAccess.oauth_deny")}
+                {t("fork:oauthConsent.deny")}
               </Button>
               <Button disabled={pending || scopes.length === 0} onClick={() => decide(true)}>
-                {t("settings:agentAccess.oauth_allow")}
+                {t("fork:oauthConsent.allow")}
               </Button>
             </CardFooter>
           </>

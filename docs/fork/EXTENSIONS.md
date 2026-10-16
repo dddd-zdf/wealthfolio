@@ -5,18 +5,64 @@ public tool contracts and user-visible behavior matter more than preserving old
 implementation code. Use `git diff <common-base>..origin/main` to inventory
 those contracts before resolving conflicts.
 
+## How fork code attaches to upstream
+
+Upstream files carry thin hooks only; the fork's logic and its self-contained
+tests live in `fork_*` files. A hook is a `mod` line, a `use` line, a call to a
+fork function, a route or registration entry, or a short branch that calls fork
+code. This keeps upstream merges to small, obvious conflicts.
+
+- **Rust.** Put fork logic in a `fork_<topic>.rs` module. When it needs an
+  upstream module's private items, make it a child module (for example
+  `api/performance/fork_cache.rs` declared from `api/performance.rs`) instead of
+  widening upstream visibility. Add fork imports as separate `use` lines so
+  rustfmt does not reflow upstream import lists.
+- **Wrap, don't edit, upstream handlers.** A fork handler calls the unchanged
+  upstream handler (they are plain async functions); only the route line points
+  at the fork handler.
+- **Replace by name in one place.** MCP tools are adapted in
+  `crates/agent-tools/src/tools/fork/mod.rs`, called once from
+  `AgentToolCatalog::mcp_catalog`. Upstream tool files stay unchanged.
+- **Frontend.** Put fork state and data fetching in a hook file (`fork-*.ts`)
+  and fork-only markup in a component file (`fork-*.tsx`); the upstream
+  component calls the hook and renders the props it returns. Strings used only
+  by fork screens go in the `fork` translation namespace
+  (`apps/frontend/src/i18n/locales/*/fork.json`). Keys that upstream code looks
+  up by pattern, such as health issue codes and scope labels, stay in upstream's
+  namespace.
+- **Tests.** Self-contained tests move with the fork module. Tests that need an
+  upstream test module's private fixtures stay there as separate test functions,
+  so a fixture change upstream is compiled against them.
+- **Additions.** New methods on an upstream trait or `impl` (for example
+  intraday fetching in `market-data`) may stay in place as one block, apart from
+  upstream code. Edits inside an upstream function body become hooks.
+- **Tauri/mobile** are not deployed; their fork additions are left as they are.
+
+To see the fork's footprint in upstream-owned files (renames and new files
+excluded):
+
+```bash
+git diff --numstat --diff-filter=M "$(git merge-base origin/main upstream/main)" origin/main -- apps crates packages | sort -rn | head -30
+```
+
 ## Custom behavior kept apart
 
-| Behavior                                            | Owning code                                                                          | Upstream integration point                                                                                                                      |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Adaptive server refresh and quiet background events | `apps/server/src/fork_policy.rs`                                                     | The upstream coordinator remains the calculation path; the scheduler starts one fork cadence loop and the domain-event queue uses the observer. |
-| Dashboard response caching and invalidation         | `apps/server/src/perf_cache.rs`                                                      | Performance/holdings handlers use generation-aware entries. The observer invalidates on completion and warms only after edits.                  |
-| Intraday chart reconstruction                       | `crates/core/src/portfolio/valuation/intraday.rs` and frontend history-chart helpers | The handler anchors intraday quotes to engine daily valuations. Both request and query cache keys must carry the selected account scope.        |
-| Term deposits                                       | `crates/core/src/assets/term_deposit.rs`                                             | Quote sync emits calculated daily prices; the engine reads those prices normally. Keep one valuation engine.                                    |
-| Fork-only MCP commits                               | `crates/agent-tools/src/tools/fork_commits.rs`                                       | One extension to the commit-tool list registers the existing category, account and data-admin tools.                                            |
-| Transfer payload compatibility                      | `crates/agent-tools/src/tools/transfer_compat.rs`                                    | One catalog entry delegates batch input to the unchanged upstream implementation and retains flat input for older callers.                      |
-| Hosted MCP OAuth                                    | `apps/server/src/mcp/oauth.rs` and frontend agent-access consent                     | Preserve discovery, PKCE, consent, PAT creation/revocation and the protocol fallback.                                                           |
-| Manual account/holding value editing                | Frontend `managed-value-edit`, `managed-account`, and asset total-value dialog       | Reuse ordinary quote mutation paths; never create a separate balance store.                                                                     |
+| Behavior                                            | Owning code                                                                                                   | Upstream integration point                                                                                                                                    |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Adaptive server refresh and quiet background events | `apps/server/src/fork_policy.rs`                                                                              | The upstream coordinator remains the calculation path; the scheduler starts one fork cadence loop. `api/shared.rs` re-exports the fork's `ServerJobObserver`. |
+| Dashboard response caching and invalidation         | `apps/server/src/perf_cache.rs`, `api/performance/fork_cache.rs`, `api/holdings/handlers/fork_intraday.rs`    | Routes point at fork wrappers that call the unchanged upstream handlers. The observer invalidates on completion and warms only after edits.                   |
+| Stale-while-refresh health status                   | `apps/server/src/api/health/fork_refresh.rs`                                                                  | `/health/status` route; falls through to the upstream handler when nothing is cached.                                                                         |
+| Intraday chart reconstruction                       | `crates/core/src/portfolio/valuation/intraday.rs`, `quotes/fork_intraday.rs`, frontend `fork-dashboard.ts`    | The handler anchors intraday quotes to engine daily valuations. Both request and query cache keys must carry the selected account scope.                      |
+| Quote-sync policies                                 | `crates/core/src/quotes/fork_sync.rs`                                                                         | Hooks in `sync.rs` (backfill window, deposit pricing, changed-quote count) and one in `sync_state.rs` (backfill start for sold positions).                    |
+| Term deposits                                       | `crates/core/src/assets/term_deposit.rs`, `quotes/fork_sync.rs`                                               | Quote sync emits calculated daily prices; the engine reads those prices normally. Keep one valuation engine.                                                  |
+| Fork-only MCP tools                                 | `crates/agent-tools/src/tools/fork/`                                                                          | `fork::mcp_tools` adapts upstream's list once: renames the reviewed rule commit, swaps in transfer compatibility, and adds the fork's commit tools.           |
+| Transfer payload compatibility                      | `crates/agent-tools/src/tools/fork/transfer_compat.rs`                                                        | Replaces `link_transfer_activities` by name; delegates batch input to the unchanged upstream implementation and retains flat input for older callers.         |
+| Activities awaiting review (health)                 | `crates/core/src/health/checks/data_consistency/fork_needs_review.rs`                                         | One issue type, one collector call in `HealthService`, one builder call in `DataConsistencyCheck::analyze`.                                                   |
+| Negative-balance precision filter                   | `crates/storage-sqlite/src/portfolio/valuation/repository/fork_negative_balance.rs`                           | The repository query selects candidate rows in date order and keeps each account's first meaningful deficit.                                                  |
+| Date-only activity storage at noon UTC              | `crates/storage-sqlite/src/activities/fork_dates.rs`                                                          | The three `From<...> for ActivityDB` conversions call it for bare dates.                                                                                      |
+| Hosted MCP OAuth                                    | `apps/server/src/mcp/oauth.rs` and frontend agent-access consent                                              | Preserve discovery, PKCE, consent, PAT creation/revocation and the protocol fallback.                                                                         |
+| Manual account/holding value editing                | Frontend `managed-value-edit`, `managed-account`, `fork-accounts-summary.ts`, asset total-value dialog        | Reuse ordinary quote mutation paths; never create a separate balance store.                                                                                   |
+| Dashboard 1D gain, MWR and period-start guide       | `apps/frontend/src/pages/dashboard/fork-dashboard.ts`, `fork-accounts-summary.ts`, `fork-dashboard-parts.tsx` | `DashboardContent` and `AccountsSummary` call the hooks and render what they return.                                                                          |
 
 ## Deliberate changes inside upstream code
 
@@ -39,10 +85,15 @@ isolated by moving the caller:
 - The transfer compatibility tool keeps the legacy write grant for flat calls;
   batched calls retain upstream's read/draft/write requirements. Discovery uses
   the minimum contract, and execution checks the requirements of the input form.
-- Direct categorization-rule writes keep `commit_categorization_rule`;
-  upstream's reviewed draft contract is registered as
-  `commit_reviewed_categorization_rule`. Avoid silently reusing one name for
-  incompatible schemas.
+- Direct categorization-rule writes keep `commit_categorization_rule`
+  (`tools/fork/direct_categorization_rule.rs`); upstream's reviewed draft
+  contract, unchanged in `tools/commit_categorization_rule.rs`, is registered as
+  `commit_reviewed_categorization_rule`. Upstream's catalog test and the
+  `create_categorization_rule` description name it that way. Avoid silently
+  reusing one name for incompatible schemas.
+- `api/shared.rs` replaces upstream's `ServerJobObserver` and periodic loop with
+  re-exports from `fork_policy.rs`. An upstream change to the observer therefore
+  conflicts on purpose: port it into `fork_policy.rs`.
 - MCP `tools/list` shows only the check and fix tools named in
   `crates/agent-tools/src/fork_mcp_listing.rs`, to keep clients' context small;
   every other tool stays registered and callable by name. A new upstream MCP

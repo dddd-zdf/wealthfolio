@@ -1774,33 +1774,14 @@ where
         interval: &str,
         range: &str,
     ) -> Result<HashMap<String, Vec<Quote>>> {
-        use futures::stream::{self, StreamExt};
-
-        let assets: Vec<Asset> = asset_ids
-            .iter()
-            .filter_map(|id| self.asset_repo.get_by_id(id).ok())
-            .filter(|asset| asset.needs_pricing() && asset.deposit_spec().is_none())
-            .collect();
-        let client = self.client.read().await;
-        let client = &*client;
-        let fetched: Vec<(String, Vec<Quote>)> = stream::iter(assets)
-            .map(|asset| async move {
-                let quotes = client
-                    .fetch_intraday_quotes(&asset, interval, range)
-                    .await
-                    .unwrap_or_else(|e| {
-                        debug!("Intraday quotes unavailable for {}: {}", asset.id, e);
-                        Vec::new()
-                    });
-                (asset.id, quotes)
-            })
-            .buffer_unordered(6)
-            .collect()
-            .await;
-        Ok(fetched
-            .into_iter()
-            .filter(|(_, quotes)| !quotes.is_empty())
-            .collect())
+        super::fork_intraday::get_intraday_quotes(
+            self.asset_repo.as_ref(),
+            &self.client,
+            asset_ids,
+            interval,
+            range,
+        )
+        .await
     }
 
     async fn fetch_quotes_from_provider(

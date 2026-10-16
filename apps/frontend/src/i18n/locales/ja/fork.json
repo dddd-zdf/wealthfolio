@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "{{client}} を接続",
+    "description": "{{client}} が Wealthfolio のデータへのアクセスを求めています。許可すると {{host}} に戻ります。",
+    "invalid": "この接続リクエストは不完全です。接続するアプリからもう一度やり直してください。",
+    "revoke_hint": "アクセスはいつでも 設定 → AI エージェントアクセス で取り消せます。",
+    "allow": "許可",
+    "deny": "拒否"
+  },
+  "updateTotalValue": {
+    "description": "保有資産の合計額を入力してください。単価はその日の保有口数から計算されます。",
+    "units_at_price": "{{units}} 口 × {{price}}"
+  }
+}

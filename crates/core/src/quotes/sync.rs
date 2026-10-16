@@ -33,17 +33,16 @@ use tokio::sync::RwLock;
 use super::client::MarketDataClient;
 use super::constants::*;
 use super::errors::MarketDataError;
+use super::fork_sync;
 use super::model::Quote;
 use super::store::QuoteStore;
 use super::sync_state::{
     calculate_sync_window, determine_sync_category, QuoteSyncState, SymbolSyncPlan, SyncCategory,
     SyncMode, SyncPlanningInputs, SyncStateStore,
 };
-use super::types::{AssetId, Day, ProviderId, QuoteSource};
+use super::types::{AssetId, Day, ProviderId};
 use crate::activities::{ActivityRepositoryTrait, ActivityUpsert};
-use crate::assets::{
-    Asset, AssetKind, AssetRepositoryTrait, DepositSpec, InstrumentType, QuoteMode,
-};
+use crate::assets::{Asset, AssetKind, AssetRepositoryTrait, InstrumentType, QuoteMode};
 use crate::errors::Error;
 use crate::errors::Result;
 use crate::utils::time_utils;
@@ -117,29 +116,6 @@ fn effective_provider(state: Option<&QuoteSyncState>, asset: &Asset) -> String {
         .cloned()
         .or_else(|| asset.preferred_provider())
         .unwrap_or_else(|| DATA_SOURCE_YAHOO.to_string())
-}
-
-/// End of a BackfillHistory window for a non-FX asset.
-///
-/// Positions that were closed more than the grace period ago only need prices
-/// for the period they were held (plus a small margin), so a full history
-/// rebuild must not re-download years of prices up to today for them. Open or
-/// recently closed positions still backfill up to `fetch_end_date`.
-fn backfill_end_date(
-    inputs: &SyncPlanningInputs,
-    planning_today: NaiveDate,
-    fetch_end_date: NaiveDate,
-) -> NaiveDate {
-    match inputs.position_closed_date {
-        Some(closed)
-            if !inputs.is_active
-                && closed + Duration::days(CLOSED_POSITION_GRACE_PERIOD_DAYS) < planning_today =>
-        {
-            let held_until = inputs.activity_max.map_or(closed, |last| last.max(closed));
-            (held_until + Duration::days(BACKFILL_SAFETY_MARGIN_DAYS)).min(fetch_end_date)
-        }
-        _ => fetch_end_date,
-    }
 }
 
 fn extends_to_fetch_end(category: &SyncCategory) -> bool {
@@ -238,47 +214,6 @@ pub(super) fn asset_skip_reason(asset: &Asset, allow_inactive: bool) -> Option<A
     }
 
     None
-}
-
-/// Daily prices for a term deposit from its start (or `start`) to its maturity
-/// (or `end`), worked out from its terms.
-fn deposit_quotes(
-    asset: &Asset,
-    spec: &DepositSpec,
-    start: NaiveDate,
-    end: NaiveDate,
-) -> Vec<Quote> {
-    let now = Utc::now();
-    let mut quotes = Vec::new();
-    let mut day = start.max(spec.start_date);
-    let last = end.min(spec.maturity_date);
-    while day <= last {
-        if let Some(value) = spec.value_on(day) {
-            quotes.push(Quote {
-                id: format!(
-                    "{}_{}_{}",
-                    asset.id,
-                    day.format("%Y-%m-%d"),
-                    DATA_SOURCE_CALCULATED
-                ),
-                asset_id: asset.id.clone(),
-                timestamp: Utc
-                    .from_utc_datetime(&day.and_hms_opt(12, 0, 0).expect("noon is a valid time")),
-                open: value,
-                high: value,
-                low: value,
-                close: value,
-                adjclose: value,
-                volume: Decimal::ZERO,
-                currency: asset.quote_ccy.clone(),
-                data_source: DATA_SOURCE_CALCULATED.to_string(),
-                created_at: now,
-                notes: None,
-            });
-        }
-        day += Duration::days(1);
-    }
-    quotes
 }
 
 fn is_empty_asset_target(asset_ids: Option<&[String]>) -> bool {
@@ -904,7 +839,7 @@ where
                         .activity_min
                         .map(|d| d - Duration::days(QUOTE_HISTORY_BUFFER_DAYS))
                         .unwrap_or_else(|| fetch_end_date - Duration::days(days));
-                    let end = backfill_end_date(inputs, planning_today, fetch_end_date);
+                    let end = fork_sync::backfill_end_date(inputs, planning_today, fetch_end_date);
                     (start.min(end), end)
                 }
             }
@@ -1066,17 +1001,9 @@ where
                 .expect("23:59:59 is a valid time"),
         );
 
-        // Term deposits are priced from their terms; everything else via MarketDataClient
-        let fetched = match asset.deposit_spec() {
-            Some(spec) => Ok(deposit_quotes(asset, &spec, plan.start_date, plan.end_date)),
-            None => {
-                let client = self.client.read().await;
-                client
-                    .fetch_historical_quotes_with_context(asset, start_dt, end_dt)
-                    .await
-            }
-        };
-        match fetched {
+        // Fetch quotes via MarketDataClient
+        let client = self.client.read().await;
+        match fork_sync::fetch_history(&client, asset, plan, start_dt, end_dt).await {
             Ok(mut quotes) => {
                 // Sort quotes by timestamp to ensure correct ordering
                 // This is important because we use first()/last() to determine date ranges
@@ -1085,37 +1012,12 @@ where
                 let quotes_count = quotes.len();
 
                 if quotes_count > 0 {
-                    // Count only new or changed closes, so callers can tell a
-                    // sync that moved prices from one that refetched the same data.
-                    // Providers can return days outside the plan (FX has weekend
-                    // bars), so compare over the days actually fetched.
-                    let first_day = quotes[0].timestamp.date_naive().min(plan.start_date);
-                    let last_day = quotes[quotes_count - 1]
-                        .timestamp
-                        .date_naive()
-                        .max(plan.end_date);
-                    let quotes_changed = count_changed_quotes(&quotes, |source| {
-                        self.quote_store
-                            .range(
-                                &asset_id,
-                                Day::new(first_day),
-                                Day::new(last_day),
-                                Some(source),
-                            )
-                            .unwrap_or_default()
-                    });
-                    if quotes_changed > 0 {
-                        // Any change makes the portfolio job recalculate, so name the asset.
-                        info!(
-                            "{} new or changed closes for {} (plan {}..{}, fetched {}..{})",
-                            quotes_changed,
-                            asset.id,
-                            plan.start_date,
-                            plan.end_date,
-                            quotes[0].timestamp.date_naive(),
-                            quotes[quotes_count - 1].timestamp.date_naive(),
-                        );
-                    }
+                    let quotes_changed = fork_sync::changed_quote_count(
+                        &*self.quote_store,
+                        &asset_id,
+                        plan,
+                        &quotes,
+                    );
                     // Preserve history on every refresh. An owned write retains the guard
                     // even if the caller is cancelled after enqueueing the SQLite operation.
                     let store = self.quote_store.clone();
@@ -1996,144 +1898,6 @@ where
 // Tests
 // =============================================================================
 
-/// Counts fetched quotes (sorted by time) whose close differs from the stored
-/// row with the same id, or, for a new day, from the previous day's close.
-/// Stored rows are loaded per source: an unfiltered range keeps one quote per
-/// day, so a day another source also covers (such as a second exchange
-/// listing) would hide this provider's row and count it as changed on every
-/// sync. A new day at the previous close (a weekend FX bar) only carries the
-/// value forward, which valuations already do.
-fn count_changed_quotes(
-    fetched: &[Quote],
-    load_stored: impl Fn(&QuoteSource) -> Vec<Quote>,
-) -> usize {
-    let mut stored: HashMap<String, Decimal> = HashMap::new();
-    let sources: HashSet<&str> = fetched.iter().map(|q| q.data_source.as_str()).collect();
-    for source in sources {
-        let source = QuoteSource::from_storage_string(source);
-        stored.extend(load_stored(&source).into_iter().map(|q| (q.id, q.close)));
-    }
-    let mut previous: HashMap<&str, Decimal> = HashMap::new();
-    let mut changed = 0;
-    for quote in fetched {
-        let reference = match stored.get(&quote.id) {
-            Some(close) => Some(close),
-            None => previous.get(quote.data_source.as_str()),
-        };
-        if reference != Some(&quote.close) {
-            changed += 1;
-        }
-        previous.insert(quote.data_source.as_str(), quote.close);
-    }
-    changed
-}
-
-#[cfg(test)]
-mod deposit_quote_tests {
-    use super::*;
-    use crate::assets::DepositCompounding;
-    use rust_decimal_macros::dec;
-
-    #[test]
-    fn deposit_quotes_cover_the_term_only() {
-        let asset = Asset {
-            id: "gic".to_string(),
-            quote_ccy: "CAD".to_string(),
-            ..Default::default()
-        };
-        let day = |y, m, d| NaiveDate::from_ymd_opt(y, m, d).unwrap();
-        let spec = DepositSpec {
-            principal: dec!(1000),
-            annual_rate: dec!(0.0365),
-            start_date: day(2025, 1, 10),
-            maturity_date: day(2025, 1, 12),
-            compounding: DepositCompounding::Annual,
-        };
-
-        let quotes = deposit_quotes(&asset, &spec, day(2025, 1, 1), day(2025, 1, 31));
-
-        let closes: Vec<_> = quotes.iter().map(|q| q.close).collect();
-        assert_eq!(closes, vec![dec!(1000), dec!(1000.10), dec!(1000.20)]);
-        assert_eq!(quotes[0].id, "gic_2025-01-10_CALCULATED");
-        assert_eq!(quotes[0].data_source, DATA_SOURCE_CALCULATED);
-        assert_eq!(quotes[0].currency, "CAD");
-        assert!(deposit_quotes(&asset, &spec, day(2025, 2, 1), day(2025, 2, 5)).is_empty());
-    }
-}
-
-#[cfg(test)]
-mod changed_quote_tests {
-    use super::*;
-    use rust_decimal_macros::dec;
-
-    fn quote(source: &str, day: u32, close: Decimal) -> Quote {
-        let ts = Utc.with_ymd_and_hms(2025, 10, day, 20, 0, 0).unwrap();
-        Quote {
-            id: format!("aep_2025-10-{day:02}_{source}"),
-            asset_id: "aep".to_string(),
-            timestamp: ts,
-            open: close,
-            high: close,
-            low: close,
-            close,
-            adjclose: close,
-            volume: Decimal::ZERO,
-            currency: "USD".to_string(),
-            data_source: source.to_string(),
-            created_at: ts,
-            notes: None,
-        }
-    }
-
-    /// Stored rows filtered by source, as `QuoteStore::range` does with a source.
-    fn loader(stored: Vec<Quote>) -> impl Fn(&QuoteSource) -> Vec<Quote> {
-        move |source| {
-            stored
-                .iter()
-                .filter(|q| QuoteSource::from_storage_string(&q.data_source) == *source)
-                .cloned()
-                .collect()
-        }
-    }
-
-    #[test]
-    fn refetched_closes_shadowed_by_another_source_are_unchanged() {
-        // A second listing (Frankfurt) has quotes on the same days as Yahoo.
-        let stored = vec![
-            quote("YAHOO", 6, dec!(81)),
-            quote("BOERSE_FRANKFURT", 6, dec!(97.8)),
-            quote("YAHOO", 7, dec!(81.85)),
-            quote("BOERSE_FRANKFURT", 7, dec!(102)),
-        ];
-        let fetched = vec![quote("YAHOO", 6, dec!(81)), quote("YAHOO", 7, dec!(81.85))];
-
-        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
-    }
-
-    #[test]
-    fn a_new_day_at_the_previous_close_is_unchanged() {
-        // Saturday's FX bar repeated as Sunday's once the UTC day rolls over.
-        let stored = vec![quote("YAHOO", 3, dec!(0.7019))];
-        let fetched = vec![
-            quote("YAHOO", 3, dec!(0.7019)),
-            quote("YAHOO", 4, dec!(0.7019)),
-        ];
-
-        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 0);
-    }
-
-    #[test]
-    fn new_or_moved_closes_are_counted() {
-        let stored = vec![quote("YAHOO", 6, dec!(81))];
-        let fetched = vec![
-            quote("YAHOO", 6, dec!(81.5)), // moved
-            quote("YAHOO", 7, dec!(82)),   // new day
-        ];
-
-        assert_eq!(count_changed_quotes(&fetched, loader(stored)), 2);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2887,61 +2651,6 @@ mod tests {
         fn test_default_history_days_constant() {
             // DEFAULT_HISTORY_DAYS is 1825 (5 years) for explicit full-history requests
             assert_eq!(DEFAULT_HISTORY_DAYS, 1825);
-        }
-    }
-
-    mod backfill_end_date_tests {
-        use super::*;
-
-        fn inputs(
-            closed: Option<NaiveDate>,
-            last_activity: Option<NaiveDate>,
-        ) -> SyncPlanningInputs {
-            SyncPlanningInputs {
-                is_active: closed.is_none(),
-                position_closed_date: closed,
-                activity_min: None,
-                activity_max: last_activity,
-                quote_min: None,
-                quote_max: None,
-            }
-        }
-
-        fn d(s: &str) -> NaiveDate {
-            NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
-        }
-
-        #[test]
-        fn open_position_backfills_to_fetch_end() {
-            let end = backfill_end_date(
-                &inputs(None, Some(d("2026-01-01"))),
-                d("2026-10-01"),
-                d("2026-09-30"),
-            );
-            assert_eq!(end, d("2026-09-30"));
-        }
-
-        #[test]
-        fn recently_closed_position_backfills_to_fetch_end() {
-            let end = backfill_end_date(
-                &inputs(Some(d("2026-09-20")), Some(d("2026-09-20"))),
-                d("2026-10-01"),
-                d("2026-09-30"),
-            );
-            assert_eq!(end, d("2026-09-30"));
-        }
-
-        #[test]
-        fn long_closed_position_stops_after_holding_period() {
-            let end = backfill_end_date(
-                &inputs(Some(d("2025-11-18")), Some(d("2025-11-17"))),
-                d("2026-10-01"),
-                d("2026-09-30"),
-            );
-            assert_eq!(
-                end,
-                d("2025-11-18") + Duration::days(BACKFILL_SAFETY_MARGIN_DAYS)
-            );
         }
     }
 

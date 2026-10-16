@@ -79,13 +79,6 @@ pub struct HistoryFilterBody {
 }
 
 #[derive(Deserialize)]
-pub struct IntradayValuationBody {
-    pub filter: AccountScope,
-    /// "1D" or "1W".
-    pub range: String,
-}
-
-#[derive(Deserialize)]
 pub struct CurrentValuationBody {
     pub filter: AccountScope,
     #[serde(rename = "includeAccounts", default)]

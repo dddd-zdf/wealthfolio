@@ -40,6 +40,8 @@ pub mod client;
 pub mod constants;
 pub mod custom_scraper_provider;
 pub mod errors;
+mod fork_intraday;
+mod fork_sync;
 pub mod import;
 pub mod model;
 pub mod provider_settings;

@@ -1,31 +1,21 @@
 "use client";
 
-import {
-  calculatePerformanceSummaries,
-  getHoldingsList,
-  performanceSummaryScopeKey,
-} from "@/adapters";
-import { ManagedValueEdit } from "@/components/managed-value-edit";
+import { calculatePerformanceSummaries, performanceSummaryScopeKey } from "@/adapters";
 import { useAccounts } from "@/hooks/use-accounts";
-import { useHoldings } from "@/hooks/use-holdings";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
 import { AccountPurpose } from "@/lib/constants";
-import { summarizeDayChange } from "@/lib/holding-performance";
-import { managedHoldings } from "@/lib/managed-account";
-import { performanceSummaryReturn, performancePeriodPnl } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import type {
   Account,
-  AccountScope,
   CurrentAccountValuation,
   DateRange,
   Holding,
   PerformanceSummaryScope,
   TrackingMode,
 } from "@/lib/types";
-import { keepPreviousData, useQueries, useQuery } from "@tanstack/react-query";
-import { GainAmount, GainPercent, PrivacyAmount } from "@wealthfolio/ui";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { GainAmount, GainPercent } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Separator } from "@wealthfolio/ui/components/ui/separator";
@@ -35,6 +25,8 @@ import { format } from "date-fns";
 import React, { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { useAccountPeriodGains, useManagedHoldingsByAccount } from "./fork-accounts-summary";
+import { AccountTotalValue } from "./fork-dashboard-parts";
 
 interface AccountSummaryDisplayData {
   accountName: string;
@@ -54,19 +46,6 @@ interface AccountSummaryDisplayData {
   accountCount?: number;
   accounts?: AccountSummaryDisplayData[];
   displayInAccountCurrency?: boolean;
-}
-
-interface PeriodGain {
-  amount: number | null;
-  percent: number | null;
-}
-
-// Module-level so useQueries keeps the combined result stable between renders.
-function combineDayChangeHoldings(results: { data?: Holding[]; isLoading: boolean }[]) {
-  return {
-    data: results.map((result) => result.data),
-    isLoading: results.some((result) => result.isLoading),
-  };
 }
 
 function addPerformanceScope(
@@ -325,11 +304,7 @@ const AccountSummaryComponent = React.memo(
         <div className="flex shrink-0 items-center gap-2 md:gap-3">
           <div className="flex min-h-[3rem] flex-col items-end justify-center gap-1 md:gap-1.5">
             <div className="text-sm font-semibold leading-tight md:text-base md:font-semibold">
-              {managed ? (
-                <ManagedValueEdit holdings={managed} value={totalValue} currency={currency} />
-              ) : (
-                <PrivacyAmount value={totalValue} currency={currency} />
-              )}
+              <AccountTotalValue managed={managed} value={totalValue} currency={currency} />
             </div>
             {secondaryMetricContent && (
               <div
@@ -443,18 +418,7 @@ export const AccountsSummary = React.memo(
 
     const accountIds = useMemo(() => accounts?.map((acc) => acc.id) ?? [], [accounts]);
 
-    // Managed accounts (manually priced holdings) get an in-place total editor.
-    const { holdings: allHoldings } = useHoldings({ type: "all" });
-    const managedByAccount = useMemo(
-      () =>
-        new Map(
-          accounts.map((account) => [
-            account.id,
-            managedHoldings(allHoldings, account.id, account.currency),
-          ]),
-        ),
-      [accounts, allHoldings],
-    );
+    const managedByAccount = useManagedHoldingsByAccount(accounts);
 
     const shouldFetchCurrentValuations = currentAccountValuationsProp === undefined;
     const {
@@ -499,55 +463,13 @@ export const AccountsSummary = React.memo(
       retry: 1,
     });
 
-    const dayChangeHoldings = useQueries({
-      queries: (isDayChange ? performanceScopes : []).map((scope) => {
-        const filter: AccountScope = { type: "accounts", accountIds: scope.accountIds };
-        return {
-          queryKey: [QueryKeys.HOLDINGS, filter, { includeClosed: false }],
-          queryFn: () => getHoldingsList(filter),
-        };
-      }),
-      combine: combineDayChangeHoldings,
-    });
-    const isLoadingPerformanceQueries = isDayChange
-      ? dayChangeHoldings.isLoading
-      : isLoadingPerformanceSummaries;
-
-    const periodGains = useMemo((): Record<string, PeriodGain> => {
-      const gains: Record<string, PeriodGain> = {};
-      if (!isDayChange) {
-        for (const [key, perf] of Object.entries(performanceSummaries ?? {})) {
-          gains[key] = {
-            amount: performancePeriodPnl(perf),
-            percent: performanceSummaryReturn(perf),
-          };
-        }
-        return gains;
-      }
-      const totals = new Map(
-        (currentAccountValuations ?? []).map((valuation) => [
-          valuation.accountId,
-          valuation.totalValueBase,
-        ]),
-      );
-      performanceScopes.forEach((scope, index) => {
-        const holdings = dayChangeHoldings.data[index];
-        if (!holdings) return;
-        const totalValueBase = scope.accountIds.reduce((sum, id) => sum + (totals.get(id) ?? 0), 0);
-        const dayChange = summarizeDayChange(holdings, totalValueBase);
-        gains[performanceSummaryScopeKey(scope.accountIds)] = {
-          amount: dayChange?.amount ?? null,
-          percent: dayChange?.percent ?? null,
-        };
-      });
-      return gains;
-    }, [
+    const { periodGains, isLoadingPerformanceQueries } = useAccountPeriodGains({
       isDayChange,
-      performanceSummaries,
-      currentAccountValuations,
       performanceScopes,
-      dayChangeHoldings.data,
-    ]);
+      performanceSummaries,
+      isLoadingPerformanceSummaries,
+      currentAccountValuations,
+    });
 
     const combinedAccountViews = useMemo((): AccountSummaryDisplayData[] => {
       if (!accounts || accounts.length === 0) return [];

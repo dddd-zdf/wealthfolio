@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "{{client}} 연결",
+    "description": "{{client}}이(가) Wealthfolio 데이터를 사용하려고 합니다. 허용하면 {{host}}(으)로 돌아갑니다.",
+    "invalid": "연결 요청이 완전하지 않습니다. 연결하려는 앱에서 다시 시작하세요.",
+    "revoke_hint": "설정 → AI 에이전트 접근에서 언제든지 접근 권한을 취소할 수 있습니다.",
+    "allow": "허용",
+    "deny": "거부"
+  },
+  "updateTotalValue": {
+    "description": "보유 자산의 총 가치를 입력하세요. 단가는 해당 날짜의 보유 수량으로 계산됩니다.",
+    "units_at_price": "{{units}}좌 × {{price}}"
+  }
+}

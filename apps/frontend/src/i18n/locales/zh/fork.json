@@ -1,0 +1,14 @@
+{
+  "oauthConsent": {
+    "title": "连接 {{client}}",
+    "description": "{{client}} 想要使用你的 Wealthfolio 数据。允许后将返回 {{host}}。",
+    "invalid": "此连接请求不完整。请从要连接的应用重新开始。",
+    "revoke_hint": "你可以随时在 设置 → AI 智能体访问 中撤销访问权限。",
+    "allow": "允许",
+    "deny": "拒绝"
+  },
+  "updateTotalValue": {
+    "description": "输入持仓的总价值。单价将根据该日期持有的份额计算。",
+    "units_at_price": "{{units}} 份，单价 {{price}}"
+  }
+}
