@@ -4,6 +4,7 @@
 //! its observer events for unattended web-server jobs and selects the fork's
 //! refresh cadence for the always-on ARM64 deployment.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use serde_json::json;
@@ -29,6 +30,8 @@ pub(crate) struct ServerJobObserver {
     health_service: Arc<dyn HealthServiceTrait + Send + Sync>,
     background: bool,
     warm_after_update: bool,
+    /// Set when this job's market sync stored a new or changed close.
+    prices_changed: AtomicBool,
 }
 
 impl ServerJobObserver {
@@ -70,6 +73,7 @@ impl ServerJobObserver {
             health_service,
             background,
             warm_after_update,
+            prices_changed: AtomicBool::new(false),
         }
     }
 
@@ -96,6 +100,9 @@ impl JobObserver for ServerJobObserver {
 
     fn market_sync_completed(&self, result: &SyncResult) {
         self.clear_health_cache();
+        if result.quotes_synced > 0 {
+            self.prices_changed.store(true, Ordering::SeqCst);
+        }
         let skipped_reasons: Vec<(String, String)> = result
             .skipped_reasons
             .iter()
@@ -143,13 +150,37 @@ impl JobObserver for ServerJobObserver {
 
     fn update_completed(&self) {
         self.clear_health_cache();
-        if self.warm_after_update {
-            crate::perf_cache::invalidate_and_warm();
-        } else {
-            crate::perf_cache::invalidate();
+        match cache_action(
+            self.background,
+            self.warm_after_update,
+            self.prices_changed.load(Ordering::SeqCst),
+        ) {
+            CacheAction::InvalidateAndWarm => crate::perf_cache::invalidate_and_warm(),
+            CacheAction::Invalidate => crate::perf_cache::invalidate(),
+            CacheAction::Keep => {}
         }
         self.event_bus
             .publish(self.progress(PORTFOLIO_UPDATE_COMPLETE));
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum CacheAction {
+    Keep,
+    Invalidate,
+    InvalidateAndWarm,
+}
+
+/// What a finished job does to the performance cache. Edits warm it again.
+/// A background refresh whose price sync stored no new or changed close
+/// leaves valuations as they were, so the cached summaries stay valid.
+fn cache_action(background: bool, warm_after_update: bool, prices_changed: bool) -> CacheAction {
+    if warm_after_update {
+        CacheAction::InvalidateAndWarm
+    } else if background && !prices_changed {
+        CacheAction::Keep
+    } else {
+        CacheAction::Invalidate
     }
 }
 
@@ -204,6 +235,17 @@ pub(crate) fn spawn_periodic_update(state: Arc<AppState>) -> tokio::task::JoinHa
 mod tests {
     use super::*;
     use chrono::TimeZone;
+
+    #[test]
+    fn background_refresh_without_price_changes_keeps_the_cache() {
+        assert_eq!(cache_action(true, false, false), CacheAction::Keep);
+        assert_eq!(cache_action(true, false, true), CacheAction::Invalidate);
+        assert_eq!(cache_action(false, false, false), CacheAction::Invalidate);
+        assert_eq!(
+            cache_action(false, true, false),
+            CacheAction::InvalidateAndWarm
+        );
+    }
 
     fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> chrono::DateTime<chrono::Utc> {
         chrono::Utc.with_ymd_and_hms(y, m, d, h, min, 0).unwrap()
