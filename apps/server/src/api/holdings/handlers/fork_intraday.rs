@@ -38,7 +38,9 @@ const INTRADAY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3
 fn has_unsupported_intraday_fx(holdings: &[Holding]) -> bool {
     holdings.iter().any(|holding| {
         !holding.is_closed
-            && (!holding.market_value.local.is_zero() || !holding.market_value.base.is_zero())
+            && (!holding.quantity.is_zero()
+                || !holding.market_value.local.is_zero()
+                || !holding.market_value.base.is_zero())
             && !holding
                 .local_currency
                 .eq_ignore_ascii_case(&holding.base_currency)
@@ -126,7 +128,7 @@ mod tests {
             is_closed: false,
             instrument: None::<Instrument>,
             asset_kind: None,
-            quantity: Decimal::ONE,
+            quantity: value,
             open_date: None,
             lots: None,
             contract_multiplier: Decimal::ONE,
@@ -200,5 +202,12 @@ mod tests {
         assert!(!has_unsupported_intraday_fx(&[closed]));
         zero.market_value.base = Decimal::new(1, 0);
         assert!(has_unsupported_intraday_fx(&[zero]));
+    }
+
+    #[test]
+    fn unpriced_foreign_position_still_disables_the_whole_scope_curve() {
+        let mut unpriced = holding(HoldingType::Security, "USD", "CAD", Decimal::ZERO);
+        unpriced.quantity = Decimal::ONE;
+        assert!(has_unsupported_intraday_fx(&[unpriced]));
     }
 }

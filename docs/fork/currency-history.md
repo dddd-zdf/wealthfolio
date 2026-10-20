@@ -48,7 +48,8 @@ existing unavailable-value and performance-quality diagnostics. It does not
 substitute the latest rate. Latest/live service lookups retain their behavior.
 Paired transfers with unknown acquisition FX keep their cost-based flow
 unavailable instead of inventing a receiver flow at a later rate. A surviving
-leg whose counterpart was rejected carries an unknown-boundary quality flag.
+leg retains its recorded pairing metadata: a later rejection must not change
+earlier persisted rows or make a windowed run disagree with a full rebuild.
 
 The rule lives in two small child modules because the engine and the service
 have separate FX surfaces. Preserve their matching seven-day bound on upstream

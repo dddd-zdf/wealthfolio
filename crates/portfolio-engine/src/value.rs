@@ -1024,7 +1024,6 @@ impl<'a> Valuer<'a> {
         &mut self,
         event: &EconomicEvent,
         boundary: ScopeBoundary,
-        paired: bool,
     ) -> (Decimal, FlowSource) {
         let policy = &self.resolved.facts.policy;
         let unknown = boundary == ScopeBoundary::Unknown;
@@ -1170,6 +1169,12 @@ impl<'a> Valuer<'a> {
                 // at the activity's price: it flows the cost it booked (less
                 // its own fee, when capitalised into lots it opened), as the
                 // outgoing leg flows the cost it removed (rules R2.4).
+                let paired = self
+                    .resolved
+                    .facts
+                    .transfer_pairs
+                    .pair_for(&event.source)
+                    .is_some();
                 let booked = self
                     .booked
                     .and_then(|b| b.get(&(event.account.clone(), event.source.clone())))
@@ -1529,18 +1534,7 @@ fn priced_events(
             })
     }) {
         let in_range = event.date >= range.start && event.date <= range.end;
-        // A rejected counterpart is absent economically. Its surviving leg
-        // has the same unknown boundary as a transfer entered without a pair.
-        let pair = facts.transfer_pairs.pair_for(&event.source);
-        let counterpart_rejected = pair.is_some_and(|pair| {
-            rejected.contains(&pair.transfer_in) || rejected.contains(&pair.transfer_out)
-        });
-        let boundary = if !marked_external.contains(event.source.as_str()) && counterpart_rejected {
-            Boundary::Unknown
-        } else {
-            event.flow.boundary.clone()
-        };
-        let flow = match &boundary {
+        let flow = match &event.flow.boundary {
             Boundary::None => None,
             _ if !in_range => None,
             boundary => {
@@ -1550,8 +1544,7 @@ fn priced_events(
                     ScopeBoundary::External
                 };
                 let reported = valuer.diagnostics.len();
-                let (amount, source) =
-                    valuer.price_flow(event, priced_as, pair.is_some() && !counterpart_rejected);
+                let (amount, source) = valuer.price_flow(event, priced_as);
                 diagnostics
                     .entry(event.account.clone())
                     .or_default()
@@ -1614,7 +1607,7 @@ fn priced_events(
             account: event.account.clone(),
             date: event.date,
             currency: event.currency.clone(),
-            boundary,
+            boundary: event.flow.boundary.clone(),
             flow,
             income: convert(attributed.income, &event.currency, event.date),
             fee: convert(attributed.fee, &event.currency, event.date),

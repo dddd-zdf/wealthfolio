@@ -2059,6 +2059,31 @@ fn p_reject_a_rejected_activity_leaves_no_trace() {
             .activities
             .retain(|a| !rejected.contains(&ActivityId::new(a.id.as_str())));
         let other = Pipeline::from_scenario(&without);
+        // Removing a rejected leg also removes pairing metadata for its valid
+        // counterpart. Its boundary/provenance may then become unknown. That
+        // is a different input fact, not a monetary effect of the rejected leg;
+        // it must not retroactively change earlier rows in a windowed run.
+        let changed_boundaries: BTreeSet<_> = pipeline
+            .facts()
+            .transfer_pairs()
+            .iter()
+            .filter(|pair| {
+                rejected.contains(&pair.transfer_in) != rejected.contains(&pair.transfer_out)
+            })
+            .filter_map(|pair| {
+                let survivor = if rejected.contains(&pair.transfer_in) {
+                    &pair.transfer_out
+                } else {
+                    &pair.transfer_in
+                };
+                pipeline
+                    .facts()
+                    .activities()
+                    .iter()
+                    .find(|activity| activity.id == *survivor)
+                    .map(|activity| (activity.account.clone(), activity.date))
+            })
+            .collect();
         for (account, frames) in &pipeline.bundle.keyframes {
             for frame in frames {
                 let other_frame = other
@@ -2099,7 +2124,9 @@ fn p_reject_a_rejected_activity_leaves_no_trace() {
                 };
                 let id = format!("{}: P-REJECT {account} on {}", scenario.id, day.date);
                 assert_eq!(day.total_value_base, same.total_value_base, "{id}: value");
-                assert_eq!(day.flow, same.flow, "{id}: flow");
+                if !changed_boundaries.contains(&(account.clone(), day.date)) {
+                    assert_eq!(day.flow, same.flow, "{id}: flow");
+                }
             }
         }
         let reported: Vec<Value> = pipeline
