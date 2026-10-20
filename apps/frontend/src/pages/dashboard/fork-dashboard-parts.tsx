@@ -6,6 +6,15 @@ import type { Holding } from "@/lib/types";
 import { GainPercent, PrivacyAmount } from "@wealthfolio/ui";
 import { useTranslation } from "react-i18next";
 
+export function DashboardIntradayEstimate() {
+  const { t } = useTranslation();
+  return (
+    <div className="border-muted bg-muted/30 text-muted-foreground mx-4 mb-2 rounded-md border px-3 py-2 text-xs md:mx-6 lg:mx-8">
+      {t("fork:dashboard.intradayEstimate")}
+    </div>
+  );
+}
+
 type MoneyWeightedReturn = ReturnType<typeof performanceMoneyWeightedReturn>;
 
 export function DashboardMoneyWeightedReturn({ value }: { value: MoneyWeightedReturn }) {

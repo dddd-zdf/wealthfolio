@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "暦年"
+  },
+  "dashboard": {
+    "intradayEstimate": "日中チャートは推定値です。取引時間中の為替レートの変動、取引、キャッシュフローは反映されません。"
   }
 }

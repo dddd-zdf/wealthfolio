@@ -74,6 +74,7 @@ use wealthfolio_storage_sqlite::{
 };
 
 pub struct AppState {
+    pub(crate) currency_transition: crate::api::settings::fork_currency::CurrencyTransition,
     pub(crate) mcp_sessions:
         Arc<rmcp::transport::streamable_http_server::session::local::LocalSessionManager>,
     pub(crate) profile_lifecycle: tokio::sync::Mutex<()>,
@@ -1110,6 +1111,7 @@ async fn initialize_profile_state(
     )?);
 
     let state = Arc::new(AppState {
+        currency_transition: Default::default(),
         mcp_sessions: Arc::new(Default::default()),
         profile_lifecycle: tokio::sync::Mutex::new(()),
         connect_transition: Arc::new(tokio::sync::RwLock::new(())),

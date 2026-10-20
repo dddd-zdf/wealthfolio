@@ -60,7 +60,7 @@ pub(crate) mod portable_backups;
 mod portfolio;
 mod portfolios;
 mod secrets;
-mod settings;
+pub(crate) mod settings;
 pub mod shared;
 mod spending;
 #[cfg(feature = "device-sync")]
@@ -244,6 +244,7 @@ fn app_router_with_profiles(
     );
 
     let protected_api = protected_api
+        .layer(middleware::from_fn(settings::fork_currency::guard_reads))
         .layer(middleware::from_fn_with_state(
             profiles.clone(),
             crate::profiles::admit,
