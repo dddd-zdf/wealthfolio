@@ -212,6 +212,7 @@ export {
   deleteAsset,
   deleteQuote,
   fetchDividends,
+  getAssetIntradayQuotes,
   getAssetProfile,
   getAssets,
   getExchanges,

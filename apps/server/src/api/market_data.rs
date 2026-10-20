@@ -19,6 +19,8 @@ use wealthfolio_core::quotes::{
 };
 use wealthfolio_market_data::{DividendEvent, ExchangeInfo};
 
+mod fork_intraday;
+
 async fn reset_provider_history(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     Path(asset_id): Path<String>,
@@ -364,6 +366,10 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route("/market-data/search", get(search_symbol))
         .route("/market-data/resolve-currency", get(resolve_symbol_quote))
         .route("/market-data/quotes/history", get(get_quote_history))
+        .route(
+            "/market-data/quotes/intraday",
+            get(fork_intraday::get_intraday_quotes),
+        )
         .route(
             "/market-data/quotes/{asset_id}/reset",
             post(reset_provider_history),

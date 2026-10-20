@@ -213,6 +213,31 @@ pub async fn get_quote_history(symbol: String, state: ProfileAccess) -> Result<V
         .map_err(|e| e.to_string())
 }
 
+/// Fork: one asset's live 1D/1W price bars, oldest first (not stored).
+#[tauri::command]
+pub async fn get_asset_intraday_quotes(
+    asset_id: String,
+    range: String,
+    state: ProfileAccess,
+) -> Result<Vec<Quote>, String> {
+    use wealthfolio_core::portfolio::valuation::intraday::IntradayRange;
+
+    let context = state.context()?;
+    let range =
+        IntradayRange::parse(&range).ok_or_else(|| format!("Unsupported range: {}", range))?;
+    let (interval, window) = range.provider_args();
+    let mut bars = context
+        .quote_service()
+        .get_intraday_quotes(std::slice::from_ref(&asset_id), interval, window)
+        .await
+        .map_err(|e| e.to_string())?
+        .remove(&asset_id)
+        .unwrap_or_default();
+    bars.retain(|bar| bar.close > rust_decimal::Decimal::ZERO);
+    bars.sort_by_key(|bar| bar.timestamp);
+    Ok(bars)
+}
+
 #[tauri::command]
 pub async fn get_latest_quotes(
     asset_ids: Vec<String>,

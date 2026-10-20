@@ -43,6 +43,7 @@ import {
   activityMarkerVariant,
   isAssetMarkerActivity,
 } from "./asset-history-markers";
+import { useAssetIntradayChart } from "./fork-asset-intraday";
 import { RefreshQuotesConfirmDialog } from "./refresh-quotes-confirm-dialog";
 
 const SHOW_ACTIVITY_MARKERS_STORAGE_KEY = "history-chart-show-activity-markers";
@@ -93,7 +94,15 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
     to: new Date(),
   });
 
+  const intraday = useAssetIntradayChart({
+    assetId,
+    interval: selectedIntervalCode,
+    quoteHistory,
+    currency,
+  });
+
   const filteredData: FilteredData[] = useMemo(() => {
+    if (intraday) return intraday.points;
     if (!quoteHistory) return [];
 
     // Sort quotes chronologically (oldest first) for proper chart display
@@ -121,7 +130,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
         totalValue: quote.close,
         currency: quote.currency || currency,
       }));
-  }, [dateRange, quoteHistory, currency, selectedIntervalCode]);
+  }, [intraday, dateRange, quoteHistory, currency, selectedIntervalCode]);
 
   const activityDateFrom = dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
   const activityDateTo = dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
@@ -130,11 +139,15 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
       assetId,
       dateFrom: activityDateFrom,
       dateTo: activityDateTo,
-      enabled: showActivityMarkers,
+      enabled: showActivityMarkers && !intraday,
     });
   const { chartData, activityMarkers } = useMemo(
-    () => buildChartActivityData(filteredData, showActivityMarkers ? markerActivities : []),
-    [filteredData, showActivityMarkers, markerActivities],
+    () =>
+      buildChartActivityData(
+        filteredData,
+        showActivityMarkers && !intraday ? markerActivities : [],
+      ),
+    [filteredData, showActivityMarkers, intraday, markerActivities],
   );
   const selectedDateActivities = useMemo(() => {
     if (!selectedActivityDate) return [];
@@ -143,7 +156,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
 
   const { ganAmount, percentage, calculatedAt } = useMemo(() => {
     const lastFilteredDate = filteredData.at(-1)?.timestamp;
-    const startValue = filteredData[0]?.totalValue;
+    const startValue = intraday?.referenceValue ?? filteredData[0]?.totalValue;
     const endValue = filteredData.at(-1)?.totalValue;
     const isValidStartValue = typeof startValue === "number" && startValue !== 0;
 
@@ -174,7 +187,14 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
           : null,
       calculatedAt: lastFilteredDate,
     };
-  }, [filteredData, selectedIntervalCode, quoteHistory, totalGainAmount, totalGainPercent]);
+  }, [
+    intraday,
+    filteredData,
+    selectedIntervalCode,
+    quoteHistory,
+    totalGainAmount,
+    totalGainPercent,
+  ]);
 
   const handleIntervalSelect = (
     code: TimePeriod,
@@ -286,6 +306,9 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
             data={chartData}
             activityMarkers={activityMarkers}
             averageCost={showActivityMarkers && !isBalanceHidden ? averageCost : undefined}
+            timeDomain={intraday?.timeDomain}
+            referenceValue={intraday?.referenceValue}
+            showTime={intraday !== null}
             onActivityMarkerClick={(marker) => {
               setSelectedActivityDate(dateKey(marker.point));
               setIsActivitySheetOpen(true);
