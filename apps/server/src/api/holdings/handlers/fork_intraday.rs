@@ -186,7 +186,7 @@ mod tests {
     fn foreign_cash_disables_mixed_scope_with_domestic_security() {
         let holdings = vec![
             holding(HoldingType::Security, "CAD", "CAD", Decimal::new(100, 0)),
-            holding(HoldingType::Security, "USD", "CAD", Decimal::new(100, 0)),
+            holding(HoldingType::Cash, "USD", "CAD", Decimal::new(100, 0)),
         ];
         assert!(has_unsupported_intraday_fx(&holdings));
     }

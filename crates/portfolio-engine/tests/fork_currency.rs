@@ -230,3 +230,31 @@ fn mixed_currency_scope_aggregation_sums_converted_account_rows() {
     assert!(measured.is_mixed_tracking_mode);
     assert!(measured.returns.value_return.is_some());
 }
+
+#[test]
+fn idle_foreign_account_without_fx_does_not_degrade_active_scope() {
+    let mut scenario = fixture("EDGE-FX-03");
+    scenario
+        .accounts
+        .push(serde_yaml::from_str("{ id: idle, currency: GBP }").unwrap());
+    let pipeline = Pipeline::from_scenario(&scenario);
+    let idle = &pipeline.series[&AccountId::new("idle")];
+    assert!(idle
+        .days
+        .iter()
+        .all(|day| day.value_status == ValueStatus::Unavailable));
+    let lots = pipeline.lots();
+    let inputs = pipeline.measure_inputs(&lots);
+    let aggregate = aggregate_scope(
+        &inputs.effects,
+        inputs.series,
+        &pipeline.portfolio_scope(),
+        Window::default(),
+    )
+    .unwrap();
+    assert!(!aggregate.days.is_empty());
+    assert!(aggregate
+        .days
+        .iter()
+        .all(|day| day.value_status == ValueStatus::Complete));
+}

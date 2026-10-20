@@ -16,10 +16,12 @@ class ServerEventBridge {
   private scope = "";
 
   constructor(private readonly url: string) {
-    window.addEventListener("wealthfolio:profile-locked", () => {
-      this.teardown();
-      this.listeners.clear();
-    });
+    if (typeof window !== "undefined") {
+      window.addEventListener("wealthfolio:profile-locked", () => {
+        this.teardown();
+        this.listeners.clear();
+      });
+    }
   }
 
   listen<T>(eventName: string, handler: EventCallback<T>): Promise<UnlistenFn> {

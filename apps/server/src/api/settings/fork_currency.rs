@@ -51,6 +51,12 @@ pub(crate) async fn spawn_startup_update(
         .into_iter()
         .map(|account| account.id)
         .collect();
+    // A fresh profile has no historical amounts to protect. Its initial policy
+    // marker must not make empty-scope reads depend on background job timing.
+    if accounts.is_empty() {
+        crate::api::shared::spawn_portfolio_update(state);
+        return Ok(());
+    }
     let valuations = state.valuation_service.clone();
     // A per-account failure can consume @all. Check older windows as well as
     // the latest row so a partial rebuild cannot hide mixed currencies.

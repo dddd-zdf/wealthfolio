@@ -1222,6 +1222,9 @@ fn p_agg_scope_aggregation_is_exact() {
         for day in &portfolio.days {
             let rows: Vec<DailyValuation> = scope
                 .iter()
+                // Match aggregate_scope's P-IDLE rule: an unstarted foreign
+                // account may lack FX, but contributes no amount or status.
+                .filter(|id| has_started(&pipeline, id))
                 .filter_map(|id| pipeline.series.get(id))
                 .filter_map(|s| s.days.iter().find(|d| d.date == day.date))
                 .map(DailyValuation::stored)
@@ -2410,9 +2413,17 @@ fn p_txf_legs_transfers_carry_their_lots() {
                 .find(|p| p.group_id == *group)
                 .and_then(|p| event_of(&p.transfer_in))
                 .is_some_and(|e| e.date > end);
+            let rejected_incoming = pipeline
+                .facts()
+                .transfer_pairs()
+                .iter()
+                .find(|p| p.group_id == *group)
+                .filter(|p| rejected.contains(&p.transfer_in))
+                .and_then(|p| event_of(&p.transfer_in))
+                .is_some_and(|e| e.date <= end);
             assert!(
-                pending,
-                "{}: P-TXF-LEGS lots of {group} left in the transfer cache",
+                pending || rejected_incoming,
+                "{}: P-TXF-LEGS lots of {group} left in the transfer cache without a pending or rejected incoming leg",
                 scenario.id
             );
         }

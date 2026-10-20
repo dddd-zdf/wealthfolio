@@ -76,6 +76,7 @@ describe("useDashboardChart", () => {
     // Yesterday's close: the live total minus today's move.
     expect(result.current.referenceValue).toBe(998);
     expect(mockIntraday).toHaveBeenCalledWith({ type: "all" }, "1D");
+    expect(result.current.isIntradayEstimate).toBe(true);
   });
 
   it("falls back to daily points when intraday has too few bars", async () => {
@@ -98,6 +99,7 @@ describe("useDashboardChart", () => {
     expect(result.current.chartData).toBe(daily);
     expect(result.current.referenceValue).toBe(1000);
     expect(mockIntraday).not.toHaveBeenCalled();
+    expect(result.current.isIntradayEstimate).toBe(false);
   });
 
   it("draws no period-start line for all time", () => {

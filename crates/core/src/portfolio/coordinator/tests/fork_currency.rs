@@ -5,7 +5,13 @@ use super::*;
 /// every date, rather than leaving rows calculated under the old setting.
 #[tokio::test]
 async fn switching_base_currency_rebuilds_all_historical_rows_and_flows() {
-    let facts = scenario("EDGE-FX-03").facts();
+    let mut facts = scenario("EDGE-FX-03").facts();
+    let mut later_deposit = facts.activities[0].clone();
+    later_deposit.id = "later-deposit".to_string();
+    later_deposit.activity_date += chrono::Duration::days(2);
+    later_deposit.amount = Some(dec!(200));
+    let flow_day = later_deposit.activity_date.date_naive();
+    facts.activities.push(later_deposit);
     let harness = harness(facts.clone()).await;
     let first = harness
         .coordinator
@@ -21,6 +27,14 @@ async fn switching_base_currency_rebuilds_all_historical_rows_and_flows() {
         .iter()
         .any(|row| row.net_contribution_base == dec!(700)));
     let before_dates: Vec<_> = before.iter().map(|row| row.valuation_date).collect();
+    assert_eq!(
+        before
+            .iter()
+            .find(|row| row.valuation_date == flow_day)
+            .unwrap()
+            .external_inflow_base,
+        dec!(140)
+    );
     let scope = vec!["acc-1".to_string()];
     let (_, before_performance) = scope_reads(&harness, &scope).await;
     assert!(before_performance
@@ -73,7 +87,16 @@ async fn switching_base_currency_rebuilds_all_historical_rows_and_flows() {
         .find(|row| row.valuation_date == deposit_day)
         .expect("deposit valuation");
     assert_eq!(deposit.net_contribution_base, dec!(1000));
-    assert_eq!(deposit.external_inflow_base, dec!(1000));
+    // Opening capital is the performance baseline, not an external flow.
+    assert_eq!(deposit.external_inflow_base, Decimal::ZERO);
+    assert_eq!(
+        after
+            .iter()
+            .find(|row| row.valuation_date == flow_day)
+            .unwrap()
+            .external_inflow_base,
+        dec!(200)
+    );
     let (history, after_performance) = scope_reads(&harness, &scope).await;
     assert!(history
         .unwrap()
