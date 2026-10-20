@@ -29,10 +29,13 @@ const currencyKeys = new Set<string>([
   QueryKeys.SAVE_UP_OVERVIEW,
   QueryKeys.SAVE_UP_PREVIEW,
   QueryKeys.CONTRIBUTION_LIMITS,
+  QueryKeys.CONTRIBUTION_LIMIT_PROGRESS,
+  QueryKeys.ALLOCATION_TARGET_DRIFT,
   QueryKeys.SPENDING_TRANSACTIONS,
   QueryKeys.SPENDING_REPORT,
   QueryKeys.SPENDING_BUDGET,
   QueryKeys.SPENDING_INSIGHT,
+  QueryKeys.SPENDING_EVENTS,
 ]);
 
 export async function resetWebCurrencyQueries(queryClient: QueryClient): Promise<void> {

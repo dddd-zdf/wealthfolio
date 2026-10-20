@@ -7,10 +7,10 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use support::{load_all_scenarios, Dec, FxRateSpec, Pipeline, Scenario};
 use wealthfolio_portfolio_engine::model::{
-    AccountId, QualityStatus, SummaryStatus, TrackingMode, ValueStatus, Window,
+    AccountId, QualityStatus, SummaryStatus, TrackingMode, ValueStatus,
 };
 use wealthfolio_portfolio_engine::{
-    aggregate_scope, measure_account, measure_scope, DiagnosticCode, MeasureProfile,
+    aggregate_scope, measure_account, measure_scope, DiagnosticCode, MeasureProfile, Window,
 };
 
 fn fixture(id: &str) -> Scenario {

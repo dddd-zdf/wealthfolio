@@ -57,3 +57,8 @@ coordinator's job lock serializes jobs but cannot protect HTTP reads between
 persisted history windows. There is no schema change or new provider. Shared FX
 resolution changes are required by web valuation correctness; no native runtime
 or native adapter is modified or included in acceptance checks.
+
+The default frontend test job selects `BUILD_TARGET=web` and excludes native
+adapter, native database-gate and cross-runtime command-parity suites. It no
+longer runs the Tauri launcher wrapper. Rust acceptance excludes
+`wealthfolio-app`, as before.

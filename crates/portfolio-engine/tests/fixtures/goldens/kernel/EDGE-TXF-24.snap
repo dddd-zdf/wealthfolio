@@ -198,25 +198,7 @@ baseline:
             recovery_date: ~
             trough_date: 2025-01-03
             volatility: "7.53878589"
-          series:
-            - date: 2025-01-02
-              value: "0"
-            - date: 2025-01-03
-              value: "-0.49668874"
-            - date: 2025-01-04
-              value: "-0.49668874"
-            - date: 2025-01-05
-              value: "-0.49668874"
-            - date: 2025-01-06
-              value: "-0.49668874"
-            - date: 2025-01-07
-              value: "-0.49668874"
-            - date: 2025-01-08
-              value: "-0.00662252"
-            - date: 2025-01-09
-              value: "-0.00662252"
-            - date: 2025-01-10
-              value: "-0.00662252"
+          series: []
           summary:
             amount: ~
             amount_status: unavailable
@@ -526,25 +508,7 @@ baseline:
             recovery_date: ~
             trough_date: 2025-01-08
             volatility: "4.00097452"
-          series:
-            - date: 2025-01-02
-              value: "0"
-            - date: 2025-01-03
-              value: "0"
-            - date: 2025-01-04
-              value: "0"
-            - date: 2025-01-05
-              value: "0"
-            - date: 2025-01-06
-              value: "0"
-            - date: 2025-01-07
-              value: "0"
-            - date: 2025-01-08
-              value: "-0.42528736"
-            - date: 2025-01-09
-              value: "-0.42528736"
-            - date: 2025-01-10
-              value: "-0.42528736"
+          series: []
           summary:
             amount: ~
             amount_status: unavailable
@@ -776,25 +740,7 @@ baseline:
         recovery_date: ~
         trough_date: 2025-01-03
         volatility: "2.56410881"
-      series:
-        - date: 2025-01-02
-          value: "0"
-        - date: 2025-01-03
-          value: "-0.29880478"
-        - date: 2025-01-04
-          value: "-0.29880478"
-        - date: 2025-01-05
-          value: "-0.29880478"
-        - date: 2025-01-06
-          value: "-0.29880478"
-        - date: 2025-01-07
-          value: "-0.29880478"
-        - date: 2025-01-08
-          value: "-0.29880478"
-        - date: 2025-01-09
-          value: "-0.29880478"
-        - date: 2025-01-10
-          value: "-0.29880478"
+      series: []
       summary:
         amount: ~
         amount_status: unavailable
