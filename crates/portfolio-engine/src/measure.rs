@@ -396,9 +396,12 @@ fn performance_core(
     // amount are unavailable rather than silently zero (legacy had no row).
     let coverage_unavailable = start_point.value_status.is_unavailable_for_returns()
         || end_point.value_status.is_unavailable_for_returns();
-    // A flat series must not masquerade as a measured zero return when FX
-    // coverage makes the period's return unavailable.
-    let include_series = include_series && !coverage_unavailable;
+    // Return samples pause across unavailable values. Rendering those pauses
+    // as flat points would invent an FX curve, even if both endpoints recover.
+    let include_series = include_series
+        && !history
+            .iter()
+            .any(|day| day.value_status.is_unavailable_for_returns());
     let holdings_flows_unavailable = holdings
         && start_opt.is_some()
         && flows.iter().any(|f| f.source.is_unavailable_for_returns());

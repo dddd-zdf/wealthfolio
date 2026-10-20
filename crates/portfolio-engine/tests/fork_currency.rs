@@ -280,3 +280,28 @@ fn paired_transfer_without_acquisition_fx_does_not_invent_a_receiver_flow() {
     assert_eq!(incoming.amount, Decimal::ZERO);
     assert_eq!(incoming.source, FlowSource::Unknown);
 }
+
+#[test]
+fn recovered_fx_endpoints_do_not_hide_an_unavailable_gap_in_the_curve() {
+    let mut scenario = fixture("EDGE-FX-03");
+    scenario.policy.as_of = day(20);
+    scenario.fx_rates.retain(|rate| rate.day == day(6));
+    scenario.fx_rates.push(FxRateSpec {
+        from: "CAD".to_string(),
+        to: "USD".to_string(),
+        day: day(20),
+        rate: Dec(dec!(0.80)),
+        source: "MANUAL".to_string(),
+    });
+    let pipeline = Pipeline::from_scenario(&scenario);
+    let account = AccountId::new("acc-1");
+    let days = &pipeline.series[&account].days;
+    assert_eq!(days.first().unwrap().value_status, ValueStatus::Complete);
+    assert_eq!(days.last().unwrap().value_status, ValueStatus::Complete);
+    assert!(days
+        .iter()
+        .any(|day| day.value_status == ValueStatus::Unavailable));
+    let result = measure_account_with_series(&pipeline, &account);
+    assert!(result.returns.twr.is_none());
+    assert!(result.series.is_empty());
+}
