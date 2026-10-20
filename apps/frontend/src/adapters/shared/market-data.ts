@@ -129,14 +129,6 @@ export const deleteQuote = async (id: string): Promise<void> => {
   }
 };
 
-/** Fork: one asset's live price bars for the last session ("1D") or five ("1W"). */
-export const getAssetIntradayQuotes = async (
-  assetId: string,
-  range: "1D" | "1W",
-): Promise<Quote[]> => {
-  return invoke<Quote[]>("get_asset_intraday_quotes", { assetId, range });
-};
-
 export const getQuoteHistory = async (symbol: string): Promise<Quote[]> => {
   try {
     return await invoke<Quote[]>("get_quote_history", { symbol });

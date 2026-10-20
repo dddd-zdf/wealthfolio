@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::{extract::Query, Extension, Json};
 use serde::Deserialize;
-use wealthfolio_core::portfolio::valuation::intraday::IntradayRange;
+use wealthfolio_core::portfolio::valuation::intraday::{asset_intraday_bars, IntradayRange};
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -43,15 +43,7 @@ pub async fn get_intraday_quotes(
         return Ok(Json(hit));
     }
     let generation = crate::perf_cache::current_generation();
-    let (interval, window) = range.provider_args();
-    let mut bars = state
-        .quote_service
-        .get_intraday_quotes(std::slice::from_ref(&q.asset_id), interval, window)
-        .await?
-        .remove(&q.asset_id)
-        .unwrap_or_default();
-    bars.retain(|bar| bar.close > rust_decimal::Decimal::ZERO);
-    bars.sort_by_key(|bar| bar.timestamp);
+    let bars = asset_intraday_bars(state.quote_service.as_ref(), &q.asset_id, range).await?;
     let value = serde_json::to_value(&bars)
         .map_err(|error| ApiError::Internal(format!("Failed to serialize quotes: {error}")))?;
     crate::perf_cache::put_with_ttl(key, generation, value.clone(), INTRADAY_CACHE_TTL);

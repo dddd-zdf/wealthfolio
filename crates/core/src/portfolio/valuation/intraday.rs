@@ -217,6 +217,24 @@ pub async fn intraday_valuations(
     ))
 }
 
+/// One asset's live bars for the asset page chart, oldest first. Empty when
+/// no provider has intraday data for it.
+pub async fn asset_intraday_bars(
+    quote_service: &dyn QuoteServiceTrait,
+    asset_id: &str,
+    range: IntradayRange,
+) -> Result<Vec<Quote>> {
+    let (interval, window) = range.provider_args();
+    let mut bars = quote_service
+        .get_intraday_quotes(&[asset_id.to_string()], interval, window)
+        .await?
+        .remove(asset_id)
+        .unwrap_or_default();
+    bars.retain(|bar| bar.close > Decimal::ZERO);
+    bars.sort_by_key(|bar| bar.timestamp);
+    Ok(bars)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

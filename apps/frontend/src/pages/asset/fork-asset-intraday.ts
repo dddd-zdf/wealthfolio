@@ -26,6 +26,12 @@ export interface AssetIntradayChart {
   timeDomain?: [number, number];
   /** Where the period started: previous close on 1D, first bar on 1W. */
   referenceValue?: number;
+  /** Header change over the period, in the card's own field names. */
+  headline: {
+    ganAmount: number;
+    percentage: number | null;
+    calculatedAt: string;
+  };
 }
 
 export function useAssetIntradayChart({
@@ -68,23 +74,37 @@ export function buildAssetIntradayChart(
     currency: bar.currency || currency,
   }));
 
+  const last = points[points.length - 1];
+  const headlineFrom = (start: number) => ({
+    ganAmount: last.totalValue - start,
+    percentage: start !== 0 ? (last.totalValue - start) / start : null,
+    calculatedAt: last.timestamp,
+  });
+
   if (range === "1W") {
-    return { points, referenceValue: points[0].totalValue };
+    const start = points[0].totalValue;
+    return { points, referenceValue: start, headline: headlineFrom(start) };
   }
 
   const open = Date.parse(points[0].timestamp);
-  const lastPoint = Date.parse(points[points.length - 1].timestamp);
+  const lastPoint = Date.parse(last.timestamp);
   // Previous close: the last stored daily quote before the session's day.
   const sessionDay = format(new Date(open), "yyyy-MM-dd");
-  const previousClose = quoteHistory
-    .filter((quote) => quote.timestamp.slice(0, 10) < sessionDay)
-    .reduce<
-      Quote | undefined
-    >((latest, quote) => (!latest || quote.timestamp > latest.timestamp ? quote : latest), undefined)?.close;
+  let previous: Quote | undefined;
+  for (const quote of quoteHistory) {
+    if (
+      quote.timestamp.slice(0, 10) < sessionDay &&
+      (!previous || quote.timestamp > previous.timestamp)
+    ) {
+      previous = quote;
+    }
+  }
+  const previousClose = previous?.close;
 
   return {
     points,
     timeDomain: [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)],
     referenceValue: previousClose,
+    headline: headlineFrom(previousClose ?? points[0].totalValue),
   };
 }

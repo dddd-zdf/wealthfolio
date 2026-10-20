@@ -502,7 +502,7 @@ pub fn run() {
             commands::market_data::update_quote,
             commands::market_data::delete_quote,
             commands::market_data::get_quote_history,
-            commands::market_data::get_asset_intraday_quotes,
+            commands::fork_market_data::get_asset_intraday_quotes,
             commands::market_data::get_latest_quotes,
             commands::market_data::get_market_data_providers,
             commands::market_data::check_quotes_import,

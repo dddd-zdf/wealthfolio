@@ -38,6 +38,9 @@ describe("buildAssetIntradayChart", () => {
     expect(chart?.referenceValue).toBe(100);
     const open = Date.parse("2026-10-19T13:30:00Z");
     expect(chart?.timeDomain).toEqual([open, open + 6.5 * 60 * 60 * 1000]);
+    expect(chart?.headline.ganAmount).toBe(3);
+    expect(chart?.headline.percentage).toBeCloseTo(0.03);
+    expect(chart?.headline.calculatedAt).toBe("2026-10-19T15:00:00Z");
   });
 
   it("starts 1W at the first bar on an evenly spaced axis", () => {
@@ -45,6 +48,14 @@ describe("buildAssetIntradayChart", () => {
 
     expect(chart?.referenceValue).toBe(101);
     expect(chart?.timeDomain).toBeUndefined();
+    expect(chart?.headline.ganAmount).toBe(2);
+  });
+
+  it("measures 1D from the first bar without an earlier stored close", () => {
+    const chart = buildAssetIntradayChart("1D", bars, [], "USD");
+
+    expect(chart?.referenceValue).toBeUndefined();
+    expect(chart?.headline.ganAmount).toBe(2);
   });
 
   it("falls back to daily quotes without enough bars", () => {

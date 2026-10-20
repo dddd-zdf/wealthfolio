@@ -1,5 +1,5 @@
 import { TimePeriod } from "@/lib/types";
-import { formatDate, formatTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
 import { useAmountFormatting, useDateFormatting, useNumberFormatting } from "@wealthfolio/ui";
 import type { TFunction } from "i18next";
 import { useMemo, useState } from "react";
@@ -21,8 +21,6 @@ import {
   type HistoryChartMarkerVariant,
   type RechartsMarkerShapeProps,
 } from "./history-chart-marker";
-
-const timeOf = (item: HistoryChartData) => Date.parse(item.timestamp);
 
 type SymbolActivityMarkerVariant = Exclude<HistoryChartMarkerVariant, "snapshot">;
 
@@ -61,8 +59,6 @@ interface SymbolTooltipProps<
 > {
   active?: boolean;
   payload?: { value: number; payload: TPayload }[];
-  /** Intraday bars: show the time of day beside the date. */
-  showTime?: boolean;
 }
 
 export default function HistoryChart({
@@ -72,9 +68,6 @@ export default function HistoryChart({
   onActivityMarkerClick,
   averageCost,
   height = 350,
-  timeDomain,
-  referenceValue,
-  showTime,
 }: {
   data: HistoryChartData[];
   interval?: TimePeriod;
@@ -82,11 +75,6 @@ export default function HistoryChart({
   activityMarkers?: HistoryChartActivityMarker[];
   onActivityMarkerClick?: (marker: HistoryChartActivityMarker) => void;
   averageCost?: number;
-  /** Places points by time across this [start, end] span (epoch ms). */
-  timeDomain?: [number, number];
-  /** Faint guide where the period started (e.g. previous close). */
-  referenceValue?: number;
-  showTime?: boolean;
 }) {
   const amountFormatting = useAmountFormatting();
   const [hoveredMarker, setHoveredMarker] = useState(false);
@@ -140,31 +128,13 @@ export default function HistoryChart({
               </linearGradient>
             </defs>
             <Tooltip
-              content={(props) => (
-                <SymbolToolTip {...(props as unknown as SymbolTooltipProps)} showTime={showTime} />
-              )}
+              content={(props) => <SymbolToolTip {...(props as unknown as SymbolTooltipProps)} />}
               wrapperStyle={{ pointerEvents: "none" }}
             />
             {interval !== "ALL" && interval !== "1Y" ? (
               <YAxis hide={true} type="number" domain={["auto", "auto"]} />
             ) : null}
-            {/* One XAxis element: swapping two on interval change leaves Recharts on the old axis. */}
-            <XAxis
-              hide
-              dataKey={timeDomain ? timeOf : "timestamp"}
-              type={timeDomain ? "number" : "category"}
-              scale={timeDomain ? "time" : "auto"}
-              domain={timeDomain}
-            />
-            {referenceValue !== undefined && (
-              <ReferenceLine
-                y={referenceValue}
-                stroke="var(--muted-foreground)"
-                strokeDasharray="2 4"
-                strokeOpacity={0.4}
-                ifOverflow="extendDomain"
-              />
-            )}
+            <XAxis hide dataKey="timestamp" type="category" />
             <Area
               isAnimationActive={true}
               animationDuration={300}
@@ -216,7 +186,7 @@ export default function HistoryChart({
   );
 }
 
-function SymbolToolTip({ active, payload, showTime }: SymbolTooltipProps) {
+function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
   const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
@@ -228,10 +198,7 @@ function SymbolToolTip({ active, payload, showTime }: SymbolTooltipProps) {
   const data = payload[0].payload;
   return (
     <div className="bg-popover pointer-events-none grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
-      <p className="text-muted-foreground text-xs">
-        {formatDate(data.timestamp, dateFormatting)}
-        {showTime && ` ${formatTime(data.timestamp, dateFormatting)}`}
-      </p>
+      <p className="text-muted-foreground text-xs">{formatDate(data.timestamp, dateFormatting)}</p>
 
       <p className="text-base font-bold">
         {amountFormatting.formatPrice(payload[0].value, data.currency, false)}
