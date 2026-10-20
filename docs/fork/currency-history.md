@@ -7,6 +7,12 @@ genesis, replaces daily values and dated flow conversions, and retains its
 normal per-account failure handling. Archived accounts remain outside reporting
 and the engine's calculation scope.
 
+The current SQLite settings triggers already invalidate `@all` from genesis
+atomically with base-currency/timezone changes. The explicit full flag hardens
+the web request contract; it is not evidence that the current trigger-backed
+path left rows untouched. The confirmed race was settings/cache success arriving
+before that rebuild completed.
+
 Settings success waits for the rebuild. The work is detached from the HTTP
 request so a browser disconnect does not cancel it. Simultaneous settings writes
 are serialized per profile. While currency history changes, financial reads and
@@ -16,11 +22,18 @@ fix the reported data issue and save the base currency again to retry.
 Validation that rejects a preference before changing it keeps the old history
 available.
 
+At startup, pending policy markers and existing row currencies are checked
+before serving financial reads. An interrupted or partially failed currency
+rebuild uses the existing startup job slot to finish a full rebuild. This reads
+stored history off the async workers once at startup; no recovery table or
+additional scheduler is introduced.
+
 The response cache is invalidated before and after rebuilding. Completion is
 published only after the transition is readable. Web clients cancel and reset
 cached financial queries before applying new settings, including intraday,
 income, spending and planning queries. The existing completion event also
-refreshes other connected tabs. A missed event still requires a normal refresh.
+refreshes other connected tabs. A settings refetch detects a changed currency
+and resets amounts before applying it even if that tab missed the event.
 
 ## FX policy
 

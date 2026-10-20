@@ -813,7 +813,7 @@ async fn initialize_profile_state(
         sources: fact_sources.clone(),
         fx_service: fx_service.clone(),
         snapshot_service: snapshot_service.clone(),
-        projections: projection_store,
+        projections: projection_store.clone(),
         lots: lots_repository.clone(),
         window_cadence: WindowCadence::Year,
     }));
@@ -1189,7 +1189,7 @@ async fn initialize_profile_state(
     state.workers.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push(start_sync_outbox_wake_worker(sync_outbox_wake_receiver, Arc::clone(&state)));
 
     crate::perf_cache::register_warm_target(&state);
-    crate::api::shared::spawn_portfolio_update(Arc::clone(&state));
+    crate::api::settings::fork_currency::spawn_startup_update(Arc::clone(&state), projection_store).await?;
 
     Ok(state)
     }.await;

@@ -1,9 +1,26 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { isWebCurrencyCompletion, resetWebCurrencyQueries } from "./fork-currency-cache";
+import {
+  fetchWebCurrencySettings,
+  isWebCurrencyCompletion,
+  resetWebCurrencyQueries,
+} from "./fork-currency-cache";
+import type { Settings } from "./types";
 import { QueryKeys } from "./query-keys";
 
 describe("web currency cache transition", () => {
+  it("clears old amounts before a tab accepts changed settings after missing SSE", async () => {
+    const client = new QueryClient();
+    client.setQueryData([QueryKeys.SETTINGS], { baseCurrency: "CAD" });
+    client.setQueryData([QueryKeys.PERFORMANCE_HISTORY, "portfolio:all"], { amount: 100 });
+    const next = await fetchWebCurrencySettings(
+      client,
+      async () => ({ baseCurrency: "USD" }) as Settings,
+    );
+    expect(next.baseCurrency).toBe("USD");
+    expect(client.getQueryData([QueryKeys.PERFORMANCE_HISTORY, "portfolio:all"])).toBeUndefined();
+    client.clear();
+  });
   it("recognizes only an explicit currency completion event", () => {
     expect(isWebCurrencyCompletion({ baseCurrencyChanged: true })).toBe(true);
     for (const payload of [
@@ -27,6 +44,7 @@ describe("web currency cache transition", () => {
       [QueryKeys.HOLDINGS_BY_ALLOCATION],
       [QueryKeys.SPENDING_TRANSACTIONS],
       [QueryKeys.RETIREMENT_OVERVIEW],
+      [QueryKeys.SNAPSHOT_HOLDINGS, "account:one", "2025-01-06"],
     ];
     keys.forEach((key) => client.setQueryData(key, { amount: 100, currency: "CAD" }));
     client.setQueryData([QueryKeys.SETTINGS], { baseCurrency: "CAD" });

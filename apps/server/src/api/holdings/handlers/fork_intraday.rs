@@ -196,7 +196,7 @@ mod tests {
         let mut zero = holding(HoldingType::Cash, "USD", "CAD", Decimal::ZERO);
         let mut closed = holding(HoldingType::Cash, "USD", "CAD", Decimal::new(100, 0));
         closed.is_closed = true;
-        assert!(!has_unsupported_intraday_fx(&[zero]));
+        assert!(!has_unsupported_intraday_fx(std::slice::from_ref(&zero)));
         assert!(!has_unsupported_intraday_fx(&[closed]));
         zero.market_value.base = Decimal::new(1, 0);
         assert!(has_unsupported_intraday_fx(&[zero]));

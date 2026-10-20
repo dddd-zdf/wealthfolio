@@ -2,6 +2,7 @@
 // Cancel old in-flight responses and reset amounts before applying the new label.
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryKeys } from "./query-keys";
+import type { Settings } from "./types";
 
 const currencyKeys = new Set<string>([
   QueryKeys.PERFORMANCE_SUMMARY,
@@ -36,6 +37,7 @@ const currencyKeys = new Set<string>([
   QueryKeys.SPENDING_BUDGET,
   QueryKeys.SPENDING_INSIGHT,
   QueryKeys.SPENDING_EVENTS,
+  QueryKeys.SNAPSHOT_HOLDINGS,
 ]);
 
 export async function resetWebCurrencyQueries(queryClient: QueryClient): Promise<void> {
@@ -53,4 +55,17 @@ export function isWebCurrencyCompletion(payload: unknown): boolean {
     payload !== null &&
     (payload as { baseCurrencyChanged?: unknown }).baseCurrencyChanged === true
   );
+}
+
+// Also protect a tab which missed SSE and discovers the change on refetch.
+export async function fetchWebCurrencySettings(
+  queryClient: QueryClient,
+  fetchSettings: () => Promise<Settings>,
+): Promise<Settings> {
+  const next = await fetchSettings();
+  const previous = queryClient.getQueryData<Settings>([QueryKeys.SETTINGS]);
+  if (previous && previous.baseCurrency !== next.baseCurrency) {
+    await resetWebCurrencyQueries(queryClient);
+  }
+  return next;
 }

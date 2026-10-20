@@ -14,7 +14,9 @@ use axum::{
     Extension, Json,
 };
 use wealthfolio_core::{
+    accounts::AccountServiceTrait,
     portfolio::coordinator::{AccountFailure, JobObserver, RetryPolicy},
+    portfolio::projection::{MarkerScope, ProjectionStoreTrait},
     quotes::{MarketSyncMode, SyncResult},
     settings::{Settings, SettingsUpdate},
 };
@@ -31,6 +33,64 @@ pub(crate) struct CurrencyTransition {
     settings: tokio::sync::Mutex<()>,
     blocked: AtomicBool,
     revision: AtomicU64,
+}
+
+/// Reuse the ordinary startup job slot after an interrupted policy rebuild.
+pub(crate) async fn spawn_startup_update(
+    state: Arc<AppState>,
+    projections: Arc<dyn ProjectionStoreTrait>,
+) -> ApiResult<()> {
+    let policy_pending = projections
+        .pending_markers()?
+        .iter()
+        .any(|marker| marker.scope == MarkerScope::All);
+    let base = state.base_currency()?;
+    let accounts: Vec<_> = state
+        .account_service
+        .get_non_archived_accounts()?
+        .into_iter()
+        .map(|account| account.id)
+        .collect();
+    let valuations = state.valuation_service.clone();
+    // A per-account failure can consume @all. Check older windows as well as
+    // the latest row so a partial rebuild cannot hide mixed currencies.
+    let mismatched =
+        tokio::task::spawn_blocking(move || -> wealthfolio_core::errors::Result<bool> {
+            for account in accounts {
+                let rows = valuations.get_historical_valuations(&account, None, None)?;
+                if rows.iter().any(|row| row.base_currency != base) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
+        })
+        .await
+        .map_err(|_| {
+            ApiError::Internal("Could not check historical currencies at startup.".into())
+        })??;
+    if !policy_pending && !mismatched {
+        crate::api::shared::spawn_portfolio_update(state);
+        return Ok(());
+    }
+    state.currency_transition.begin();
+    tokio::spawn(async move {
+        let _settings = state.currency_transition.settings.lock().await;
+        state.currency_transition.begin();
+        let result = rebuild(&state).await;
+        state.currency_transition.finish(result.is_ok());
+        if result.is_ok() {
+            publish_completion(&state).await;
+        }
+    });
+    Ok(())
+}
+
+async fn publish_completion(state: &AppState) {
+    state.health_service.clear_cache().await;
+    state.event_bus.publish(ServerEvent::with_payload(
+        PORTFOLIO_UPDATE_COMPLETE,
+        serde_json::json!({ "baseCurrencyChanged": true }),
+    ));
 }
 
 // Publish completion only after the read guard is released, including on retries.
@@ -133,11 +193,7 @@ pub(super) async fn update_settings(
                 .currency_transition
                 .finish(result.is_ok() || unchanged);
             if result.is_ok() {
-                state.health_service.clear_cache().await;
-                state.event_bus.publish(ServerEvent::with_payload(
-                    PORTFOLIO_UPDATE_COMPLETE,
-                    serde_json::json!({ "baseCurrencyChanged": true }),
-                ));
+                publish_completion(&state).await;
             }
         }
         result
@@ -160,6 +216,8 @@ fn financial_path(path: &str) -> bool {
         "/goals",
         "/limits",
         "/spending",
+        "/snapshots/holdings",
+        "/utilities/export",
     ]
     .iter()
     .any(|prefix| {
@@ -322,6 +380,8 @@ mod tests {
             "/performance/summary",
             "/spending/summary",
             "/net-worth",
+            "/snapshots/holdings",
+            "/utilities/export/holdings/csv",
         ] {
             assert!(financial_path(path), "{path}");
         }
