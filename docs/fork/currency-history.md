@@ -46,10 +46,13 @@ triangulated paths follow the same rule. Missing, stale or nonpositive rates are
 unavailable: the service returns a descriptive error and the engine uses its
 existing unavailable-value and performance-quality diagnostics. It does not
 substitute the latest rate. Latest/live service lookups retain their behavior.
-Paired transfers with unknown acquisition FX keep their cost-based flow
-unavailable instead of inventing a receiver flow at a later rate. A surviving
-leg retains its recorded pairing metadata: a later rejection must not change
-earlier persisted rows or make a windowed run disagree with a full rebuild.
+An unresolvable transaction flow amount also makes gain/return calculations
+unavailable; treating it as zero would mistake arriving capital for a gain. This
+coverage status propagates into mixed holdings/transaction scopes. Paired
+transfers with unknown acquisition FX keep their cost-based flow unavailable
+instead of inventing a receiver flow at a later rate. A surviving leg retains
+its recorded pairing metadata: a later rejection must not change earlier
+persisted rows or make a windowed run disagree with a full rebuild.
 
 The rule lives in two small child modules because the engine and the service
 have separate FX surfaces. Preserve their matching seven-day bound on upstream

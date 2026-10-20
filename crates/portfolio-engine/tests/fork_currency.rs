@@ -305,3 +305,35 @@ fn recovered_fx_endpoints_do_not_hide_an_unavailable_gap_in_the_curve() {
     assert!(result.returns.twr.is_none());
     assert!(result.series.is_empty());
 }
+
+#[test]
+fn mixed_scope_does_not_treat_an_unknown_transaction_flow_as_zero_gain() {
+    let mut scenario = fixture("NOM-MIX-01");
+    scenario
+        .activities
+        .retain(|activity| activity.id != "out-1" && activity.id != "in-1");
+    let mut pipeline = Pipeline::from_scenario(&scenario);
+    pipeline
+        .series
+        .get_mut(&AccountId::new("acc-a"))
+        .unwrap()
+        .days[1]
+        .flow
+        .source = FlowSource::Unknown;
+    let lots = pipeline.lots();
+    let inputs = pipeline.measure_inputs(&lots);
+    let result = measure_scope(
+        &inputs,
+        "portfolio",
+        &pipeline.portfolio_scope(),
+        Window::default(),
+        MeasureProfile::Full,
+        true,
+    )
+    .unwrap();
+    assert!(result.is_mixed_tracking_mode);
+    assert!(result.returns.value_return.is_none());
+    assert_eq!(result.summary.percent_status, SummaryStatus::Unavailable);
+    assert_eq!(result.summary.amount_status, SummaryStatus::Unavailable);
+    assert!(result.summary.amount.is_none());
+}
