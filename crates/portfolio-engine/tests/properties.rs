@@ -2320,9 +2320,11 @@ fn p_txf_legs_transfers_carry_their_lots() {
                     close(received_base, moved_base),
                     "{id}: cost in base {received_base} received, {moved_base} moved"
                 );
-                // Without a quote both legs flow at cost: the incoming one
-                // what the pair moved, read from the sender's records
-                // (EDGE-TXF-15), never from what the receiver booked.
+                // When the sender's base cost is known, both legs flow at
+                // cost: the incoming one what the pair moved, read from the
+                // sender's records (EDGE-TXF-15), never from the receiver's
+                // local book basis. An unknown sender cost remains unavailable
+                // rather than becoming a fabricated receiver flow.
                 let at_cost = effects
                     .events
                     .iter()

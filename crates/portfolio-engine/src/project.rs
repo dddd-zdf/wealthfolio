@@ -805,7 +805,11 @@ impl Projector<'_> {
         // touched (the others keep theirs: acquisition FX does not move with
         // the day), then the account's total by the same rule as valuation,
         // then cash totals (once per day).
-        let touched: BTreeSet<&AssetId> = events.iter().filter_map(|e| footprint(e)).collect();
+        let touched: BTreeSet<&AssetId> = events
+            .iter()
+            .filter(|event| !run.rejected(&event.source))
+            .filter_map(|e| footprint(e))
+            .collect();
         let account_currency = account.currency.as_str().to_string();
         let base = self.base().to_string();
         for (asset, position) in account.positions.iter_mut() {

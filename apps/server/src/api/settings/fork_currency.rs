@@ -18,7 +18,7 @@ use wealthfolio_core::{
     portfolio::coordinator::{AccountFailure, JobObserver, RetryPolicy},
     portfolio::projection::{MarkerScope, ProjectionStoreTrait},
     quotes::{MarketSyncMode, SyncResult},
-    settings::{Settings, SettingsUpdate},
+    settings::{Settings, SettingsServiceTrait, SettingsUpdate},
 };
 
 use crate::{
@@ -35,6 +35,15 @@ pub(crate) struct CurrencyTransition {
     revision: AtomicU64,
 }
 
+// Existing rows may have been calculated with future or unbounded FX. Keep
+// this server-only revision in ordinary settings, after successful rebuilding.
+const FX_POLICY_KEY: &str = "fork_web_historical_fx_policy";
+const FX_POLICY_REVISION: &str = "as-of-seven-calendar-days-v1";
+
+fn fx_policy_is_current(revision: Option<&str>) -> bool {
+    revision == Some(FX_POLICY_REVISION)
+}
+
 /// Reuse the ordinary startup job slot after an interrupted policy rebuild.
 pub(crate) async fn spawn_startup_update(
     state: Arc<AppState>,
@@ -44,6 +53,12 @@ pub(crate) async fn spawn_startup_update(
         .pending_markers()?
         .iter()
         .any(|marker| marker.scope == MarkerScope::All);
+    let fx_policy_changed = !fx_policy_is_current(
+        state
+            .settings_service
+            .get_setting_value(FX_POLICY_KEY)?
+            .as_deref(),
+    );
     let base = state.base_currency()?;
     let accounts: Vec<_> = state
         .account_service
@@ -54,6 +69,12 @@ pub(crate) async fn spawn_startup_update(
     // A fresh profile has no historical amounts to protect. Its initial policy
     // marker must not make empty-scope reads depend on background job timing.
     if accounts.is_empty() {
+        if fx_policy_changed {
+            state
+                .settings_service
+                .set_setting_value(FX_POLICY_KEY, FX_POLICY_REVISION)
+                .await?;
+        }
         crate::api::shared::spawn_portfolio_update(state);
         return Ok(());
     }
@@ -74,7 +95,7 @@ pub(crate) async fn spawn_startup_update(
         .map_err(|_| {
             ApiError::Internal("Could not check historical currencies at startup.".into())
         })??;
-    if !policy_pending && !mismatched {
+    if !policy_pending && !mismatched && !fx_policy_changed {
         crate::api::shared::spawn_portfolio_update(state);
         return Ok(());
     }
@@ -163,6 +184,10 @@ pub(super) async fn rebuild(state: &Arc<AppState>) -> ApiResult<()> {
                 .to_string(),
         ));
     }
+    state
+        .settings_service
+        .set_setting_value(FX_POLICY_KEY, FX_POLICY_REVISION)
+        .await?;
     Ok(())
 }
 
@@ -285,6 +310,13 @@ mod tests {
     use super::*;
     use axum::{body::Body, middleware, routing::get, Router};
     use tower::ServiceExt;
+
+    #[test]
+    fn old_or_missing_fx_policy_requires_history_rebuild() {
+        assert!(!fx_policy_is_current(None));
+        assert!(!fx_policy_is_current(Some("nearest-neighbor")));
+        assert!(fx_policy_is_current(Some(FX_POLICY_REVISION)));
+    }
 
     fn test_router(transition: Arc<CurrencyTransition>) -> Router {
         Router::new()

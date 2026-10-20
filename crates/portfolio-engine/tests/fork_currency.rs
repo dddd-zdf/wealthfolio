@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use support::{load_all_scenarios, Dec, FxRateSpec, Pipeline, Scenario};
 use wealthfolio_portfolio_engine::model::{
-    AccountId, QualityStatus, SummaryStatus, TrackingMode, ValueStatus,
+    AccountId, FlowSource, QualityStatus, SummaryStatus, TrackingMode, ValueStatus,
 };
 use wealthfolio_portfolio_engine::{
     aggregate_scope, measure_account, measure_scope, DiagnosticCode, MeasureProfile, Window,
@@ -257,4 +257,26 @@ fn idle_foreign_account_without_fx_does_not_degrade_active_scope() {
         .days
         .iter()
         .all(|day| day.value_status == ValueStatus::Complete));
+}
+
+#[test]
+fn paired_transfer_without_acquisition_fx_does_not_invent_a_receiver_flow() {
+    let mut scenario = fixture("EDGE-TXF-16");
+    scenario
+        .activities
+        .retain(|activity| activity.id != "short-1");
+    // A transfer-day rate cannot supply the missing acquisition-date basis.
+    scenario.fx_rates.retain(|rate| rate.day == day(8));
+    let pipeline = Pipeline::from_scenario(&scenario);
+    let lots = pipeline.lots();
+    let inputs = pipeline.measure_inputs(&lots);
+    let incoming = inputs
+        .effects
+        .events
+        .iter()
+        .find(|event| event.source.as_str() == "in-1")
+        .and_then(|event| event.flow)
+        .expect("incoming transfer flow");
+    assert_eq!(incoming.amount, Decimal::ZERO);
+    assert_eq!(incoming.source, FlowSource::Unknown);
 }

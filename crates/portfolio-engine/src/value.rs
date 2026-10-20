@@ -1209,6 +1209,22 @@ impl<'a> Valuer<'a> {
                         return ((booked.cost - fee).abs(), source);
                     }
                 }
+                if paired && self.projected(event) {
+                    // A paired incoming leg has no independent cost: its
+                    // amount must come from the sender's booked lots. When
+                    // the sender's base cost is unavailable (for example,
+                    // because its acquisition FX is outside the bounded
+                    // history window), using the receiver's local book basis
+                    // would invent a base flow for the transfer.
+                    return (
+                        Decimal::ZERO,
+                        if unknown {
+                            FlowSource::UnknownBoundaryTransfer
+                        } else {
+                            FlowSource::Unknown
+                        },
+                    );
+                }
                 if let Some(basis) = book_basis {
                     return self.priced(basis.abs(), event.currency.as_str(), event, source);
                 }
@@ -1518,7 +1534,20 @@ fn priced_events(
             })
     }) {
         let in_range = event.date >= range.start && event.date <= range.end;
-        let flow = match &event.flow.boundary {
+        // A rejected counterpart is absent economically. Its surviving leg
+        // has the same unknown boundary as a transfer entered without a pair.
+        let boundary = if !marked_external.contains(event.source.as_str())
+            && facts
+                .transfer_pairs
+                .pair_for(&event.source)
+                .is_some_and(|pair| {
+                    rejected.contains(&pair.transfer_in) || rejected.contains(&pair.transfer_out)
+                }) {
+            Boundary::Unknown
+        } else {
+            event.flow.boundary.clone()
+        };
+        let flow = match &boundary {
             Boundary::None => None,
             _ if !in_range => None,
             boundary => {
@@ -1591,7 +1620,7 @@ fn priced_events(
             account: event.account.clone(),
             date: event.date,
             currency: event.currency.clone(),
-            boundary: event.flow.boundary.clone(),
+            boundary,
             flow,
             income: convert(attributed.income, &event.currency, event.date),
             fee: convert(attributed.fee, &event.currency, event.date),

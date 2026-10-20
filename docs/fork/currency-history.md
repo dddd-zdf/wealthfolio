@@ -22,11 +22,13 @@ fix the reported data issue and save the base currency again to retry.
 Validation that rejects a preference before changing it keeps the old history
 available.
 
-At startup, pending policy markers and existing row currencies are checked
-before serving financial reads. An interrupted or partially failed currency
-rebuild uses the existing startup job slot to finish a full rebuild. This reads
-stored history off the async workers once at startup; no recovery table or
-additional scheduler is introduced.
+At startup, pending policy markers, the web FX-policy revision and existing row
+currencies are checked before serving financial reads. An upgrade from the old
+FX policy, interrupted rebuild or partially failed rebuild uses the existing
+startup job slot to finish a full rebuild. The web-only revision is saved in
+ordinary settings only after success; an empty profile can record it
+immediately. This reads stored history off the async workers once at startup; no
+recovery table or additional scheduler is introduced.
 
 The response cache is invalidated before and after rebuilding. Completion is
 published only after the transition is readable. Web clients cancel and reset
@@ -44,6 +46,9 @@ triangulated paths follow the same rule. Missing, stale or nonpositive rates are
 unavailable: the service returns a descriptive error and the engine uses its
 existing unavailable-value and performance-quality diagnostics. It does not
 substitute the latest rate. Latest/live service lookups retain their behavior.
+Paired transfers with unknown acquisition FX keep their cost-based flow
+unavailable instead of inventing a receiver flow at a later rate. A surviving
+leg whose counterpart was rejected carries an unknown-boundary quality flag.
 
 The rule lives in two small child modules because the engine and the service
 have separate FX surfaces. Preserve their matching seven-day bound on upstream
@@ -62,14 +67,16 @@ are not reconstructed. Daily values and performance still use the engine.
 
 ## Architecture impact
 
-Calculation ownership, persistence, network providers, quote scheduling and the
-coordinator queue are unchanged. Web settings response timing and failure
-propagation change: success now means the rebuild finished, and affected reads
-fail explicitly during the transition. The guard is web-only because the
-coordinator's job lock serializes jobs but cannot protect HTTP reads between
-persisted history windows. There is no schema change or new provider. Shared FX
-resolution changes are required by web valuation correctness; no native runtime
-or native adapter is modified or included in acceptance checks.
+Calculation ownership, valuation persistence, network providers, quote
+scheduling and the coordinator queue are unchanged. Web settings response timing
+and failure propagation change: success now means the rebuild finished, and
+affected reads fail explicitly during the transition. The guard is web-only
+because the coordinator's job lock serializes jobs but cannot protect HTTP reads
+between persisted history windows. The web policy revision adds one internal
+settings key, excluded by the existing sync allowlist. There is no schema change
+or new provider. Shared FX resolution changes are required by web valuation
+correctness; no native runtime or native adapter is modified or included in
+acceptance checks.
 
 The default frontend test job selects `BUILD_TARGET=web` and excludes native
 adapter, native database-gate and cross-runtime command-parity suites. It no
