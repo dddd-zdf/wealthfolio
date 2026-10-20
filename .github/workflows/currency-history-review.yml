@@ -35,3 +35,5 @@ jobs:
         with:
           name: currency-history-snapshots
           path: currency-history-snapshots.patch
+      - name: Focused FX and currency regressions
+        run: cargo test --locked -p wealthfolio-portfolio-engine --test fork_currency

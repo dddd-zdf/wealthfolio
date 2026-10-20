@@ -42,6 +42,8 @@ pub(super) fn convert_amount_as_of(
         }
 
         if let Some(neighbors) = converter.adj.get(&current_currency) {
+            let mut neighbors: Vec<_> = neighbors.iter().collect();
+            neighbors.sort_unstable();
             for neighbor in neighbors {
                 if visited.contains(neighbor) {
                     continue;

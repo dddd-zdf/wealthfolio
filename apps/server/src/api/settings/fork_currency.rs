@@ -187,15 +187,29 @@ pub(crate) async fn guard_reads(
     request: Request,
     next: Next,
 ) -> Response {
-    if !financial_path(request.uri().path()) {
+    guard_transition(&state.currency_transition, request, next).await
+}
+
+async fn guard_transition(
+    transition: &CurrencyTransition,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request
+        .uri()
+        .path()
+        .strip_prefix("/api/v1")
+        .unwrap_or(request.uri().path());
+    let settings_read = path == "/settings" && request.method() == axum::http::Method::GET;
+    if !settings_read && !financial_path(path) {
         return next.run(request).await;
     }
-    let revision = state.currency_transition.revision.load(Ordering::SeqCst);
-    if !state.currency_transition.accepts(revision) {
+    let revision = transition.revision.load(Ordering::SeqCst);
+    if !transition.accepts(revision) {
         return unavailable();
     }
     let response = next.run(request).await;
-    if state.currency_transition.accepts(revision) {
+    if transition.accepts(revision) {
         response
     } else {
         unavailable()
@@ -205,6 +219,63 @@ pub(crate) async fn guard_reads(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{body::Body, middleware, routing::get, Router};
+    use tower::ServiceExt;
+
+    fn test_router(transition: Arc<CurrencyTransition>) -> Router {
+        Router::new()
+            .route(
+                "/valuations/history/query",
+                get(|| async { "old-currency amounts" }),
+            )
+            .route(
+                "/settings",
+                get(|| async { "settings" }).put(|| async { "retry accepted" }),
+            )
+            .layer(middleware::from_fn(move |request, next| {
+                let transition = transition.clone();
+                async move { guard_transition(&transition, request, next).await }
+            }))
+    }
+
+    #[tokio::test]
+    async fn actual_read_routes_block_during_rebuild_but_settings_retry_stays_available() {
+        let transition = Arc::new(CurrencyTransition::default());
+        let router = test_router(transition.clone());
+        transition.begin();
+        for path in ["/valuations/history/query", "/settings"] {
+            let response = router
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CONFLICT);
+            assert_eq!(response.headers()[header::RETRY_AFTER], "2");
+        }
+        let retry = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/settings")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(retry.status(), StatusCode::OK);
+        transition.finish(true);
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/valuations/history/query")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 
     #[test]
     fn currency_rebuild_covers_every_account_from_genesis() {

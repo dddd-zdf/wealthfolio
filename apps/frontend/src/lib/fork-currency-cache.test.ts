@@ -1,9 +1,21 @@
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
-import { resetWebCurrencyQueries } from "./fork-currency-cache";
+import { isWebCurrencyCompletion, resetWebCurrencyQueries } from "./fork-currency-cache";
 import { QueryKeys } from "./query-keys";
 
 describe("web currency cache transition", () => {
+  it("recognizes only an explicit currency completion event", () => {
+    expect(isWebCurrencyCompletion({ baseCurrencyChanged: true })).toBe(true);
+    for (const payload of [
+      null,
+      undefined,
+      {},
+      { background: true },
+      { baseCurrencyChanged: "true" },
+    ]) {
+      expect(isWebCurrencyCompletion(payload)).toBe(false);
+    }
+  });
   it("drops every scope and intraday range, plus income, spending and planning amounts", async () => {
     const client = new QueryClient();
     const keys = [
