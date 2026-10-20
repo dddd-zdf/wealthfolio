@@ -100,6 +100,7 @@ export * from "../shared/portfolio";
 
 // Market Data Commands
 export * from "../shared/market-data";
+export * from "../shared/fork-market-data";
 
 // Custom Provider Commands
 export * from "../shared/custom-provider";

@@ -43,6 +43,8 @@ import {
   activityMarkerVariant,
   isAssetMarkerActivity,
 } from "./asset-history-markers";
+import { useAssetIntradayChart } from "./fork-asset-intraday";
+import { ForkIntradayPriceChart } from "./fork-intraday-price-chart";
 import { RefreshQuotesConfirmDialog } from "./refresh-quotes-confirm-dialog";
 
 const SHOW_ACTIVITY_MARKERS_STORAGE_KEY = "history-chart-show-activity-markers";
@@ -93,6 +95,13 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
     to: new Date(),
   });
 
+  const forkIntraday = useAssetIntradayChart({
+    assetId,
+    interval: selectedIntervalCode,
+    quoteHistory,
+    currency,
+  });
+
   const filteredData: FilteredData[] = useMemo(() => {
     if (!quoteHistory) return [];
 
@@ -141,7 +150,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
     return markerActivities.filter((activity) => dateKey(activity) === selectedActivityDate);
   }, [selectedActivityDate, markerActivities]);
 
-  const { ganAmount, percentage, calculatedAt } = useMemo(() => {
+  const dailyHeadline = useMemo(() => {
     const lastFilteredDate = filteredData.at(-1)?.timestamp;
     const startValue = filteredData[0]?.totalValue;
     const endValue = filteredData.at(-1)?.totalValue;
@@ -175,6 +184,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
       calculatedAt: lastFilteredDate,
     };
   }, [filteredData, selectedIntervalCode, quoteHistory, totalGainAmount, totalGainPercent]);
+  const { ganAmount, percentage, calculatedAt } = forkIntraday?.headline ?? dailyHeadline;
 
   const handleIntervalSelect = (
     code: TimePeriod,
@@ -282,15 +292,19 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
           </div>
         </CardHeader>
         <CardContent className="relative flex-1 p-0">
-          <HistoryChart
-            data={chartData}
-            activityMarkers={activityMarkers}
-            averageCost={showActivityMarkers && !isBalanceHidden ? averageCost : undefined}
-            onActivityMarkerClick={(marker) => {
-              setSelectedActivityDate(dateKey(marker.point));
-              setIsActivitySheetOpen(true);
-            }}
-          />
+          {forkIntraday ? (
+            <ForkIntradayPriceChart chart={forkIntraday} />
+          ) : (
+            <HistoryChart
+              data={chartData}
+              activityMarkers={activityMarkers}
+              averageCost={showActivityMarkers && !isBalanceHidden ? averageCost : undefined}
+              onActivityMarkerClick={(marker) => {
+                setSelectedActivityDate(dateKey(marker.point));
+                setIsActivitySheetOpen(true);
+              }}
+            />
+          )}
           <IntervalSelector
             onIntervalSelect={handleIntervalSelect}
             className="absolute bottom-2 left-1/2 -translate-x-1/2 transform"

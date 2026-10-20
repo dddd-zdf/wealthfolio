@@ -231,6 +231,7 @@ export {
   updateQuote,
   updateQuoteMode,
 } from "../shared/market-data";
+export { getAssetIntradayQuotes } from "../shared/fork-market-data";
 
 // Custom Provider Commands
 export {

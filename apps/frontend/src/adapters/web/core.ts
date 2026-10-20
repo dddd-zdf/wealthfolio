@@ -157,6 +157,7 @@ export const COMMANDS: CommandMap = {
   search_symbol: { method: "GET", path: "/market-data/search" },
   resolve_symbol_quote: { method: "GET", path: "/market-data/resolve-currency" },
   get_quote_history: { method: "GET", path: "/market-data/quotes/history" },
+  get_asset_intraday_quotes: { method: "GET", path: "/market-data/quotes/intraday" },
   fetch_dividends: { method: "GET", path: "/market-data/dividends" },
   get_latest_quotes: { method: "POST", path: "/market-data/quotes/latest" },
   update_quote: { method: "PUT", path: "/market-data/quotes" },
@@ -1082,6 +1083,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       const { symbol } = payload as { symbol: string };
       const params = new URLSearchParams();
       params.set("symbol", symbol);
+      url += `?${params.toString()}`;
+      break;
+    }
+    case "get_asset_intraday_quotes": {
+      const { assetId, range } = payload as { assetId: string; range: string };
+      const params = new URLSearchParams();
+      params.set("assetId", assetId);
+      params.set("range", range);
       url += `?${params.toString()}`;
       break;
     }

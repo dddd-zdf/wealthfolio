@@ -19,6 +19,7 @@ pub mod device_enroll_service;
 pub mod device_sync;
 pub mod error;
 pub mod fire;
+pub mod fork_market_data;
 pub mod goal;
 pub mod health;
 pub mod limits;
