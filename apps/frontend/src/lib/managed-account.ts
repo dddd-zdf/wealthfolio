@@ -5,12 +5,17 @@ import type { Holding } from "@/lib/types";
 const sourceAccounts = (holding: Holding) =>
   holding.sourceAccountIds?.length ? holding.sourceAccountIds : [holding.accountId];
 
+// Wealthsimple private-market funds (WSE200, WSE401P, ...). Their prices are
+// saved weekly by the Wealthsimple sync, so their accounts get no pencil.
+const isSyncedFund = (holding: Holding) => /^WSE\d+P?$/.test(holding.instrument?.symbol ?? "");
+
 /**
  * Manually priced holdings of an account whose value is entered as one total
  * (e.g. a pension plan or private-market fund). `holdings` is the all-accounts
  * list, so holdings shared with another account can be detected. Returns null
  * when the account has none, or when a manual price would also move another
- * account or can't be expressed in the account's currency.
+ * account or can't be expressed in the account's currency, or when the account
+ * holds a fund the Wealthsimple sync prices.
  */
 export function managedHoldings(
   holdings: Holding[],
@@ -24,7 +29,7 @@ export function managedHoldings(
       holding.instrument?.quoteMode === "MANUAL" &&
       sourceAccounts(holding).includes(accountId),
   );
-  if (manual.length === 0) return null;
+  if (manual.length === 0 || manual.some(isSyncedFund)) return null;
   const isolated = manual.every(
     (holding) => sourceAccounts(holding).length === 1 && holding.localCurrency === accountCurrency,
   );
