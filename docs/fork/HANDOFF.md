@@ -34,6 +34,7 @@ first:
 
 | PR     | Change                                                                                           | Main files                                                                                                                           |
 | ------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| #49    | No account-total pencil on accounts holding WSE funds (the Wealthsimple sync prices them)        | `apps/frontend/src/lib/managed-account.ts`                                                                                           |
 | #47    | Asset page 1D/1W price chart from live intraday bars, with the previous close marked             | `apps/frontend/src/pages/asset/fork-{asset-intraday,intraday-price-chart}.ts(x)`, `apps/server/src/api/market_data/fork_intraday.rs` |
 | #42    | Background refresh keeps the dashboard cache when no price changed (3.10 lost #10/#14's gate)    | `apps/server/src/fork_policy.rs`                                                                                                     |
 | #41    | Dormant/zero-balance accounts no longer hide the combined return % (lost in 3.10's engine)       | `crates/portfolio-engine/src/measure/fork_mixed.rs`                                                                                  |

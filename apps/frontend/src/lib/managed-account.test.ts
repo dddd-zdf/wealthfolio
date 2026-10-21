@@ -42,6 +42,14 @@ describe("managedHoldings", () => {
     ).toBeNull();
   });
 
+  it("is null for accounts holding a Wealthsimple-synced fund", () => {
+    const synced = holding("WSE401", 80, { sourceAccountIds: ["tfsa"] });
+    const promo = holding("WSE401P", 10, { sourceAccountIds: ["tfsa"] });
+    expect(managedHoldings([synced, promo], "tfsa", "CAD")).toBeNull();
+    const fund = holding("ML8321", 100);
+    expect(managedHoldings([fund, synced], "rpp", "CAD")).toEqual([fund]);
+  });
+
   it("accepts account-scoped holdings", () => {
     const fund = holding("ML8321", 100, { accountId: "rpp", sourceAccountIds: [] });
     expect(managedHoldings([fund], "rpp", "CAD")).toEqual([fund]);
