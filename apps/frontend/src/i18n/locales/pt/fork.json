@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "Anos civis"
+  },
+  "dashboard": {
+    "intradayEstimate": "Os gráficos intradiários são estimativas. Eles não incluem variações cambiais durante a sessão, nem operações e fluxos de caixa."
   }
 }

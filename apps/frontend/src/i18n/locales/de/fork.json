@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "Kalenderjahre"
+  },
+  "dashboard": {
+    "intradayEstimate": "Intraday-Charts sind Schätzungen. Änderungen der Wechselkurse innerhalb der Sitzung sowie Trades und Geldflüsse werden nicht berücksichtigt."
   }
 }

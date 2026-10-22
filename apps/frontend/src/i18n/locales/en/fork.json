@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "Calendar years"
+  },
+  "dashboard": {
+    "intradayEstimate": "Intraday charts are estimates. They do not include within-session currency-rate changes or trades and cash flows."
   }
 }
