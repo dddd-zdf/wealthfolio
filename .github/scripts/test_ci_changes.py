@@ -114,6 +114,8 @@ class BuildStatusTests(unittest.TestCase):
             env[job + "_REQUIRED"] = "false"
             env[job + "_RESULT"] = "skipped"
         env["TRANSLATION_RESULT"] = "skipped"
+        env["FRONTEND_TESTS_RESULT"] = "skipped"
+        env["DESIGN_RATCHET_RESULT"] = "skipped"
         env.update(overrides)
         return subprocess.run(["bash", "-e", "-c", script], env=env, capture_output=True).returncode
 
@@ -144,6 +146,7 @@ class BuildStatusTests(unittest.TestCase):
             FRONTEND_RESULT="success",
             FRONTEND_TESTS_RESULT="success",
             TRANSLATION_RESULT="success",
+            DESIGN_RATCHET_RESULT="success",
         ), 0)
 
     def test_required_server_checks_must_succeed(self):
@@ -160,6 +163,19 @@ class BuildStatusTests(unittest.TestCase):
             RUST_CLIPPY_RESULT="success",
             RUST_TESTS_RESULT="success",
         ), 0)
+
+    def test_required_frontend_jobs_must_succeed(self):
+        passing = {
+            "FRONTEND_RESULT": "success",
+            "FRONTEND_TESTS_RESULT": "success",
+            "TRANSLATION_RESULT": "success",
+            "DESIGN_RATCHET_RESULT": "success",
+        }
+        for job in passing:
+            for result in ["failure", "cancelled", "skipped"]:
+                with self.subTest(job=job, result=result):
+                    self.assertNotEqual(self.run_gate(FRONTEND_REQUIRED="true", **{**passing, job: result}), 0)
+        self.assertEqual(self.run_gate(FRONTEND_REQUIRED="true", **passing), 0)
 
     def test_failed_detection_blocks_merge(self):
         self.assertNotEqual(self.run_gate(CHANGES_RESULT="failure"), 0)

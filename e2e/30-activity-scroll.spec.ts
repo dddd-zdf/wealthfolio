@@ -62,7 +62,14 @@ async function scrollNearBottom(container: Locator) {
       behavior: "instant",
     });
   });
-  const offset = await container.evaluate((element) => element.scrollTop);
+  // Let the browser finish layout and scroll anchoring before recording the
+  // starting position; the preservation check starts before the tab click.
+  const offset = await container.evaluate(
+    (element) =>
+      new Promise<number>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(element.scrollTop)));
+      }),
+  );
   expect(offset).toBeGreaterThan(100);
   return offset;
 }
@@ -105,10 +112,14 @@ for (const context of ["asset", "account"] as const) {
     ).toBeVisible();
     const container = page.locator("[data-page-scroll-container]");
     const offset = await scrollNearBottom(container);
-    await activities.click();
+    // Keep the real response pending long enough to observe the loading layout.
+    await page.route("**/api/v1/activities/search", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      await route.continue();
+    });
+    await Promise.all([expectScrollPreserved(container, offset), activities.click()]);
     await expect(page).toHaveURL(/tab=activities/);
     await expect(page.getByRole("columnheader", { name: "Date" })).toBeVisible();
-    await expectScrollPreserved(container, offset);
     await expect(page.getByRole("cell", { name: "Buy", exact: true })).toBeVisible();
   });
 }
@@ -147,16 +158,18 @@ test("Spending preserves scroll during selection and mobile tab switching", asyn
   });
   expect(settings.ok()).toBeTruthy();
   await gotoAppPath(page, "/activities?tab=spending");
-  await expect(page.getByText("Scroll expense 1", { exact: true })).toBeVisible({
+  // Rows sharing a timestamp list newest-created first, so the last one is on top.
+  await expect(page.getByText("Scroll expense 30", { exact: true })).toBeVisible({
     timeout: 20_000,
   });
   const container = page.locator("[data-page-scroll-container]");
   await container.evaluate((element) => element.scrollTo({ top: 300, behavior: "instant" }));
   const offset = await container.evaluate((element) => element.scrollTop);
   expect(offset).toBe(300);
+  // The tenth row from the top, already in view, so checking it scrolls nothing.
   const row = page
     .getByRole("row")
-    .filter({ has: page.getByText("Scroll expense 10", { exact: true }) });
+    .filter({ has: page.getByText("Scroll expense 21", { exact: true }) });
   await row.getByRole("checkbox").check();
   await expect(row.getByRole("checkbox")).toBeChecked();
   // Selecting a row adds the bulk bar and remeasures rows; allow a few pixels

@@ -160,7 +160,9 @@ export function DateRangeSelector({
   );
 
   return (
-    <div className="flex items-center space-x-1">
+    // data-no-swipe-drag: on a swipe page, a sideways drag scrolls the presets instead of
+    // switching the page's view.
+    <div className="flex items-center space-x-1" data-no-swipe-drag>
       <AnimatedToggleGroup
         items={visibleRanges.map((range) => ({
           value: range.label,
@@ -177,13 +179,13 @@ export function DateRangeSelector({
             onChange(selectedRange.getValue(asOf));
           }
         }}
-        size="sm"
+        size={isMobile ? "compact" : "sm"}
         variant="secondary"
       />
 
       {isMobile ? (
         <Sheet open={isCustomPickerOpen} onOpenChange={handleCustomPickerOpenChange}>
-          <SheetTrigger asChild>{triggerButton}</SheetTrigger>
+          <SheetTrigger render={triggerButton} />
           <SheetContent side="bottom" className="rounded-t-4xl mx-1 flex max-h-[85vh] flex-col p-0">
             <SheetHeader className="border-border border-b px-6 py-4">
               <SheetTitle>{t("ui:dateRange.customRange", "Custom range")}</SheetTitle>
@@ -236,7 +238,7 @@ export function DateRangeSelector({
               </Button>
               <Button
                 type="button"
-                className="ml-auto"
+                className="ms-auto"
                 onClick={handleApplyDraftRange}
                 disabled={!isDraftRangeComplete}
               >
@@ -247,9 +249,9 @@ export function DateRangeSelector({
         </Sheet>
       ) : (
         <Popover open={isCustomPickerOpen} onOpenChange={setIsCustomPickerOpen}>
-          <PopoverTrigger asChild>{triggerButton}</PopoverTrigger>
+          <PopoverTrigger render={triggerButton} />
           <PopoverContent
-            className="max-h-[min(var(--radix-popover-content-available-height,80vh),80vh)] w-auto overflow-y-auto overscroll-contain p-0 [-webkit-overflow-scrolling:touch]"
+            className="max-h-[min(var(--available-height,80vh),80vh)] w-auto overflow-y-auto overscroll-contain p-0 [-webkit-overflow-scrolling:touch]"
             align="end"
           >
             {yearPresets > 0 && (
