@@ -101,6 +101,11 @@ To see the full divergence:
 
 ## Upstream integration
 
+The 3.11 integration merges pinned release `v3.11.0` (`87814e29d`) into fork
+main at `268b3e67f`. Keep the merge commit when promoting this branch; squashing
+an upstream synchronization loses the release ancestry needed by future merges.
+See [upstream-3.11.md](upstream-3.11.md) for resolutions and scope.
+
 The 3.10 integration merges release `v3.10.0` (`f9643209e`) from the previous
 shared ancestor `392f272c5`. Keep upstream's new engine, coordinator and
 projection invalidation. Carry fork behavior through the extension points in

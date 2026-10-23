@@ -32,7 +32,7 @@ export function NavIcon({ item, icon }: { item: NavLink; icon: ReactNode }) {
     <span aria-hidden="true" className="relative">
       {icon}
       {item.badge ? (
-        <span className="bg-warning text-warning-foreground absolute -right-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold leading-none">
+        <span className="bg-warning text-warning-foreground absolute -end-2 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs font-semibold leading-none">
           {item.badge > 99 ? "99+" : item.badge}
         </span>
       ) : null}

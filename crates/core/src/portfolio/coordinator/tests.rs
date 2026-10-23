@@ -2488,22 +2488,19 @@ async fn read_differences(
     let disposal_rows: Vec<_> = reference.disposals.values().flatten().cloned().collect();
     let disposals = rows::stored_disposals(&disposal_rows);
     let range = reference.resolved.range();
-    let inputs = engine::MeasureInputs {
-        effects: engine::effects(
-            &engine::Resolved {
-                facts: &reference.resolved.facts,
-                ledger: &reference.resolved.ledger,
-                surfaces: &reference.resolved.surfaces,
-                range,
-            },
-            &disposals,
-            &lots,
-            &reference.rejected,
-        ),
-        series: &series,
-        lots: &lots,
-        disposals: &disposals,
-    };
+    let inputs = engine::measure_inputs(
+        &engine::Resolved {
+            facts: &reference.resolved.facts,
+            ledger: &reference.resolved.ledger,
+            surfaces: &reference.resolved.surfaces,
+            range,
+        },
+        &series,
+        &lots,
+        &disposals,
+        &reference.rejected,
+        engine::MeasureProfile::Full,
+    );
     let mut found = Vec::new();
     let mut compare = |what: String,
                        read: crate::errors::Result<
@@ -2973,4 +2970,56 @@ async fn valuation_totals_leave_the_async_worker_free() {
     releaser.await.expect("releaser task");
 
     assert!(gate.released_in_time(), "the read held the async worker");
+}
+
+/// Whether a holding counts toward its account's value is core's rule
+/// (`AssetKind::is_alternative`); the engine applies it as a fact. An
+/// alternative asset bought in an account stays out of the account's value,
+/// for net worth to add on its own.
+#[tokio::test]
+async fn an_account_values_a_holding_unless_its_kind_is_alternative() {
+    use crate::assets::AssetKind;
+    for kind in [
+        AssetKind::Investment,
+        AssetKind::Property,
+        AssetKind::Vehicle,
+        AssetKind::Collectible,
+        AssetKind::PreciousMetal,
+        AssetKind::PrivateEquity,
+        AssetKind::Liability,
+        AssetKind::Other,
+    ] {
+        let yaml = format!(
+            r#"
+id: KIND-{kind}
+title: a {kind} holding
+policy: {{ base_currency: USD, timezone: UTC, as_of: 2025-01-04 }}
+accounts:
+  - {{ id: acc-1, currency: USD }}
+assets:
+  - {{ id: thing, quote_ccy: USD, kind: {kind}, instrument_type: NONE, quote_mode: MANUAL, alternative: {alternative} }}
+activities:
+  - {{ id: dep, account: acc-1, type: DEPOSIT, date: 2025-01-02T10:00:00Z, amount: 1000 }}
+  - {{ id: buy, account: acc-1, type: BUY, asset: thing, date: 2025-01-03T10:00:00Z, quantity: 2, unit_price: 100, amount: 200 }}
+quotes:
+  - {{ asset: thing, day: 2025-01-03, close: 100, currency: USD, source: MANUAL }}
+"#,
+            kind = kind.as_db_str(),
+            alternative = kind.is_alternative()
+        );
+        let scenario: Scenario = serde_yaml::from_str(&yaml).unwrap();
+        scenario.validate().unwrap();
+        let h = harness(scenario.facts()).await;
+        h.coordinator
+            .run_job(request(), &SilentObserver)
+            .await
+            .unwrap();
+        let value = h.rows("acc-1").last().unwrap().investment_market_value;
+        let expected = if kind.is_alternative() {
+            Decimal::ZERO
+        } else {
+            dec!(200)
+        };
+        assert_eq!(value, expected, "{kind:?}");
+    }
 }

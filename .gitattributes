@@ -1,3 +1,4 @@
 apps/frontend/addon-sandbox.html text eol=lf
 apps/frontend/index.html text eol=lf
 *.snap text eol=lf
+apps/frontend/src/themes/generated/themes.css text eol=lf
