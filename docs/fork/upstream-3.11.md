@@ -3,8 +3,9 @@
 ## Source and scope
 
 - Fork base: `dddd-zdf/wealthfolio` main, `268b3e67f`.
-- Upstream release: `wealthfolio/wealthfolio` tag `v3.11.0`,
-  `87814e29d63a9b4c0e007abac1d84cb2ca588b4c`.
+- Upstream release: `wealthfolio/wealthfolio` tag `v3.11.0`, commit
+  `d1fda0b65f69d8557b1ef80e555c799215ad28b3` (annotated tag object
+  `87814e29d63a9b4c0e007abac1d84cb2ca588b4c`).
 - Integration branch: `codex/upstream-3.11`.
 - Preserve the upstream merge commit when promoting this branch. Do not squash
   or replay the release as individual commits.
