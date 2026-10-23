@@ -114,6 +114,10 @@ pub fn intraday_exposures(holdings: &[Holding]) -> Vec<IntradayExposure> {
 pub fn intraday_anchors(daily: &[DailyAccountValuation]) -> Vec<IntradayAnchor> {
     daily
         .iter()
+        // Unavailable rows carry zero or partial base values and must never
+        // become chart anchors. Partial-unpriced rows remain valid anchors,
+        // matching the upstream chart's valueStatus guard.
+        .filter(|v| !v.value_status.is_unavailable_for_returns())
         .map(|v| IntradayAnchor {
             date: v.valuation_date,
             total_value_base: v.total_value_base,
@@ -238,7 +242,8 @@ pub async fn asset_intraday_bars(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
+    use crate::portfolio::valuation::ValuationStatus;
+    use chrono::{Datelike, TimeZone};
     use rust_decimal_macros::dec;
 
     fn bar(asset: &str, ts: DateTime<Utc>, close: Decimal) -> Quote {
@@ -261,7 +266,46 @@ mod tests {
 
     fn at(h: u32, m: u32) -> DateTime<Utc> {
         // 2026-10-02 in UTC; Vancouver local date is the same during market hours.
-        Utc.with_ymd_and_hms(2026, 10, 2, h, m, 0).unwrap()
+        at_day(2, h, m)
+    }
+
+    fn at_day(day: u32, h: u32, m: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 10, day, h, m, 0).unwrap()
+    }
+
+    fn daily_anchor(
+        day: u32,
+        status: ValuationStatus,
+        total_value_base: Decimal,
+    ) -> DailyAccountValuation {
+        let date = NaiveDate::from_ymd_opt(2026, 10, day).unwrap();
+        DailyAccountValuation {
+            id: format!("valuation-{day}"),
+            account_id: "account-1".to_string(),
+            valuation_date: date,
+            account_currency: "CAD".to_string(),
+            base_currency: "CAD".to_string(),
+            fx_rate_to_base: dec!(1),
+            cash_balance: dec!(0),
+            investment_market_value: total_value_base,
+            total_value: total_value_base,
+            cost_basis: dec!(0),
+            book_basis: dec!(0),
+            net_contribution: dec!(0),
+            cash_balance_base: dec!(0),
+            investment_market_value_base: total_value_base,
+            total_value_base,
+            cost_basis_base: dec!(0),
+            book_basis_base: dec!(0),
+            net_contribution_base: dec!(0),
+            external_inflow_base: dec!(0),
+            external_outflow_base: dec!(0),
+            external_flow_source: Default::default(),
+            performance_eligible_value_base: total_value_base,
+            value_status: status,
+            basis_status: Default::default(),
+            calculated_at: at_day(day, 0, 0),
+        }
     }
 
     #[test]
@@ -320,6 +364,53 @@ mod tests {
         let mut bars = HashMap::new();
         bars.insert("xeqt".to_string(), vec![bar("xeqt", at(15, 0), dec!(30))]);
         assert!(build_intraday_series(&[], &exposures, &bars, tz).is_empty());
+    }
+
+    #[test]
+    fn unavailable_daily_anchors_are_skipped_but_partial_anchors_remain_usable() {
+        let tz: Tz = "America/Vancouver".parse().unwrap();
+        let daily = vec![
+            daily_anchor(1, ValuationStatus::Unavailable, dec!(9000)),
+            daily_anchor(2, ValuationStatus::PartialUnpriced, dec!(10000)),
+            daily_anchor(3, ValuationStatus::Complete, dec!(11000)),
+        ];
+        let anchors = intraday_anchors(&daily);
+        assert_eq!(
+            anchors.iter().map(|anchor| anchor.date).collect::<Vec<_>>(),
+            vec![
+                NaiveDate::from_ymd_opt(2026, 10, 2).unwrap(),
+                NaiveDate::from_ymd_opt(2026, 10, 3).unwrap(),
+            ]
+        );
+
+        let exposures = vec![IntradayExposure {
+            asset_id: "xeqt".into(),
+            market_value_base: dec!(6000),
+        }];
+        let mut bars = HashMap::new();
+        bars.insert(
+            "xeqt".to_string(),
+            vec![
+                bar("xeqt", at_day(1, 14, 30), dec!(27)),
+                bar("xeqt", at_day(1, 20, 0), dec!(28)),
+                bar("xeqt", at_day(2, 14, 30), dec!(29)),
+                bar("xeqt", at_day(2, 20, 0), dec!(30)),
+                bar("xeqt", at_day(3, 14, 30), dec!(31)),
+                bar("xeqt", at_day(3, 20, 0), dec!(32)),
+            ],
+        );
+
+        let points = build_intraday_series(&anchors, &exposures, &bars, tz);
+        assert_eq!(points.len(), 4);
+        assert!(points
+            .iter()
+            .all(|point| point.timestamp.date_naive().day() != 1));
+        assert!(points.iter().any(|point| {
+            point.timestamp.date_naive().day() == 2 && point.total_value_base == dec!(10000)
+        }));
+        assert!(points.iter().any(|point| {
+            point.timestamp.date_naive().day() == 3 && point.total_value_base == dec!(11000)
+        }));
     }
 
     #[test]

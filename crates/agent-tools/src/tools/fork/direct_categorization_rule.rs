@@ -111,6 +111,10 @@ impl AgentTool for CommitDirectCategorizationRule {
         AgentToolAccess::Write
     }
 
+    fn is_additive(&self) -> bool {
+        true
+    }
+
     fn sanitize_args_for_audit(&self, args: &serde_json::Value) -> serde_json::Value {
         // Same redaction as the draft tool: `pattern` and `name` echo real
         // merchant/transaction text, so they never land in the audit log.

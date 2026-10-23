@@ -32,6 +32,9 @@ changes, rather than described as a behavior-preserving refactor.
   platform-independent use; retain the existing vault protection tests.
 - Retain separate web/server Clippy and test jobs and existing cache settings;
   add upstream script, theme and design checks without native build gates.
+- Keep unavailable valuations out of intraday chart anchors, matching upstream
+  daily-chart availability checks. Forward upstream additive MCP annotations
+  through the reviewed-rule adapter and annotate direct rule creation.
 - Adapt the dashboard IRR regression to upstream's updated engine signature.
 - Supply fork translations for upstream's Arabic locale and align fork styles
   with upstream's design rules, without raising the design-debt baseline.
@@ -44,4 +47,5 @@ Use the web/server checks in `pr-check.yml`. Report exact checks and limitations
 in the integration PR. A local Windows check does not establish ARM64 runtime or
 production-data compatibility. Production deployment requires the infra runbook,
 a verified backup, disposable database-copy comparison and a tested ARM64 image.
-No production deployment is part of this merge.
+Deploy the validated integration branch directly at the owner's request; keep
+`main` unchanged and record image, backup and verification in the infra runbook.
