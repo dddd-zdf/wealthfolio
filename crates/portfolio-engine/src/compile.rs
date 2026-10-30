@@ -435,14 +435,15 @@ fn attribution_for(activity: &Activity, account: &AccountFacts, action: &Action)
         // A credit inside the boundary (cash back, a rebate, a refund) is a
         // gain without a contribution, so it is income like interest. An
         // external credit is new capital and attributes like a deposit.
-        Credit if !credit_is_external(activity) => Attributed {
-            income: activity
-                .amount
-                .map(|amount| amount + fee + tax)
-                .unwrap_or(Decimal::ZERO),
-            fee,
-            tax,
-        },
+        // Without final cash, neither income nor charges are booked.
+        Credit if !credit_is_external(activity) => activity
+            .amount
+            .map(|amount| Attributed {
+                income: amount + fee + tax,
+                fee,
+                tax,
+            })
+            .unwrap_or_default(),
         // Cash transfers book tax to cash; asset transfers book only the fee.
         Credit | Deposit | Withdrawal => Attributed {
             tax,
