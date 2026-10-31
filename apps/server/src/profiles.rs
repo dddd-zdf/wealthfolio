@@ -294,7 +294,7 @@ impl WebProfiles {
         }
     }
 
-    pub async fn runtime(&self, id: Uuid) -> Result<Arc<AppState>> {
+    pub async fn runtime(self: &Arc<Self>, id: Uuid) -> Result<Arc<AppState>> {
         {
             let runtimes = self.runtimes.lock().await;
             self.registry.profile(id).map_err(failure)?;
@@ -302,6 +302,15 @@ impl WebProfiles {
                 return Ok(runtime.clone());
             }
         }
+        // A disconnected client drops this future. Startup runs in its own task so
+        // the next open waits for it, instead of finding its database lock held.
+        let root = self.clone();
+        tokio::spawn(async move { root.start_runtime(id).await })
+            .await
+            .map_err(|error| startup_failure("runtime_initialization", error.into()))?
+    }
+
+    async fn start_runtime(&self, id: Uuid) -> Result<Arc<AppState>> {
         let _initialization = self.initialization.lock().await;
         // A waiting open may have been initialized or marked for deletion.
         let profile = self.registry.profile(id).map_err(failure)?;
