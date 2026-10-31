@@ -1023,6 +1023,22 @@ async fn cancelled_profile_startup_finishes_for_the_next_open() {
         outcome.map(|result| result.err())
     );
 
+    // An open cancelled while it waits for startup leaves nothing queued behind.
+    let references = Arc::strong_count(&root);
+    let queued = tokio::spawn({
+        let root = root.clone();
+        async move { root.runtime(cold.id).await }
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    queued.abort();
+    let outcome = queued.await;
+    assert!(
+        outcome.as_ref().is_err_and(|error| error.is_cancelled()),
+        "{:?}",
+        outcome.map(|result| result.err())
+    );
+    assert_eq!(Arc::strong_count(&root), references);
+
     let next = root.runtime(cold.id);
     tokio::pin!(next);
     let next_waiting = tokio::time::timeout(Duration::from_millis(50), &mut next).await;
