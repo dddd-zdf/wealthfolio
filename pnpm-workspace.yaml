@@ -6,3 +6,8 @@ ignoredBuiltDependencies:
   - "@tailwindcss/oxide"
   - esbuild
   - msw
+
+overrides:
+  "qs@<6.16.0": "6.16.0"
+  "esbuild@>=0.27.3 <0.28.1": "^0.28.1"
+  "postcss-selector-parser@<7.1.6": "^7.1.7"
