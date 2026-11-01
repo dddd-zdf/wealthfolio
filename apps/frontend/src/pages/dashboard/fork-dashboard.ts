@@ -148,6 +148,5 @@ export function useDashboardChart({
     chartData,
     timeDomain,
     referenceValue,
-    isIntradayEstimate: isWeb && intradayRange !== null,
   };
 }

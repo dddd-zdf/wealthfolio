@@ -13,8 +13,5 @@
   },
   "dateRange": {
     "calendarYears": "Anni solari"
-  },
-  "dashboard": {
-    "intradayEstimate": "I grafici infragiornalieri sono stime. Non includono le variazioni del tasso di cambio durante la sessione né operazioni e flussi di cassa."
   }
 }
