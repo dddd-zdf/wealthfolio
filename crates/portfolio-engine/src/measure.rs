@@ -3024,7 +3024,6 @@ mod tests {
             None,
             true,
             MeasureProfile::Full,
-            false,
             true,
             &currency,
         );
