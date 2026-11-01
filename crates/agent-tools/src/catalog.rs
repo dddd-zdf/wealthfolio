@@ -807,7 +807,7 @@ mod tests {
             "propose_transaction_categories",
             "create_categorization_rule",
             "commit_transaction_categories",
-            "commit_categorization_rule",
+            "commit_reviewed_categorization_rule",
             "list_categorization_rules",
             "rerun_categorization_rules",
         ] {
