@@ -65,9 +65,9 @@ diagnostics when regenerating them.
 No dated intraday FX source is configured. The web intraday handler therefore
 returns no intraday points for a scope with any open nonzero foreign exposure
 (including cash and manual assets), letting the dashboard use stored daily
-values. Other intraday curves remain estimates using current position weights;
-the visible 1D/1W notice states that within-session FX, trades and cash flows
-are not reconstructed. Daily values and performance still use the engine.
+values. Other intraday curves use current position weights and do not
+reconstruct within-session FX, trades or cash flows. Daily values and
+performance still use the engine.
 
 ## Architecture impact
 

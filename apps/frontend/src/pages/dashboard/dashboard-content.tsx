@@ -23,7 +23,7 @@ import { accountScopeKey } from "@/pages/allocation-targets/components/target-sc
 import { useTranslation } from "react-i18next";
 import { AccountsSummary } from "./accounts-summary";
 import { useDashboardChart, useDashboardGain } from "./fork-dashboard";
-import { DashboardIntradayEstimate, DashboardMoneyWeightedReturn } from "./fork-dashboard-parts";
+import { DashboardMoneyWeightedReturn } from "./fork-dashboard-parts";
 import Balance from "./balance";
 import SavingGoals from "./goals";
 import TopHoldings from "./top-holdings";
@@ -291,7 +291,6 @@ export function DashboardContent({
             timeDomain={forkChart.timeDomain}
             referenceValue={forkChart.referenceValue}
           />
-          {forkChart.isIntradayEstimate && <DashboardIntradayEstimate />}
           {valuationHistory && forkChart.chartData.length > 0 && (
             <div className="flex w-full justify-center">
               <IntervalSelector

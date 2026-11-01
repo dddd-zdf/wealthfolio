@@ -13,8 +13,5 @@
   },
   "dateRange": {
     "calendarYears": "自然年"
-  },
-  "dashboard": {
-    "intradayEstimate": "日内图表为估算值，不包含交易时段内的汇率变化、交易和现金流。"
   }
 }

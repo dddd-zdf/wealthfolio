@@ -13,8 +13,5 @@
   },
   "dateRange": {
     "calendarYears": "Années civiles"
-  },
-  "dashboard": {
-    "intradayEstimate": "Les graphiques intrajournaliers sont des estimations. Ils n'incluent pas les variations du taux de change pendant la séance ni les opérations et flux de trésorerie."
   }
 }
