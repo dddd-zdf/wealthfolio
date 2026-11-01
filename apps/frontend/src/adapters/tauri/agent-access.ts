@@ -181,3 +181,9 @@ export const deleteAgentAccessToken = async (id: string): Promise<void> => {
 
 export const decideMcpOAuth = (_decision: McpOAuthDecision): Promise<string> =>
   Promise.reject(new Error("MCP client authorization is only available on the web server"));
+
+export const updateAgentAccessTokenScopes = (
+  id: string,
+  input: { scopes: string[] },
+): Promise<AgentAccessToken> =>
+  invoke<AgentAccessToken>("mcp_update_token_scopes", { id, scopes: input.scopes });

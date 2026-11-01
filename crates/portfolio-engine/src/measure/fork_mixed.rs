@@ -82,6 +82,7 @@ mod tests {
             &currency,
             Some(date(12)),
             false,
+            false,
         )
     }
 

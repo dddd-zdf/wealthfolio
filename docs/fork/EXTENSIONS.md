@@ -93,9 +93,10 @@ merge checks.
 Some behavior belongs at the calculation or authorization boundary and cannot be
 isolated by moving the caller:
 
-- The portfolio engine attributes non-BONUS credits (cash back and rebates) as
-  income. BONUS remains contributed capital. The focused compile regression
-  records that distinction.
+- Upstream 3.12 attributes internal credits (cash back and rebates) as income,
+  honoring explicit external-flow metadata and using BONUS as the fallback for
+  contributed capital. The fork retains its focused compile regression; it no
+  longer replaces this attribution branch.
 - The dashboard measure profile computes period and annualized IRR for MWR
   display, while still skipping full risk/attribution work. Keep the measure
   regression when adopting a newer engine.

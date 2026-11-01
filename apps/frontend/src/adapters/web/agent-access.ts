@@ -110,3 +110,9 @@ export const decideMcpOAuth = async (decision: McpOAuthDecision): Promise<string
     throw error;
   }
 };
+
+export const updateAgentAccessTokenScopes = (
+  id: string,
+  input: { scopes: string[] },
+): Promise<AgentAccessToken> =>
+  invoke<AgentAccessToken>("update_agent_access_token_scopes", { id, scopes: input.scopes });

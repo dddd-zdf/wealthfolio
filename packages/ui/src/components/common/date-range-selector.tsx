@@ -82,6 +82,13 @@ interface DateRangeSelectorProps {
   hiddenRanges?: readonly DateRangePresetLabel[];
   /** Show quick picks for this many calendar years (current year to date first) in the custom picker. */
   yearPresets?: number;
+  /**
+   * Earliest date represented by the ALL preset (e.g. the selected account's
+   * first data point). Only affects what the calendar displays and anchors to;
+   * the stored ALL value keeps its sentinel start so consumers can still
+   * detect all-time ranges.
+   */
+  allTimeFrom?: Date;
 }
 
 export function DateRangeSelector({
@@ -90,6 +97,7 @@ export function DateRangeSelector({
   hiddenRanges = [],
   asOf = new Date(),
   yearPresets = 0,
+  allTimeFrom,
 }: DateRangeSelectorProps) {
   const { t } = useTranslation();
   const formatting = useDateFormatting();
@@ -97,6 +105,7 @@ export function DateRangeSelector({
   const [isCustomPickerOpen, setIsCustomPickerOpen] = React.useState(false);
   const [draftRange, setDraftRange] = React.useState<DateRange | undefined>(value);
   const visibleRanges = ranges.filter((range) => !hiddenRanges.includes(range.label));
+  const allTimeRange = visibleRanges.find((range) => range.label === "ALL")?.getValue(asOf);
 
   // Helper function to compare dates ignoring time
   const compareDates = (date1: Date | undefined, date2: Date | undefined) => {
@@ -104,9 +113,23 @@ export function DateRangeSelector({
     return isSameDay(date1, date2);
   };
 
+  const isAllTimeRange = (range: DateRange | undefined) => {
+    if (!allTimeRange) return false;
+    if (!range) return true;
+    const from = range.from;
+    // Match the local and ISO/UTC sentinel constructors used by callers.
+    return (
+      !!from &&
+      (compareDates(from, allTimeRange.from) ||
+        (from.getUTCFullYear() === allTimeRange.from.getFullYear() &&
+          from.getUTCMonth() === allTimeRange.from.getMonth() &&
+          from.getUTCDate() === allTimeRange.from.getDate()))
+    );
+  };
+
   // Check if current range matches any predefined range and get the selected label
   const getSelectedRange = () => {
-    if (!value && visibleRanges.some((range) => range.label === "ALL")) {
+    if (isAllTimeRange(value)) {
       return "ALL";
     }
 
@@ -120,7 +143,12 @@ export function DateRangeSelector({
   const selectedLabel = getSelectedRange();
   const isCustomRange = !selectedLabel;
   const isDraftRangeComplete = !draftRange || (!!draftRange.from && !!draftRange.to);
-  const allTimeRange = visibleRanges.find((range) => range.label === "ALL")?.getValue(asOf);
+  // Keep the sentinel in selections and drafts. Only the calendar and its date
+  // labels use the loaded start; without history, open at asOf instead of 1970.
+  const displayRange = (range: DateRange | undefined) =>
+    isAllTimeRange(range) ? { from: allTimeFrom, to: asOf } : range;
+  const calendarRange = displayRange(value);
+  const draftCalendarRange = displayRange(draftRange);
   const appliedDraftRange = draftRange ?? allTimeRange;
 
   const handleCustomPickerOpenChange = (open: boolean) => {
@@ -169,7 +197,8 @@ export function DateRangeSelector({
           label: range.label,
           title: t("ui:dateRange.presets." + range.label, range.name),
         }))}
-        value={selectedLabel}
+        // Null keeps the group controlled, so a custom range highlights no preset.
+        value={selectedLabel ?? null}
         onValueChange={(newValue) => {
           if (!newValue) {
             return;
@@ -186,7 +215,7 @@ export function DateRangeSelector({
       {isMobile ? (
         <Sheet open={isCustomPickerOpen} onOpenChange={handleCustomPickerOpenChange}>
           <SheetTrigger render={triggerButton} />
-          <SheetContent side="bottom" className="rounded-t-4xl mx-1 flex max-h-[85vh] flex-col p-0">
+          <SheetContent side="bottom" className="mx-1 flex max-h-[85vh] flex-col rounded-t-4xl p-0">
             <SheetHeader className="border-border border-b px-6 py-4">
               <SheetTitle>{t("ui:dateRange.customRange", "Custom range")}</SheetTitle>
             </SheetHeader>
@@ -201,22 +230,25 @@ export function DateRangeSelector({
                 <div className="border-border/70 bg-muted/30 rounded-lg border px-3 py-2">
                   <div className="text-muted-foreground text-xs font-medium">{t("ui:dateRange.start", "Start")}</div>
                   <div className="text-foreground mt-1 truncate text-sm font-medium">
-                    {formatRangeDate(draftRange?.from)}
+                    {formatRangeDate(draftCalendarRange?.from)}
                   </div>
                 </div>
                 <div className="border-border/70 bg-muted/30 rounded-lg border px-3 py-2">
                   <div className="text-muted-foreground text-xs font-medium">{t("ui:dateRange.end", "End")}</div>
                   <div className="text-foreground mt-1 truncate text-sm font-medium">
-                    {formatRangeDate(draftRange?.to)}
+                    {formatRangeDate(draftCalendarRange?.to)}
                   </div>
                 </div>
               </div>
 
               <div className="mt-5 flex justify-center">
                 <Calendar
+                  // defaultMonth is read on mount. Refresh an untouched ALL
+                  // calendar when its history loads, while preserving edits.
+                  key={isAllTimeRange(draftRange) ? allTimeFrom?.getTime() : undefined}
                   mode="range"
-                  defaultMonth={draftRange?.from}
-                  selected={draftRange as DayPickerDateRange | undefined}
+                  defaultMonth={draftCalendarRange?.from ?? asOf}
+                  selected={draftCalendarRange as DayPickerDateRange | undefined}
                   onSelect={(selectedRange: DayPickerDateRange | undefined) => {
                     setDraftRange(selectedRange as DateRange | undefined);
                   }}
@@ -226,7 +258,7 @@ export function DateRangeSelector({
               </div>
             </div>
 
-            <SheetFooter className="border-border flex-row gap-2 border-t px-6 py-4 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)]">
+            <SheetFooter className="border-border flex-row gap-2 border-t px-6 py-4 pb-[calc(var(--inset-bottom,env(safe-area-inset-bottom,0px))+1rem)]">
               <Button
                 type="button"
                 variant="ghost"
@@ -268,9 +300,10 @@ export function DateRangeSelector({
               </div>
             )}
             <Calendar
+              key={isAllTimeRange(value) ? allTimeFrom?.getTime() : undefined}
               mode="range"
-              defaultMonth={value?.from}
-              selected={value as DayPickerDateRange | undefined}
+              defaultMonth={calendarRange?.from ?? asOf}
+              selected={calendarRange as DayPickerDateRange | undefined}
               onSelect={(selectedRange: DayPickerDateRange | undefined) => {
                 onChange(selectedRange as DateRange | undefined);
               }}

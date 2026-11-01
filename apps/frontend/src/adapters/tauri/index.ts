@@ -226,6 +226,7 @@ export {
   createAgentAccessToken,
   deleteAgentAccessToken,
   decideMcpOAuth,
+  updateAgentAccessTokenScopes,
 } from "./agent-access";
 
 // AI Streaming (Tauri Channel-based implementation)
@@ -233,11 +234,13 @@ export { streamAiChat } from "./ai-streaming";
 
 // Event Listeners (Tauri listen() implementation)
 export {
+  listenBackButton,
   listenFileDropHover,
   listenFileDrop,
   listenFileDropCancelled,
   listenPortfolioUpdateStart,
   listenPortfolioUpdateComplete,
+  listenGoalSummariesUpdated,
   listenDatabaseRestored,
   listenDeviceSyncRestore,
   listenPortfolioUpdateError,
