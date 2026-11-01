@@ -18,6 +18,7 @@ import { usePortfolioSyncOptional } from "@/context/portfolio-sync-context";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { assetLogoRegistry } from "@/lib/asset-logo-registry";
 import { isBackgroundEvent } from "@/lib/fork-background-events";
+import { isWebCurrencyCompletion, resetWebCurrencyQueries } from "@/lib/fork-currency-cache";
 import {
   invalidateAfterAssetClassificationsChanged,
   shouldInvalidateAfterPortfolioUpdate,
@@ -227,7 +228,10 @@ const useGlobalEventListener = () => {
       logger.error("Portfolio Update Error: " + errorMessage);
     };
 
-    const handlePortfolioUpdateComplete = (event: { payload: unknown }) => {
+    const handlePortfolioUpdateComplete = async (event: { payload: unknown }) => {
+      if (!isTauriEnv && isWebCurrencyCompletion(event.payload)) {
+        await resetWebCurrencyQueries(queryClientRef.current);
+      }
       if (isBackgroundEvent(event.payload)) {
         // Nothing was shown for it; just refresh the data below.
       } else if (isMobileViewportRef.current && syncContextRef.current) {

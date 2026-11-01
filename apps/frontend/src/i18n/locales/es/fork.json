@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "Años naturales"
+  },
+  "dashboard": {
+    "intradayEstimate": "Los gráficos intradía son estimaciones. No incluyen cambios del tipo de cambio durante la sesión ni operaciones y flujos de efectivo."
   }
 }

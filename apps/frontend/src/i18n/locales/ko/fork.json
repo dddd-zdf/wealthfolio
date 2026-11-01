@@ -13,5 +13,8 @@
   },
   "dateRange": {
     "calendarYears": "연도별"
+  },
+  "dashboard": {
+    "intradayEstimate": "장중 차트는 추정치입니다. 장중 환율 변동과 거래 및 현금 흐름은 반영되지 않습니다."
   }
 }

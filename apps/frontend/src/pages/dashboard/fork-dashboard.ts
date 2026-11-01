@@ -5,7 +5,7 @@
 // - 1D/1W: the chart is drawn from live intraday prices, anchored to the
 //   stored daily totals, with a faint guide where the period started.
 // - Other periods: money-weighted return beside the simple return.
-import { getIntradayValuations } from "@/adapters";
+import { getIntradayValuations, isWeb } from "@/adapters";
 import { performanceMoneyWeightedReturn, summarizeDayChange } from "@/lib/fork-performance";
 import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
@@ -89,7 +89,15 @@ export function useDashboardChart({
   const intradayRange =
     selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
   const { data: intradayPoints } = useQuery({
-    queryKey: [QueryKeys.HISTORY_VALUATION, "intraday", scopeKey, intradayRange],
+    // Include the display/base currency so a settings transition cannot reuse
+    // a curve calculated for the previous currency and merely relabel it.
+    queryKey: [
+      QueryKeys.HISTORY_VALUATION,
+      "intraday",
+      scopeKey,
+      ...(isWeb ? [baseCurrency] : []),
+      intradayRange,
+    ],
     queryFn: () => getIntradayValuations(scope, intradayRange!),
     enabled: intradayRange !== null,
     staleTime: 5 * 60 * 1000,
@@ -136,5 +144,10 @@ export function useDashboardChart({
         ? chartData[0].totalValue
         : undefined;
 
-  return { chartData, timeDomain, referenceValue };
+  return {
+    chartData,
+    timeDomain,
+    referenceValue,
+    isIntradayEstimate: isWeb && intradayRange !== null,
+  };
 }
