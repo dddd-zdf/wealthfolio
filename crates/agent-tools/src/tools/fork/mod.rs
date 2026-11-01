@@ -93,6 +93,10 @@ impl AgentTool for ReviewedCategorizationRule {
         UpstreamReviewedCategorizationRule.access_level()
     }
 
+    fn is_additive(&self) -> bool {
+        UpstreamReviewedCategorizationRule.is_additive()
+    }
+
     fn sanitize_args_for_audit(&self, args: &serde_json::Value) -> serde_json::Value {
         UpstreamReviewedCategorizationRule.sanitize_args_for_audit(args)
     }

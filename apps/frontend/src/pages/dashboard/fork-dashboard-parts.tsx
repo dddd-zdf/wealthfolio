@@ -13,13 +13,13 @@ export function DashboardMoneyWeightedReturn({ value }: { value: MoneyWeightedRe
   if (value == null) return null;
   return (
     <>
-      <div className="border-secondary my-1 border-r pr-2" />
+      <div className="border-secondary my-1 border-e pe-2" />
       <span className="lg:text-md text-muted-foreground text-sm font-light">
         {value.annualized
           ? t("performance:metric.ann_mwr_short")
           : t("performance:metric.mwr_short")}
       </span>
-      <GainPercent className="lg:text-md !ml-1.5 text-sm font-light" value={value.value} />
+      <GainPercent className="lg:text-md !ms-1.5 text-sm font-light" value={value.value} />
     </>
   );
 }

@@ -99,8 +99,10 @@ export default function OAuthConsentPage() {
             disabled={pending}
             onClick={() => toggle(scope.key)}
             className={cn(
-              "flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-              checked ? "border-success/50 bg-success/10" : "border-border hover:bg-muted/40",
+              "flex w-full items-center justify-between gap-2 rounded-md border px-3 py-2 text-start text-sm transition-colors",
+              checked
+                ? "border-success-subtle-border bg-success-subtle text-success-subtle-foreground"
+                : "border-border hover:bg-muted/40",
             )}
           >
             <span className="truncate font-medium">{scopeLabel(t, scope.key)}</span>
