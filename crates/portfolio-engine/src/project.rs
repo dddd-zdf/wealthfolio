@@ -827,7 +827,7 @@ impl Projector<'_> {
         let touched: BTreeSet<&AssetId> = events
             .iter()
             .filter(|event| !run.rejected(&event.source))
-            .filter_map(|e| footprint(e))
+            .flat_map(|e| footprint(e))
             .collect();
         let account_currency = account.currency.as_str().to_string();
         let base = self.base().to_string();
