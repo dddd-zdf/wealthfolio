@@ -26,7 +26,7 @@ async fn mcp_call(
     parse_sse_data(&response.text().await.unwrap())["result"].clone()
 }
 
-/// Scopes for a token that may use every write tool.
+/// Fork write grants plus the upstream reviewed categorization workflow.
 fn full_write_scopes() -> Vec<&'static str> {
     READ_ONLY_SCOPES
         .iter()
@@ -38,6 +38,7 @@ fn full_write_scopes() -> Vec<&'static str> {
             "classification:write",
             "categorization:write",
             "accounts:write",
+            "spending:write",
         ])
         .collect()
 }
@@ -60,6 +61,21 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
     assert_eq!(status, 201);
     let pat = created["token"].as_str().unwrap().to_string();
     let session = mcp_initialize(&server, &pat).await;
+
+    // The fork's direct legacy rule contract is intentionally narrower than
+    // the reviewed upstream workflow: categorization:write is sufficient.
+    let (status, legacy_created) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({
+            "name": "legacy rule writer",
+            "scopes": ["categorization:write"]
+        }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let legacy_pat = legacy_created["token"].as_str().unwrap().to_string();
+    let legacy_session = mcp_initialize(&server, &legacy_pat).await;
 
     // create_account persists through the account service.
     let result = mcp_call(
@@ -120,8 +136,8 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
     // and saves immediately through the live taxonomy.
     let result = mcp_call(
         &server,
-        &pat,
-        &session,
+        &legacy_pat,
+        &legacy_session,
         13,
         "commit_categorization_rule",
         serde_json::json!({
@@ -140,8 +156,8 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
     // Unknown category keys fail before persistence.
     let result = mcp_call(
         &server,
-        &pat,
-        &session,
+        &legacy_pat,
+        &legacy_session,
         14,
         "commit_categorization_rule",
         serde_json::json!({
@@ -156,12 +172,12 @@ async fn mcp_create_account_and_commit_rule_roundtrip() {
         result["content"][0]["text"]
             .as_str()
             .unwrap()
-            .contains("nope-not-a-key"),
+            .contains("Unknown transaction category"),
         "{}",
         result["content"][0]["text"]
     );
 
-    // The reviewed-draft path has a separate name and classification scopes.
+    // The reviewed-draft path has a separate name and Spending scopes.
     let draft = mcp_call(
         &server,
         &pat,

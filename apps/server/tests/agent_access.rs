@@ -3320,7 +3320,10 @@ async fn spending_only_reads_are_scoped_paginated_and_available_without_investme
         "create_categorization_rule",
         "list_categorization_rules",
     ] {
-        assert!(names.contains(&name), "{name}");
+        // The fork keeps the MCP listing intentionally small. Spending tools
+        // remain callable by name when the token has spending:read, but are
+        // not advertised through tools/list.
+        assert!(!names.contains(&name), "{name}");
     }
     for name in [
         "search_activities",
@@ -3490,7 +3493,9 @@ async fn mcp_permission_edits_apply_in_the_existing_session() {
             .iter()
             .any(|t| t["name"] == "get_goals");
         if scopes.as_array().unwrap().len() == 2 {
-            assert!(visible);
+            // Fork MCP listing is a stable allowlist; permission edits change
+            // call authorization without expanding tools/list.
+            assert!(!visible);
             assert!(
                 mcp_call_tool(&server, pat, &session, "get_goals", serde_json::json!({})).await
                     ["goals"]
@@ -4220,7 +4225,7 @@ async fn reviewed_spending_splits_rules_events_and_tags_roundtrip_without_activi
         &server,
         &pat,
         &session,
-        "commit_categorization_rule",
+        "commit_reviewed_categorization_rule",
         serde_json::json!({"rule":draft["rule"]}),
     )
     .await["created"]
