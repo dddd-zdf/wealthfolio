@@ -1,0 +1,90 @@
+name: Web currency consistency upstream review
+
+on:
+  push:
+    branches: [ci/fx-upstream-review-20261101]
+    paths: [.github/workflows/web-currency-review.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-currency-upstream-review
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server currency transition and history rebuild
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: -C debuginfo=0
+      CONNECT_API_URL: http://test.local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/web-currency-consistency
+      - name: Record tested revision
+        run: git rev-parse HEAD | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key: pr-server-check
+          add-rust-environment-hash-key: false
+          save-if: false
+      - name: Rust formatting
+        run: cargo fmt -p wealthfolio-server -p wealthfolio-core -- --check
+      - name: Server Clippy
+        run: cargo clippy --locked -p wealthfolio-server --all-targets --all-features -- -D warnings
+      - name: Server regression tests
+        run: cargo nextest run --locked -p wealthfolio-server --no-fail-fast
+      - name: Currency rebuild core regression
+        run: cargo nextest run --locked -p wealthfolio-core -E 'test(currency_transition)' --no-fail-fast
+
+  web:
+    name: Web cache regressions, lint, types and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BUILD_TARGET: web
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/web-currency-consistency
+      - name: Record tested revision
+        run: git rev-parse HEAD | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - run: pnpm install --frozen-lockfile
+      - name: Changed frontend formatting
+        run: >-
+          pnpm exec oxfmt --check
+          apps/frontend/src/hooks/use-settings.ts
+          apps/frontend/src/hooks/use-settings-mutation.ts
+          apps/frontend/src/hooks/use-settings-mutation.test.tsx
+          apps/frontend/src/lib/currency-cache.ts
+          apps/frontend/src/lib/currency-cache.test.ts
+          apps/frontend/src/lib/settings-provider.tsx
+          apps/frontend/src/use-global-event-listener.ts
+      - name: Frontend lint
+        run: pnpm --filter frontend lint:quiet
+      - name: Type checks
+        run: pnpm type-check
+      - name: Focused web regressions
+        run: >-
+          pnpm --filter frontend exec vitest run
+          src/lib/currency-cache.test.ts
+          src/hooks/use-settings-mutation.test.tsx
+          src/adapters/web/events.test.ts
+          src/adapters/web/settings.test.ts
+      - name: Web production build
+        run: pnpm build
