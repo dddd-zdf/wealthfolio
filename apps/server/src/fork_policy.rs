@@ -171,7 +171,7 @@ impl JobObserver for ServerJobObserver {
             .publish(self.progress(PORTFOLIO_UPDATE_COMPLETE));
         match self.goal_service.refresh_all_goal_summaries().await {
             Ok(goals) => {
-                crate::api::goals::emit_goal_summaries_updated(&self.event_bus, &goals, false)
+                crate::api::shared::emit_goal_summaries_updated(&self.event_bus, &goals, false)
             }
             Err(error) => tracing::warn!(
                 "Goal summary batch refresh failed ({})",

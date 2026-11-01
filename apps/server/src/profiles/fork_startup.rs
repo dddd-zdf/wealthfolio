@@ -2,15 +2,13 @@
 
 use std::sync::Arc;
 
-use uuid::Uuid;
-
-use super::{failure, AppState, Result, WebProfiles};
+use super::WebProfiles;
 
 impl WebProfiles {
     /// Starts the unlocked default profile so its background price updates
     /// run without waiting for a first visit. Failures are left for that
     /// visit to retry and report.
-    pub async fn start_default_profile(&self) {
+    pub async fn start_default_profile(self: &Arc<Self>) {
         let Ok(id) = self.registry.default_id() else {
             return;
         };
@@ -23,14 +21,5 @@ impl WebProfiles {
                 tracing::warn!(%status, "Default profile startup deferred to first request");
             }
         }
-    }
-
-    /// [`WebProfiles::runtime`], detached so a client timeout doesn't cancel a
-    /// slow cold start.
-    pub(super) async fn runtime_detached(self: &Arc<Self>, id: Uuid) -> Result<Arc<AppState>> {
-        let root = self.clone();
-        tokio::spawn(async move { root.runtime(id).await })
-            .await
-            .map_err(failure)?
     }
 }

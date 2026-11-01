@@ -480,7 +480,7 @@ async fn command(
             if let Some(session) = &session {
                 // Gate financial UI startup on the runtime, not just the grant.
                 // Failed initialization remains retryable with the same session.
-                root.runtime_detached(session.profile_id).await?;
+                root.runtime(session.profile_id).await?;
                 registry
                     .sessions
                     .admit(&owner.0, session.scope_id)
