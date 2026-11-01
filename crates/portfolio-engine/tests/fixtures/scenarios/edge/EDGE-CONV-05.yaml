@@ -31,6 +31,11 @@ quotes:
 fx_rates:
   - { from: CAD, to: USD, day: 2025-01-02, rate: 0.75 }
   - { from: CAD, to: USD, day: 2025-01-10, rate: 0.70 }
+  # Keep this conversion scenario fully covered under the fork's seven-day
+  # as-of FX limit; missing/stale FX is tested in the currency scenarios.
+  - { from: CAD, to: USD, day: 2025-01-17, rate: 0.70 }
+  - { from: CAD, to: USD, day: 2025-01-24, rate: 0.70 }
+  - { from: CAD, to: USD, day: 2025-01-31, rate: 0.70 }
   - { from: CAD, to: USD, day: 2025-02-03, rate: 0.72 }
 expected_notes: >
   The account holds USD cash: 5000 - 1000 - 1100 = 2900. buy-1 costs 1000
