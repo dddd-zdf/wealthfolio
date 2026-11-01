@@ -3039,6 +3039,7 @@ mod tests {
             &history,
             false,
             None,
+            Baseline::Inception,
             true,
             MeasureProfile::Full,
             true,
