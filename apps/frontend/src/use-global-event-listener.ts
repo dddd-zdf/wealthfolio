@@ -20,6 +20,7 @@ import { usePortfolioSyncOptional } from "@/context/portfolio-sync-context";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { assetLogoRegistry } from "@/lib/asset-logo-registry";
 import { isWebCurrencyCompletion } from "@/lib/currency-cache";
+import { QueryKeys } from "@/lib/query-keys";
 import {
   invalidateAfterAssetClassificationsChanged,
   invalidateAfterGoalSummariesUpdated,

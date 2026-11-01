@@ -21,7 +21,7 @@ use wealthfolio_core::{
     portfolio::coordinator::{AccountFailure, JobObserver, RetryPolicy},
     portfolio::projection::{MarkerScope, ProjectionStoreTrait},
     quotes::{MarketSyncMode, SyncResult},
-    settings::{Settings, SettingsServiceTrait, SettingsUpdate},
+    settings::{Settings, SettingsUpdate},
 };
 
 use crate::{
