@@ -1,4 +1,5 @@
-import { logger, updateSettings } from "@/adapters";
+import { isWeb, logger, updateSettings } from "@/adapters";
+import { resetWebCurrencyQueries } from "@/lib/fork-currency-cache";
 import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { QueryKeys } from "@/lib/query-keys";
 import { invalidatePerformanceCaches } from "@/lib/performance-cache";
@@ -19,6 +20,9 @@ export function useSettingsMutation(
   return useMutation({
     mutationFn: updateSettings,
     onSuccess: async (updatedSettings, variables) => {
+      if (isWeb && "baseCurrency" in variables) {
+        await resetWebCurrencyQueries(queryClient);
+      }
       queryClient.invalidateQueries({ queryKey: [QueryKeys.SETTINGS] });
       if (
         "baseCurrency" in variables ||

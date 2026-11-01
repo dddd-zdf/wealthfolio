@@ -77,6 +77,17 @@ git diff --numstat --diff-filter=M "$(git merge-base origin/main upstream/main)"
 | Review count on the Activities nav item             | `apps/frontend/src/pages/layouts/navigation/fork-nav-badge.tsx`                                                                                                                                                                  | `useNavigation` wraps its primary items with `useNeedsReviewBadge`; the sidebar renders `NavIcon`.                                                                                                                                       |
 | Calendar-year quick picks                           | `packages/ui/src/components/common/fork-year-presets.tsx`                                                                                                                                                                        | `DateRangeSelector` renders `YearPresets` when `yearPresets` is set (the performance page passes 5). Its label is in the `fork` namespace.                                                                                               |
 
+## Historical currency corrections
+
+The web settings wrapper and read guard live in
+`apps/server/src/api/settings/fork_currency.rs`; browser cache reset is in
+`apps/frontend/src/lib/fork-currency-cache.ts`. Dated service FX selection lives
+in `fx/currency_converter/fork_history.rs` and the engine selector in
+`portfolio-engine/src/resolve/fork_fx.rs`. Preserve their matching carry bound
+and the engine's suppression of return series when endpoint values are
+unavailable. See [currency-history.md](currency-history.md) for semantics and
+merge checks.
+
 ## Deliberate changes inside upstream code
 
 Some behavior belongs at the calculation or authorization boundary and cannot be

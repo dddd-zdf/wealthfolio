@@ -8,6 +8,7 @@ import { useDashboardChart } from "./fork-dashboard";
 
 vi.mock("@/adapters", () => ({
   getIntradayValuations: vi.fn(),
+  isWeb: true,
 }));
 
 const mockIntraday = vi.mocked(getIntradayValuations);

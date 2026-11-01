@@ -21,6 +21,7 @@ const uiMocks = vi.hoisted(() => ({
 vi.mock("@/adapters", () => ({
   calculatePerformanceSummary: vi.fn(),
   getIntradayValuations: vi.fn(),
+  isWeb: true,
 }));
 
 vi.mock("@/components/privacy-toggle", () => ({
@@ -504,6 +505,7 @@ describe("DashboardContent", () => {
         ([options]) => options.queryKey[1] === "intraday",
       )?.[0];
       expect(intraday?.queryKey).toContain("portfolio:retirement");
+      expect(intraday?.queryKey).toContain("USD");
       if (interval === "1D") {
         await (intraday?.queryFn as () => Promise<unknown>)();
         expect(getIntradayValuations).toHaveBeenCalledWith(scope, "1D");

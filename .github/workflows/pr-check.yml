@@ -6,6 +6,7 @@ on:
       - main
       - develop
       - "feature/**"
+      - codex/upstream-3.11
 
 permissions:
   contents: read
@@ -119,9 +120,12 @@ jobs:
         # Declarations are already built above; the frontend build runs its type check.
         run: pnpm --filter './packages/*' -r type-check
 
-      - name: Run script tests
-        # The frontend unit tests run in the Frontend Tests job.
-        run: pnpm test:scripts
+      - name: Run web script tests
+        # The frontend unit tests run in the Frontend Tests job. Keep native/Tauri
+        # wrapper tests out of the web-only deployment gate.
+        run:
+          node --test scripts/design-ratchet-direction.test.mjs
+          apps/frontend/scripts/theme-generate.test.mjs
 
       - name: Check the generated theme CSS
         # Fails when src/themes/generated is stale against the definitions, or a
@@ -150,6 +154,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    env:
+      BUILD_TARGET: web
     strategy:
       fail-fast: false
       matrix:
@@ -174,7 +180,10 @@ jobs:
         run: pnpm run build:types
 
       - name: Run Vitest shard
-        run: pnpm --filter frontend exec vitest run --shard=${{ matrix.shard }}/2
+        run: >-
+          pnpm --filter frontend exec vitest run --shard=${{ matrix.shard }}/2 --exclude
+          'src/adapters/tauri/**' --exclude '**/native-*.test.*' --exclude
+          'src/adapters/adapter-command-parity.test.ts'
 
   rust-clippy:
     name: Rust Clippy
