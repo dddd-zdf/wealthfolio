@@ -118,6 +118,10 @@ fn resolve_assignments(
                 activity_id: activity_id.to_string(),
                 taxonomy_id: input.taxonomy_id.clone(),
                 category_id: category_id.clone(),
+                // The fork's legacy key-based contract has no reviewed split
+                // snapshot. Keep the native guard active: a category commit
+                // must not clear allocations that the caller did not review.
+                expected_splits: None,
             }),
             None => unknown.push(format!("{} / {}", input.taxonomy_id, input.category_key)),
         }
@@ -270,7 +274,9 @@ mod tests {
         assert_eq!(items[0].activity_id, "a1");
         assert_eq!(items[0].taxonomy_id, "tax1");
         assert_eq!(items[0].category_id, "cat-g");
+        assert!(items[0].expected_splits.is_none());
         assert_eq!(items[1].category_id, "cat-c");
+        assert!(items[1].expected_splits.is_none());
     }
 
     #[test]
