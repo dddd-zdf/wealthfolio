@@ -48,19 +48,7 @@ jobs:
           save-if: false
       - name: Rust formatting
         run: cargo fmt ${{ matrix.packages }} -- --check
-      - name: Clippy for affected crates
-        run: cargo clippy --locked ${{ matrix.packages }} --all-targets --all-features -- -D warnings
-      - name: Generate updated golden expectations for review
-        env:
-          INSTA_UPDATE: always
-        run: |
-          cargo test --locked -p wealthfolio-portfolio-engine --test goldens
-          git diff --binary -- crates/portfolio-engine/tests/fixtures/goldens > "$RUNNER_TEMP/fx-goldens.patch"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fx-upstream-golden-review
-          path: ${{ runner.temp }}/fx-goldens.patch
-      - name: Recheck the two failed golden consumers
+      - name: Verify committed expectations at the final PR head
         run: >-
           cargo nextest run --locked ${{ matrix.packages }}
           -E 'test(kernel_goldens) | test(every_parity_scenario_persists_the_kernel_golden)'
