@@ -1,7 +1,7 @@
 // A web currency change is acknowledged only after the server rebuilds history.
 // Cancel old in-flight responses and clear financial amounts before accepting
 // the new settings label.
-import type { QueryClient } from "@tanstack/react-query";
+import { notifyManager, type QueryClient } from "@tanstack/react-query";
 import { QueryKeys } from "./query-keys";
 import type { Settings } from "./types";
 
@@ -41,13 +41,27 @@ const currencyKeys = new Set<string>([
   QueryKeys.SNAPSHOT_HOLDINGS,
 ]);
 
-export async function resetWebCurrencyQueries(queryClient: QueryClient): Promise<void> {
+export async function resetWebCurrencyQueries(
+  queryClient: QueryClient,
+  authoritativeSettings?: Settings,
+): Promise<void> {
   const filter = {
     predicate: (query: { queryKey: readonly unknown[] }) =>
       typeof query.queryKey[0] === "string" && currencyKeys.has(query.queryKey[0]),
   };
   await queryClient.cancelQueries(filter);
-  await queryClient.resetQueries(filter);
+  const queries = queryClient.getQueryCache().findAll(filter);
+  notifyManager.batch(() => {
+    // Query.reset() is the cache operation used by resetQueries, without its
+    // automatic refetch. Install the authoritative label in the same batch.
+    queries.forEach((query) => query.reset());
+    if (authoritativeSettings) {
+      queryClient.setQueryData([QueryKeys.SETTINGS], authoritativeSettings);
+    }
+  });
+  if (authoritativeSettings) {
+    await queryClient.refetchQueries({ ...filter, type: "active" });
+  }
 }
 
 export function isWebCurrencyCompletion(payload: unknown): boolean {
@@ -66,7 +80,7 @@ export async function fetchWebCurrencySettings(
   const next = await fetchSettings();
   const previous = queryClient.getQueryData<Settings>([QueryKeys.SETTINGS]);
   if (previous && previous.baseCurrency !== next.baseCurrency) {
-    await resetWebCurrencyQueries(queryClient);
+    await resetWebCurrencyQueries(queryClient, next);
   }
   return next;
 }

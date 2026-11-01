@@ -10,6 +10,7 @@ import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsMutation } from "./use-settings-mutation";
 
 vi.mock("@/adapters", () => ({
+  isWeb: false,
   logger: { error: vi.fn() },
   updateSettings: vi.fn(),
 }));

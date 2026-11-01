@@ -246,6 +246,14 @@ pub(crate) async fn guard_reads(
     request: Request,
     next: Next,
 ) -> Response {
+    guard_transition(&state.currency_transition, request, next).await
+}
+
+async fn guard_transition(
+    transition: &CurrencyTransition,
+    request: Request,
+    next: Next,
+) -> Response {
     let path = request
         .uri()
         .path()
@@ -256,12 +264,12 @@ pub(crate) async fn guard_reads(
         return next.run(request).await;
     }
 
-    let revision = state.currency_transition.revision.load(Ordering::SeqCst);
-    if !state.currency_transition.accepts(revision) {
+    let revision = transition.revision.load(Ordering::SeqCst);
+    if !transition.accepts(revision) {
         return unavailable();
     }
     let response = next.run(request).await;
-    if state.currency_transition.accepts(revision) {
+    if transition.accepts(revision) {
         response
     } else {
         unavailable()
@@ -315,24 +323,7 @@ mod tests {
             )
             .layer(middleware::from_fn(move |request, next| {
                 let transition = transition.clone();
-                async move {
-                    let path = request.uri().path();
-                    let settings_read =
-                        path == "/settings" && request.method() == axum::http::Method::GET;
-                    if !settings_read && !financial_path(path) {
-                        return next.run(request).await;
-                    }
-                    let revision = transition.revision.load(Ordering::SeqCst);
-                    if !transition.accepts(revision) {
-                        return unavailable();
-                    }
-                    let response = next.run(request).await;
-                    if transition.accepts(revision) {
-                        response
-                    } else {
-                        unavailable()
-                    }
-                }
+                async move { guard_transition(&transition, request, next).await }
             }))
     }
 
@@ -375,5 +366,45 @@ mod tests {
         transition.finish(true);
         assert!(!transition.accepts(revision));
         assert!(transition.accepts(transition.revision.load(Ordering::SeqCst)));
+    }
+
+    #[tokio::test]
+    async fn an_in_flight_read_cannot_return_its_old_currency_after_rebuild() {
+        let transition = Arc::new(CurrencyTransition::default());
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let app = Router::new()
+            .route(
+                "/valuations/history/query",
+                get({
+                    let entered = entered.clone();
+                    let release = release.clone();
+                    move || async move {
+                        entered.notify_one();
+                        release.notified().await;
+                        "old currency"
+                    }
+                }),
+            )
+            .layer(middleware::from_fn({
+                let transition = transition.clone();
+                move |request, next| {
+                    let transition = transition.clone();
+                    async move { guard_transition(&transition, request, next).await }
+                }
+            }));
+        let read = tokio::spawn(
+            app.oneshot(
+                Request::builder()
+                    .uri("/valuations/history/query")
+                    .body(Body::empty())
+                    .unwrap(),
+            ),
+        );
+        entered.notified().await;
+        transition.begin();
+        transition.finish(true);
+        release.notify_one();
+        assert_eq!(read.await.unwrap().unwrap().status(), StatusCode::CONFLICT);
     }
 }

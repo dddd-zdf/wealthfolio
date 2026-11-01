@@ -1,4 +1,4 @@
-import { QueryClient } from "@tanstack/react-query";
+import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { QueryKeys } from "./query-keys";
 import {
@@ -33,6 +33,51 @@ describe("web currency cache transition", () => {
     ]) {
       expect(isWebCurrencyCompletion(payload)).toBe(false);
     }
+  });
+
+  it("installs the new currency before an active financial query refetches", async () => {
+    const client = new QueryClient();
+    const key = [QueryKeys.CURRENT_VALUATION, "portfolio:all"];
+    client.setQueryData([QueryKeys.SETTINGS], { baseCurrency: "CAD" });
+    client.setQueryData(key, { amount: 100 });
+    const currenciesSeen: unknown[] = [];
+    const observer = new QueryObserver(client, {
+      queryKey: key,
+      staleTime: Infinity,
+      queryFn: async () => {
+        currenciesSeen.push(client.getQueryData<Settings>([QueryKeys.SETTINGS])?.baseCurrency);
+        return { amount: 500 };
+      },
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await resetWebCurrencyQueries(client, { baseCurrency: "CNY" } as Settings);
+    expect(currenciesSeen).toEqual(["CNY"]);
+    expect(client.getQueryData(key)).toEqual({ amount: 500 });
+    unsubscribe();
+    client.clear();
+  });
+
+  it("a cancelled old-currency request cannot replace the rebuilt result", async () => {
+    const client = new QueryClient();
+    const key = [QueryKeys.HOLDINGS, "portfolio:all"];
+    client.setQueryData([QueryKeys.SETTINGS], { baseCurrency: "CAD" });
+    let finishOld!: (value: { amount: number }) => void;
+    const oldRequest = client
+      .fetchQuery({
+        queryKey: key,
+        queryFn: () =>
+          new Promise<{ amount: number }>((resolve) => {
+            finishOld = resolve;
+          }),
+      })
+      .catch(() => undefined);
+    await resetWebCurrencyQueries(client, { baseCurrency: "CNY" } as Settings);
+    client.setQueryData(key, { amount: 500 });
+    finishOld({ amount: 100 });
+    await oldRequest;
+    await Promise.resolve();
+    expect(client.getQueryData(key)).toEqual({ amount: 500 });
+    client.clear();
   });
 
   it("cancels and resets every financial cache family", async () => {

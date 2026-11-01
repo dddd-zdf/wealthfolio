@@ -28,7 +28,7 @@ export function useSettingsMutation(
     mutationFn: updateSettings,
     onSuccess: async (updatedSettings, variables) => {
       if (isWeb && "baseCurrency" in variables) {
-        await resetWebCurrencyQueries(queryClient);
+        await resetWebCurrencyQueries(queryClient, updatedSettings);
       }
       queryClient.invalidateQueries({ queryKey: [QueryKeys.SETTINGS] });
       if (
