@@ -1,7 +1,6 @@
 //! Unit tests for the income service.
 
 use super::*;
-use crate::Result;
 use crate::activities::{
     Activity, ActivityBulkMutationResult, ActivityRepositoryTrait, ActivitySearchResponse,
     ActivityUpdate, ActivityUpsert, BulkUpsertResult, ImportMapping, ImportTemplate, IncomeData,
@@ -12,6 +11,7 @@ use crate::fx::{ExchangeRate, FxService, FxServiceTrait};
 use crate::limits::ContributionActivity;
 use crate::test_support::in_memory::InMemoryFxRepository;
 use crate::utils::clock;
+use crate::Result;
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
