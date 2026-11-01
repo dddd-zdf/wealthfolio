@@ -445,7 +445,7 @@ async fn rpc(client: &reqwest::Client, url: &str, method: &str, params: Value) -
 }
 
 #[tokio::test]
-async fn mcp_transport_exposes_tools_and_audits_redacted_prepare_and_commit() {
+async fn mcp_transport_keeps_unlisted_tools_callable_and_audits_redacted_prepare_and_commit() {
     use axum::{
         body::Body,
         http::Request,
@@ -510,7 +510,8 @@ async fn mcp_transport_exposes_tools_and_audits_redacted_prepare_and_commit() {
         "prepare_transaction_category",
         "commit_transaction_category",
     ] {
-        assert!(names.contains(&name));
+        // Fork discovery stays a small allowlist; grants still authorize calls by name.
+        assert!(!names.contains(&name));
     }
     let prepared = rpc(&client, &url, "tools/call", json!({
         "name": "prepare_transaction_category", "arguments": {
@@ -539,8 +540,8 @@ async fn mcp_transport_exposes_tools_and_audits_redacted_prepare_and_commit() {
         .iter()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
-    assert!(names.contains(&"list_transaction_categories"));
-    assert!(names.contains(&"prepare_transaction_category"));
+    assert!(!names.contains(&"list_transaction_categories"));
+    assert!(!names.contains(&"prepare_transaction_category"));
     assert!(!names.contains(&"commit_transaction_category"));
     let denied = rpc(
         &read_only,
