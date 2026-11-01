@@ -1,0 +1,54 @@
+name: Historical FX upstream review
+
+on:
+  push:
+    branches: [ci/fx-upstream-review-20261101]
+    paths: [.github/workflows/fx-upstream-review.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-fx-upstream-review
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust - ${{ matrix.change }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - change: historical FX
+            ref: fix/historical-fx-as-of
+            packages: -p wealthfolio-core -p wealthfolio-portfolio-engine
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: always
+      RUSTFLAGS: -C debuginfo=0
+      CONNECT_API_URL: http://test.local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+      - name: Record tested revision
+        run: git rev-parse HEAD | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key: pr-server-check
+          add-rust-environment-hash-key: false
+          save-if: false
+      - name: Rust formatting
+        run: cargo fmt ${{ matrix.packages }} -- --check
+      - name: Clippy for affected crates
+        run: cargo clippy --locked ${{ matrix.packages }} --all-targets --all-features -- -D warnings
+      - name: Affected crate regression tests
+        run: cargo nextest run --locked ${{ matrix.packages }} --no-fail-fast
