@@ -178,18 +178,18 @@ the beginning when the close is one of the two around a split (they decide
 whether the provider already adjusted the series, which rescales every earlier
 price). Historical conversions use only past FX observations, carried for at
 most seven calendar days per edge. FX invalidation conservatively retains its
-existing reach to the day after the pair's previous observation:
-every account revalues from there, and only accounts with activity since then
-also refold (the fold converts on activity days alone). Asset facts and splits
-refold the asset's holders from the beginning. When the day moves, facts dated
-in the new days (a scheduled deposit) were outside the previous range, so their
-account refolds; a split among them revalues its asset's holders from the
-beginning. A refold reaches the account's transfer partners. A transactions
-account with no activity in the range (none yet, or only scheduled ones) has no
-keyframe: valuation presents its empty state as one row on `as_of`, which moves
-with it. Whatever reaches such an account refolds it from the beginning: a
-revalue would find no keyframe to value, and a rewrite from a later day would
-leave the old row behind.
+existing reach to the day after the pair's previous observation: every account
+revalues from there, and only accounts with activity since then also refold (the
+fold converts on activity days alone). Asset facts and splits refold the asset's
+holders from the beginning. When the day moves, facts dated in the new days (a
+scheduled deposit) were outside the previous range, so their account refolds; a
+split among them revalues its asset's holders from the beginning. A refold
+reaches the account's transfer partners. A transactions account with no activity
+in the range (none yet, or only scheduled ones) has no keyframe: valuation
+presents its empty state as one row on `as_of`, which moves with it. Whatever
+reaches such an account refolds it from the beginning: a revalue would find no
+keyframe to value, and a rewrite from a later day would leave the old row
+behind.
 
 Holdings-mode accounts only revalue: their facts are observed snapshots. A
 refold is not resumed from a stored state: folding the refolded accounts (and
@@ -753,8 +753,8 @@ Testable contract; the property suite (§5) encodes each one.
 - Historical FX never looks forward in time or substitutes a latest rate for
   missing history. A valuation is deterministic given the surface, and the
   surface is part of the facts; a late-arriving historical rate changing history
-  is a change of facts like any other: the
-  shell records the write, and `impact` says how far back it reaches.
+  is a change of facts like any other: the shell records the write, and `impact`
+  says how far back it reaches.
 
 ### 4.8 Memory envelope and scoping
 
