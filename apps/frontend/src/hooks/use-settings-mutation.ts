@@ -28,6 +28,9 @@ export function useSettingsMutation(
     mutationFn: updateSettings,
     onSuccess: async (updatedSettings, variables) => {
       if (isWeb && "baseCurrency" in variables) {
+        // A settings read sent before the transition may still be in flight.
+        // Do not let its old label overwrite the canonical save response.
+        await queryClient.cancelQueries({ queryKey: [QueryKeys.SETTINGS] });
         await resetWebCurrencyQueries(queryClient, updatedSettings);
       }
       queryClient.invalidateQueries({ queryKey: [QueryKeys.SETTINGS] });
