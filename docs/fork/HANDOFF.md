@@ -101,27 +101,33 @@ To see the full divergence:
 
 ## Upstream integration
 
-The 3.12 integration branch merges pinned release `v3.12.0` (`da8cf98e0`) into
-the fork after 3.11 and the web/FX fixes in #52. Upstream now owns
-credit/cash-back income attribution; the fork retains its regression test rather
-than a second implementation. Keep persisted `categorization:write` and
-`accounts:write` grants and the direct/reviewed tool contracts alongside
-upstream Spending permissions. Existing tokens are not automatically granted new
-Spending permissions.
+The 3.12 integration ([#53](https://github.com/dddd-zdf/wealthfolio/pull/53))
+merges pinned release `v3.12.0` (commit `f217ef5fb`) into the fork after 3.11
+and the web/FX fixes in #52. Upstream now owns credit/cash-back income
+attribution; the fork retains its regression test rather than a second
+implementation. Keep persisted `categorization:write` and `accounts:write`
+grants and the direct/reviewed tool contracts alongside upstream Spending
+permissions. Existing tokens are not automatically granted new Spending
+permissions.
 
 The three upstream migrations register MOEX and AMFI disabled and preserve
-Classic/Mono for onboarded profiles without explicit appearance settings. No
-live upgrade is implied by this branch; test startup on a database copy and take
-a verified pre-upgrade backup before deployment.
+Classic/Mono for onboarded profiles without explicit appearance settings.
+Production was upgraded on 2026-11-02 to ARM64 image `mcp-6f7e4a9` (source
+`6f7e4a924c5f9c8bfbee9d655a657da34879264a`). Web/server CI, ARM image/encryption
+smoke, isolated copied-data startup, source-record comparison and live
+HTTP/OAuth/MCP checks passed. A verified full-volume pre-upgrade backup and the
+previous container/image are retained; exact backup and rollback evidence is in
+the private infra deployment record. Continue to validate copied-data startup
+and take a fresh verified backup before future upgrades.
 
 The 3.11 integration merges pinned release `v3.11.0` (`d1fda0b65`) into fork
 main at `268b3e67f`. Keep the merge commit when promoting this branch; squashing
 an upstream synchronization loses the release ancestry needed by future merges.
 See [upstream-3.11.md](upstream-3.11.md) for resolutions and scope.
 
-The 3.10 integration merges release `v3.10.0` (`f9643209e`) from the previous
-shared ancestor `392f272c5`. Keep upstream's new engine, coordinator and
-projection invalidation. Carry fork behavior through the extension points in
+The earlier 3.10 integration merges release `v3.10.0` (`f9643209e`) from the
+previous shared ancestor `392f272c5`. Keep upstream's new engine, coordinator
+and projection invalidation. Carry fork behavior through the extension points in
 [EXTENSIONS.md](EXTENSIONS.md); do not resurrect the removed calculators.
 
 Use a merge commit for an upstream synchronization PR so future merges retain
