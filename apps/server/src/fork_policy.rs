@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 use wealthfolio_core::{
+    goals::GoalServiceTrait,
     health::HealthServiceTrait,
     portfolio::coordinator::{AccountFailure, JobObserver},
     quotes::{MarketSyncMode, SyncResult},
@@ -28,6 +29,7 @@ use crate::{
 pub(crate) struct ServerJobObserver {
     event_bus: EventBus,
     health_service: Arc<dyn HealthServiceTrait + Send + Sync>,
+    goal_service: Arc<dyn GoalServiceTrait + Send + Sync>,
     background: bool,
     warm_after_update: bool,
     /// Set when this job's market sync stored a new or changed close.
@@ -40,6 +42,7 @@ impl ServerJobObserver {
         Self::with_mode(
             state.event_bus.clone(),
             state.health_service.clone(),
+            state.goal_service.clone(),
             false,
             false,
         )
@@ -49,14 +52,16 @@ impl ServerJobObserver {
     pub(crate) fn with_parts(
         event_bus: EventBus,
         health_service: Arc<dyn HealthServiceTrait + Send + Sync>,
+        goal_service: Arc<dyn GoalServiceTrait + Send + Sync>,
     ) -> Self {
-        Self::with_mode(event_bus, health_service, false, true)
+        Self::with_mode(event_bus, health_service, goal_service, false, true)
     }
 
     fn background(state: &AppState) -> Self {
         Self::with_mode(
             state.event_bus.clone(),
             state.health_service.clone(),
+            state.goal_service.clone(),
             true,
             false,
         )
@@ -65,12 +70,14 @@ impl ServerJobObserver {
     fn with_mode(
         event_bus: EventBus,
         health_service: Arc<dyn HealthServiceTrait + Send + Sync>,
+        goal_service: Arc<dyn GoalServiceTrait + Send + Sync>,
         background: bool,
         warm_after_update: bool,
     ) -> Self {
         Self {
             event_bus,
             health_service,
+            goal_service,
             background,
             warm_after_update,
             prices_changed: AtomicBool::new(false),
@@ -93,6 +100,7 @@ impl ServerJobObserver {
     }
 }
 
+#[async_trait::async_trait]
 impl JobObserver for ServerJobObserver {
     fn market_sync_started(&self) {
         self.event_bus.publish(self.progress(MARKET_SYNC_START));
@@ -148,7 +156,7 @@ impl JobObserver for ServerJobObserver {
             .publish(ServerEvent::with_payload(PORTFOLIO_UPDATE_ERROR, payload));
     }
 
-    fn update_completed(&self) {
+    async fn update_completed(&self) {
         self.clear_health_cache();
         match cache_action(
             self.background,
@@ -161,6 +169,15 @@ impl JobObserver for ServerJobObserver {
         }
         self.event_bus
             .publish(self.progress(PORTFOLIO_UPDATE_COMPLETE));
+        match self.goal_service.refresh_all_goal_summaries().await {
+            Ok(goals) => {
+                crate::api::shared::emit_goal_summaries_updated(&self.event_bus, &goals, false)
+            }
+            Err(error) => tracing::warn!(
+                "Goal summary batch refresh failed ({})",
+                wealthfolio_core::goals::summary_refresh_error_kind(&error)
+            ),
+        }
     }
 }
 

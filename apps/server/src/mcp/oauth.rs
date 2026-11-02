@@ -428,7 +428,8 @@ pub(crate) async fn approve(
                     "Switch to your default profile to connect an MCP client".into(),
                 ));
             }
-            let scopes = crate::api::agent_access::validate_requested_scopes(&scopes)?;
+            let scopes = wealthfolio_agent_tools::scope::validate_requested_scopes(&scopes)
+                .map_err(ApiError::BadRequest)?;
             let access_token = generate_token();
             let prefix = token_prefix(&access_token)
                 .ok_or_else(|| ApiError::Internal("Generated token has invalid format".into()))?

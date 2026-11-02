@@ -64,7 +64,7 @@ export function useDashboardGain({
 }
 
 interface DashboardChartInput {
-  selectedInterval: UITimePeriod;
+  selectedInterval: UITimePeriod | null;
   scope: AccountScope;
   scopeKey: string;
   totalValue: number;

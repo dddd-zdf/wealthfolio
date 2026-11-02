@@ -101,6 +101,19 @@ To see the full divergence:
 
 ## Upstream integration
 
+The 3.12 integration branch merges pinned release `v3.12.0` (`da8cf98e0`) into
+the fork after 3.11 and the web/FX fixes in #52. Upstream now owns
+credit/cash-back income attribution; the fork retains its regression test rather
+than a second implementation. Keep persisted `categorization:write` and
+`accounts:write` grants and the direct/reviewed tool contracts alongside
+upstream Spending permissions. Existing tokens are not automatically granted new
+Spending permissions.
+
+The three upstream migrations register MOEX and AMFI disabled and preserve
+Classic/Mono for onboarded profiles without explicit appearance settings. No
+live upgrade is implied by this branch; test startup on a database copy and take
+a verified pre-upgrade backup before deployment.
+
 The 3.11 integration merges pinned release `v3.11.0` (`d1fda0b65`) into fork
 main at `268b3e67f`. Keep the merge commit when promoting this branch; squashing
 an upstream synchronization loses the release ancestry needed by future merges.

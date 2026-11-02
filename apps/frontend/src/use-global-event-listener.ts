@@ -9,6 +9,7 @@ import {
   listenMarketSyncError,
   listenMarketSyncStart,
   listenPortfolioUpdateComplete,
+  listenGoalSummariesUpdated,
   listenPortfolioUpdateError,
   listenPortfolioUpdateStart,
   logger,
@@ -21,8 +22,10 @@ import { isBackgroundEvent } from "@/lib/fork-background-events";
 import { isWebCurrencyCompletion, resetWebCurrencyQueries } from "@/lib/fork-currency-cache";
 import {
   invalidateAfterAssetClassificationsChanged,
+  invalidateAfterGoalSummariesUpdated,
   shouldInvalidateAfterPortfolioUpdate,
   type AssetClassificationsChangedPayload,
+  type GoalSummariesUpdatedPayload,
 } from "@/lib/query-invalidation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -408,6 +411,12 @@ const useGlobalEventListener = () => {
         [
           "asset-classifications-changed",
           listenAssetClassificationsChanged(handleAssetClassificationsChanged),
+        ],
+        [
+          "goal-summaries-updated",
+          listenGoalSummariesUpdated<GoalSummariesUpdatedPayload>((event) => {
+            invalidateAfterGoalSummariesUpdated(queryClientRef.current, event.payload);
+          }),
         ],
         ["database-restored", listenDatabaseRestored(handleDatabaseRestored)],
         ["broker-sync-complete", listenBrokerSyncComplete(handleBrokerSyncComplete)],

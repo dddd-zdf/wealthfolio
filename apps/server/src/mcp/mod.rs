@@ -17,9 +17,10 @@ use wealthfolio_mcp::McpServerBuilder;
 
 use crate::{config::Config, main_lib::AppState};
 
-const INSTRUCTIONS: &str = "The user's Wealthfolio portfolio: accounts, holdings, cash, \
-activities, valuations, performance, net worth, income, health and quotes, plus activity edits \
-and transfer linking. Writes depend on the access token's scopes.";
+const INSTRUCTIONS: &str = "Read and write access to the user's Wealthfolio portfolio: accounts, \
+holdings, valuations, performance, activities, income, goals, health, classifications, spending, and \
+budgets. Write capabilities (drafting and committing activities, classification suggestions and commits, \
+organizing spending, and managing budgets) depend on the scopes granted to the access token in use.";
 
 /// Builds the `/mcp` router: the Streamable HTTP MCP service behind PAT
 /// bearer authentication.

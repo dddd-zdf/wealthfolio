@@ -119,6 +119,7 @@ pub fn trigger_portfolio_recalc_with_asset_sync(state: Arc<AppState>, asset_ids:
     );
 }
 
+pub(crate) use super::goals::emit_goal_summaries_updated;
 pub(crate) use crate::fork_policy::ServerJobObserver;
 
 impl PortfolioJobConfig {
