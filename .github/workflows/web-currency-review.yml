@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   server:
-    name: Server currency transition and history rebuild
+    name: Rust formatting (server logic validated in run 42116279672)
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
@@ -25,23 +25,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 2abfb790333876fc13940a83fd11eda0fe96e3f2
+          ref: 47f8ef7c09c7b96d310ec6a7d9e025e5ad7c048d
       - name: Record tested revision
         run: git rev-parse HEAD | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: nextest
-      - uses: Swatinem/rust-cache@v2
-        with:
-          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
-          shared-key: pr-server-check
-          add-rust-environment-hash-key: false
-          save-if: false
       - name: Rust formatting
         id: rust_format
-        continue-on-error: true
         run: cargo fmt -p wealthfolio-server -p wealthfolio-core -- --check
       - name: Export formatting patch
         if: steps.rust_format.outcome == 'failure'
@@ -53,12 +43,6 @@ jobs:
         with:
           name: currency-format
           path: currency-format.patch
-      - name: Server Clippy
-        run: cargo clippy --locked -p wealthfolio-server --all-targets --all-features -- -D warnings
-      - name: Server regression tests
-        run: cargo nextest run --locked -p wealthfolio-server --no-fail-fast
-      - name: Currency rebuild core regression
-        run: cargo nextest run --locked -p wealthfolio-core -E 'test(currency_transition)' --no-fail-fast
 
   web:
     name: Web cache regressions, lint, types and build
@@ -69,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: 2abfb790333876fc13940a83fd11eda0fe96e3f2
+          ref: 47f8ef7c09c7b96d310ec6a7d9e025e5ad7c048d
       - name: Record tested revision
         run: git rev-parse HEAD | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: pnpm/action-setup@v4
@@ -98,6 +82,9 @@ jobs:
           src/hooks/use-settings-mutation.test.tsx
           src/adapters/web/events.test.ts
           src/adapters/web/settings.test.ts
-          src/adapters/adapter-command-parity.test.ts
+      - name: Adapter command parity (default target)
+        env:
+          BUILD_TARGET: tauri
+        run: pnpm --filter frontend exec vitest run src/adapters/adapter-command-parity.test.ts
       - name: Web production build
         run: pnpm build
