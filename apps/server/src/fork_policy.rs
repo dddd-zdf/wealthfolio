@@ -202,7 +202,8 @@ fn cache_action(background: bool, warm_after_update: bool, prices_changed: bool)
 }
 
 /// Keep prices fresh every five minutes during North American trading hours,
-/// hourly otherwise, with the last pre-open wait ending at 09:30 New York.
+/// hourly otherwise, with the last pre-open wait ending at 09:30:30 New York
+/// to give providers time to publish opening prices.
 pub(crate) fn background_update_interval(
     now: chrono::DateTime<chrono::Utc>,
 ) -> std::time::Duration {
@@ -211,7 +212,7 @@ pub(crate) fn background_update_interval(
     let Ok(new_york) = parse_user_timezone("America/New_York") else {
         return std::time::Duration::from_secs(3600);
     };
-    const OPEN_SECS: u32 = 9 * 3600 + 30 * 60;
+    const OPEN_SECS: u32 = 9 * 3600 + 30 * 60 + 30;
     const CLOSE_SECS: u32 = 16 * 3600 + 15 * 60;
 
     let local = now.with_timezone(&new_york);
@@ -281,11 +282,20 @@ mod tests {
     }
 
     #[test]
-    fn last_pre_open_wait_ends_at_open() {
+    fn last_pre_open_wait_ends_thirty_seconds_after_open() {
         assert_eq!(
             background_update_interval(utc(2026, 10, 5, 13, 20)),
-            std::time::Duration::from_secs(600)
+            std::time::Duration::from_secs(630)
         );
+        // Both daylight-saving and standard time use 09:30:30 New York.
+        for opening in [utc(2026, 10, 5, 13, 30), utc(2026, 11, 5, 14, 30)] {
+            for (elapsed, expected) in [(0, 30), (29, 1), (30, 300)] {
+                assert_eq!(
+                    background_update_interval(opening + chrono::Duration::seconds(elapsed)),
+                    std::time::Duration::from_secs(expected)
+                );
+            }
+        }
     }
 
     #[test]
