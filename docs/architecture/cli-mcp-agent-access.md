@@ -1096,7 +1096,9 @@ classification:write     commit_asset_classification_draft
                          (also requires classification:suggest)
 categorization:write    commit_category_assignments,
                          commit_categorization_rule
-accounts:write          create_account and account-setting data-admin tools
+accounts:write           create_account and account-setting data-admin tools,
+                         prepare_account_change, commit_account_change
+                         (reviewed changes also require accounts:read)
 spending:write           commit_transaction_categories,
                          commit_reviewed_categorization_rule,
                          rerun_categorization_rules (also requires spending:read)
@@ -1106,8 +1108,6 @@ market-data:write        prepare_quote_import, commit_quote_import,
                          refresh_market_data,
                          prepare_asset_update, commit_asset_update
                          (each also requires holdings:read)
-accounts:write           prepare_account_change, commit_account_change
-                         (each also requires accounts:read)
 holdings:write           prepare_holdings_snapshot, commit_holdings_snapshot,
                          prepare_alternative_asset, commit_alternative_asset
                          (each also requires holdings:read)
@@ -1133,8 +1133,9 @@ without the matching draft/suggest capability). `market-data:write` requires
 tool without it. `accounts:write` requires `accounts:read` for the same reason:
 the account change preview shows the stored accounts, and `holdings:write`
 requires `holdings:read`, as the snapshot preview shows the stored holdings.
-Token creation validates these, and no preset grants `market-data:write`,
-`accounts:write` or `holdings:write`.
+Token creation and editing validate these dependencies. Presets grant
+`accounts:write` only through the fork's classification preset.
+`market-data:write` and `holdings:write` are explicit selections.
 
 Presets (`AgentScopeSet` constructors):
 

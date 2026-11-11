@@ -13,7 +13,7 @@ use wealthfolio_core::portfolio::valuation::intraday::{intraday_valuations, Intr
 use wealthfolio_core::portfolios::AccountScope;
 use wealthfolio_core::utils::time_utils::{parse_user_timezone_or_default, user_today};
 
-use super::{get_historical_valuations_for_scope, load_holdings_for_filter};
+use super::{get_historical_valuations_for_scope, load_holdings_scope_for_filter};
 use crate::api::holdings::dto::HistoryFilterBody;
 use crate::{
     error::{ApiError, ApiResult},
@@ -35,15 +35,22 @@ const INTRADAY_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(3
 /// built from them would therefore misstate any open, nonzero foreign holding,
 /// including cash or manually priced assets. Returning no intraday points lets
 /// the dashboard use the stored daily values for the whole scope.
-fn has_unsupported_intraday_fx(holdings: &[Holding]) -> bool {
+fn has_unsupported_intraday_inputs(holdings: &[Holding]) -> bool {
     holdings.iter().any(|holding| {
         !holding.is_closed
-            && (!holding.quantity.is_zero()
-                || !holding.market_value.local.is_zero()
-                || !holding.market_value.base.is_zero())
-            && !holding
-                .local_currency
-                .eq_ignore_ascii_case(&holding.base_currency)
+            && (holding.market_value.base.is_none()
+                || ((!holding.quantity.is_zero()
+                    || holding
+                        .market_value
+                        .local
+                        .is_some_and(|value| !value.is_zero())
+                    || holding
+                        .market_value
+                        .base
+                        .is_some_and(|value| !value.is_zero()))
+                    && !holding
+                        .local_currency
+                        .eq_ignore_ascii_case(&holding.base_currency)))
     })
 }
 
@@ -85,8 +92,15 @@ pub async fn get_intraday_valuations(
 
     let tz = parse_user_timezone_or_default(&state.timezone()?);
     let today = user_today(tz);
-    let holdings = load_holdings_for_filter(state.as_ref(), &parsed.filter, false).await?;
-    if has_unsupported_intraday_fx(&holdings) {
+    // The 3.13 holdings read can return rows alongside accounts whose
+    // accounting inputs are pending or unavailable. A curve built from that
+    // partial scope would silently omit part of the portfolio, so fall back
+    // to the daily chart until the scope is complete.
+    let holdings_scope =
+        load_holdings_scope_for_filter(state.as_ref(), &parsed.filter, false).await?;
+    let holdings = holdings_scope.holdings;
+    if !holdings_scope.incomplete_accounts.is_empty() || has_unsupported_intraday_inputs(&holdings)
+    {
         let value = serde_json::json!([]);
         crate::perf_cache::put_with_ttl(key, generation, value.clone(), INTRADAY_CACHE_TTL);
         return Ok(Json(value));
@@ -136,10 +150,11 @@ mod tests {
             base_currency: base.to_string(),
             fx_rate: None,
             market_value: MonetaryValue {
-                local: value,
-                base: value,
+                local: Some(value),
+                base: Some(value),
             },
             cost_basis: None,
+            translate_observed_basis: false,
             price: None,
             purchase_price: None,
             unrealized_gain: None,
@@ -155,7 +170,7 @@ mod tests {
             day_change: None,
             day_change_pct: None,
             prev_close_value: None,
-            weight: Decimal::ZERO,
+            weight: Some(Decimal::ZERO),
             as_of_date: NaiveDate::from_ymd_opt(2026, 10, 2).unwrap(),
             metadata: None,
             source_account_ids: Vec::new(),
@@ -164,19 +179,19 @@ mod tests {
 
     #[test]
     fn foreign_open_nonzero_holding_disables_curve() {
-        assert!(has_unsupported_intraday_fx(&[holding(
+        assert!(has_unsupported_intraday_inputs(&[holding(
             HoldingType::Security,
             "USD",
             "CAD",
             Decimal::new(100, 0),
         )]));
-        assert!(has_unsupported_intraday_fx(&[holding(
+        assert!(has_unsupported_intraday_inputs(&[holding(
             HoldingType::Cash,
             "USD",
             "CAD",
             Decimal::new(100, 0),
         )]));
-        assert!(!has_unsupported_intraday_fx(&[holding(
+        assert!(!has_unsupported_intraday_inputs(&[holding(
             HoldingType::Security,
             "CAD",
             "CAD",
@@ -190,7 +205,7 @@ mod tests {
             holding(HoldingType::Security, "CAD", "CAD", Decimal::new(100, 0)),
             holding(HoldingType::Cash, "USD", "CAD", Decimal::new(100, 0)),
         ];
-        assert!(has_unsupported_intraday_fx(&holdings));
+        assert!(has_unsupported_intraday_inputs(&holdings));
     }
 
     #[test]
@@ -198,16 +213,25 @@ mod tests {
         let mut zero = holding(HoldingType::Cash, "USD", "CAD", Decimal::ZERO);
         let mut closed = holding(HoldingType::Cash, "USD", "CAD", Decimal::new(100, 0));
         closed.is_closed = true;
-        assert!(!has_unsupported_intraday_fx(std::slice::from_ref(&zero)));
-        assert!(!has_unsupported_intraday_fx(&[closed]));
-        zero.market_value.base = Decimal::new(1, 0);
-        assert!(has_unsupported_intraday_fx(&[zero]));
+        assert!(!has_unsupported_intraday_inputs(std::slice::from_ref(
+            &zero
+        )));
+        assert!(!has_unsupported_intraday_inputs(&[closed]));
+        zero.market_value.base = Some(Decimal::new(1, 0));
+        assert!(has_unsupported_intraday_inputs(&[zero]));
     }
 
     #[test]
     fn unpriced_foreign_position_still_disables_the_whole_scope_curve() {
         let mut unpriced = holding(HoldingType::Security, "USD", "CAD", Decimal::ZERO);
         unpriced.quantity = Decimal::ONE;
-        assert!(has_unsupported_intraday_fx(&[unpriced]));
+        assert!(has_unsupported_intraday_inputs(&[unpriced]));
+    }
+
+    #[test]
+    fn missing_base_value_disables_the_whole_scope_curve() {
+        let mut incomplete = holding(HoldingType::Security, "CAD", "CAD", Decimal::ONE);
+        incomplete.market_value.base = None;
+        assert!(has_unsupported_intraday_inputs(&[incomplete]));
     }
 }

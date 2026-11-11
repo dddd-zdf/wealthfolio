@@ -36,6 +36,7 @@ pub(crate) fn needs_review_activities_from_data(
             total_value_at_date: None,
             account_currency: None,
             activity_date: Some(activity_date_in_tz(activity.activity_date, tz)),
+            end_date: None,
             asset_symbol: None,
             asset_name: None,
             quantity: activity.quantity,
@@ -46,6 +47,7 @@ pub(crate) fn needs_review_activities_from_data(
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
+            engine_issue: None,
         })
         .collect()
 }

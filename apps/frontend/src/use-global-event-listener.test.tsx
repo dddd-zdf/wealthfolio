@@ -8,12 +8,12 @@ import useGlobalEventListener from "./use-global-event-listener";
 const mocks = vi.hoisted(() => ({
   updatePortfolio: vi.fn(),
   error: vi.fn(),
-  listeners: new Map<string, (event: { payload: unknown }) => void>(),
+  listeners: new Map<string, (event: { payload: unknown }) => void | Promise<void>>(),
 }));
 
 vi.mock("@/adapters", () => {
   const listener = (name: string) =>
-    vi.fn(async (callback: (event: { payload: unknown }) => void) => {
+    vi.fn(async (callback: (event: { payload: unknown }) => void | Promise<void>) => {
       mocks.listeners.set(name, callback);
       return vi.fn();
     });
@@ -48,8 +48,10 @@ vi.mock("react-router-dom", () => ({ useNavigate: () => vi.fn() }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock("sonner", () => ({ toast: { loading: vi.fn(), dismiss: vi.fn(), error: vi.fn() } }));
 
-function fire(name: string, payload: unknown = {}) {
-  act(() => mocks.listeners.get(name)?.({ payload }));
+async function fire(name: string, payload: unknown = {}) {
+  await act(async () => {
+    await mocks.listeners.get(name)?.({ payload });
+  });
 }
 
 const dayAdvance = {
@@ -66,7 +68,7 @@ async function setup() {
   });
   await waitFor(() => expect(hook.result.current).toBe(true));
   expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
-  fire("listenPortfolioUpdateComplete");
+  await fire("listenPortfolioUpdateComplete");
   mocks.updatePortfolio.mockClear();
   return { client, ...hook };
 }
@@ -85,15 +87,19 @@ describe("day-advance recovery through the existing portfolio job", () => {
       client.setQueryData([QueryKeys.ASSET_HOLDINGS, "asset"], dayAdvance);
     });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
-    fire("listenPortfolioUpdateStart");
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "account"], dayAdvance));
+    await fire("listenPortfolioUpdateStart");
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "account"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
-    fire("listenPortfolioUpdateComplete");
-    act(() =>
-      client.setQueryData([QueryKeys.HOLDINGS, "all"], { holdings: [], incompleteAccounts: [] }),
-    );
+    await fire("listenPortfolioUpdateComplete");
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "all"], { holdings: [], incompleteAccounts: [] });
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance));
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(2);
   });
 
@@ -117,23 +123,33 @@ describe("day-advance recovery through the existing portfolio job", () => {
 
   it("lets an existing job finish before requesting any still-due work", async () => {
     const { client } = await setup();
-    fire("listenPortfolioUpdateStart");
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance));
+    await fire("listenPortfolioUpdateStart");
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).not.toHaveBeenCalled();
-    fire("listenPortfolioUpdateComplete");
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance));
+    await fire("listenPortfolioUpdateComplete");
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
   });
 
   it("does not loop on a rejected job request and removes the query subscription on unmount", async () => {
     const { client, unmount } = await setup();
     mocks.updatePortfolio.mockRejectedValue(new Error("request failed"));
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance));
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "all"], dayAdvance);
+    });
     await waitFor(() => expect(mocks.error).toHaveBeenCalled());
-    act(() => client.setQueryData([QueryKeys.ASSET_HOLDINGS, "asset"], dayAdvance));
+    act(() => {
+      client.setQueryData([QueryKeys.ASSET_HOLDINGS, "asset"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
     unmount();
-    act(() => client.setQueryData([QueryKeys.HOLDINGS, "after-unmount"], dayAdvance));
+    act(() => {
+      client.setQueryData([QueryKeys.HOLDINGS, "after-unmount"], dayAdvance);
+    });
     expect(mocks.updatePortfolio).toHaveBeenCalledTimes(1);
   });
 });

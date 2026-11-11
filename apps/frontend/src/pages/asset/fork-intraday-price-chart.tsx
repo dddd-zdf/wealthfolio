@@ -48,7 +48,7 @@ export function ForkIntradayPriceChart({
             {/* One XAxis element: swapping two (1D <-> 1W) leaves Recharts on the old axis. */}
             <XAxis
               hide
-              dataKey={timeDomain ? timeOf : "timestamp"}
+              dataKey={timeOf}
               type={timeDomain ? "number" : "category"}
               scale={timeDomain ? "time" : "auto"}
               domain={timeDomain}

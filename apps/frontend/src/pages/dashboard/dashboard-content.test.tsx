@@ -298,6 +298,7 @@ describe("DashboardContent", () => {
         { holdingType: "security", dayChange: { local: 10, base: 10 } },
       ],
       isLoading: false,
+      isComplete: true,
       error: null,
     } as unknown as ReturnType<typeof useHoldings>);
     mockUseValuationHistory.mockReturnValue({

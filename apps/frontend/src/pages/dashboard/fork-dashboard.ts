@@ -34,6 +34,7 @@ interface DashboardGainInput {
   performance: PerformanceSummary;
   isPerformanceLoading: boolean;
   isHoldingsLoading: boolean;
+  isHoldingsComplete: boolean;
   isCurrentValuationLoading: boolean;
 }
 
@@ -44,11 +45,13 @@ export function useDashboardGain({
   performance,
   isPerformanceLoading,
   isHoldingsLoading,
+  isHoldingsComplete,
   isCurrentValuationLoading,
 }: DashboardGainInput) {
   const dayChange = useMemo(
-    () => (isDayChange ? summarizeDayChange(holdings ?? [], totalValue) : null),
-    [isDayChange, holdings, totalValue],
+    () =>
+      isDayChange && isHoldingsComplete ? summarizeDayChange(holdings ?? [], totalValue) : null,
+    [isDayChange, isHoldingsComplete, holdings, totalValue],
   );
   return {
     dayChange,

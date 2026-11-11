@@ -456,33 +456,37 @@ const useGlobalEventListener = () => {
         return;
       }
 
-      const unsubscribeQueries = queryClientRef.current.getQueryCache().subscribe((event) => {
-        if (event.type !== "updated" || event.action.type !== "success") return;
-        const key = event.query.queryKey[0];
-        if (key !== QueryKeys.HOLDINGS && key !== QueryKeys.ASSET_HOLDINGS) return;
-        const data = event.query.state.data;
-        if (!data || typeof data !== "object" || !("incompleteAccounts" in data)) return;
-        const accounts = data.incompleteAccounts;
-        if (
-          !Array.isArray(accounts) ||
-          !accounts.some(
-            (account) =>
-              account?.status === "pending" && account.reasonCode === "DAY_ADVANCE_PENDING",
+      if (isTauriEnv) {
+        const unsubscribeQueries = queryClientRef.current.getQueryCache().subscribe((event) => {
+          if (event.type !== "updated" || event.action.type !== "success") return;
+          const key = event.query.queryKey[0];
+          if (key !== QueryKeys.HOLDINGS && key !== QueryKeys.ASSET_HOLDINGS) return;
+          const data = event.query.state.data;
+          if (!data || typeof data !== "object" || !("incompleteAccounts" in data)) return;
+          const accounts = data.incompleteAccounts;
+          if (
+            !Array.isArray(accounts) ||
+            !accounts.some(
+              (account) =>
+                account?.status === "pending" && account.reasonCode === "DAY_ADVANCE_PENDING",
+            )
           )
-        )
-          return;
-        if (portfolioUpdateRunning || dayAdvanceRequested) return;
-        dayAdvanceRequested = true;
-        portfolioUpdateRunning = true;
-        updatePortfolio().catch((error) => {
-          portfolioUpdateRunning = false;
-          logger.error("Failed to request the portfolio update: " + String(error));
+            return;
+          if (portfolioUpdateRunning || dayAdvanceRequested) return;
+          dayAdvanceRequested = true;
+          portfolioUpdateRunning = true;
+          updatePortfolio().catch((error) => {
+            portfolioUpdateRunning = false;
+            logger.error("Failed to request the portfolio update: " + String(error));
+          });
         });
-      });
-      cleanupFn = () => {
-        unsubscribeQueries();
-        cleanup();
-      };
+        cleanupFn = () => {
+          unsubscribeQueries();
+          cleanup();
+        };
+      } else {
+        cleanupFn = cleanup;
+      }
       setAreListenersReady(
         Array.from(POST_LOGIN_REQUIRED_LISTENERS).every((name) => readyListeners.has(name)),
       );

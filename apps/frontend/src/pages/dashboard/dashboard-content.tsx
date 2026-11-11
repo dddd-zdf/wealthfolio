@@ -98,7 +98,11 @@ export function DashboardContent({
   const isDayChange = selectedInterval === "1D";
 
   const holdingsQuery = useHoldings(scope);
-  const { holdings: allHoldings, isLoading: isHoldingsLoading } = holdingsQuery;
+  const {
+    holdings: allHoldings,
+    isLoading: isHoldingsLoading,
+    isComplete: isHoldingsComplete,
+  } = holdingsQuery;
   const {
     currentValuation: portfolioCurrentValuation,
     isLoading: isCurrentValuationLoading,
@@ -159,6 +163,7 @@ export function DashboardContent({
       performance: portfolioPerformance,
       isPerformanceLoading: isPortfolioPerformanceLoading,
       isHoldingsLoading,
+      isHoldingsComplete,
       isCurrentValuationLoading,
     });
   const isCurrentValuationUnavailable =

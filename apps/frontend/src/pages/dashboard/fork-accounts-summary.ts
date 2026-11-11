@@ -12,7 +12,6 @@ import type {
   Account,
   AccountScope,
   CurrentAccountValuation,
-  Holding,
   HoldingsListResponse,
   PerformanceSummaryMap,
   PerformanceSummaryScope,
@@ -26,9 +25,7 @@ export interface PeriodGain {
 }
 
 // Module-level so useQueries keeps the combined result stable between renders.
-function combineDayChangeHoldings(
-  results: { data?: HoldingsListResponse; isLoading: boolean }[],
-) {
+function combineDayChangeHoldings(results: { data?: HoldingsListResponse; isLoading: boolean }[]) {
   return {
     data: results.map((result) => result.data?.holdings),
     incompleteAccounts: results.map((result) => result.data?.incompleteAccounts ?? []),
