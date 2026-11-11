@@ -87,8 +87,9 @@ To see the full divergence:
   in the same settings page. No refresh tokens, no expiry. Any HTTPS redirect
   URI is accepted (an allowlist broke Muse's registration). Only read scopes are
   pre-ticked because Claude requests every scope.
-- **MCP protocol (#19).** rmcp 1.8 doesn't speak 2026-07-28; we map its 422 to a
-  400 so new clients fall back. Native support would need rmcp 3.x.
+- **MCP protocol (#19).** rmcp 3.9 supports MCP 2026-07-28 without sessions. The
+  fork retains its HTTP 422-to-400 mapping for requests that need to fall back
+  to the legacy initialize handshake.
 - **GICs (#25).** A term deposit is a holding of quantity 1 whose asset has
   `metadata.deposit` terms. Quote sync writes a `CALCULATED` price per day from
   them (no provider); the value is flat after maturity, and the redemption is

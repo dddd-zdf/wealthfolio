@@ -529,32 +529,15 @@ async fn mcp_pat_lifecycle() {
     assert!(purge["purged"].as_u64().unwrap() >= 1);
 }
 
-/// A write/suggest-scoped token sees the draft, suggest, commit, AND import
-/// tools via `tools/list` — proving scope-gated visibility extends past the
-/// read-only catalog. The full catalog includes the upstream spending,
-/// categorization, import, transfer, quote, update, deletion and category
-/// management tools plus the fork's compatibility tools.
+/// A token with every scope sees the fork's complete MCP discovery list.
 #[tokio::test]
 async fn mcp_write_scoped_token_sees_write_tools() {
     let server = spawn_server(true, false).await;
     let cookie = login(&server).await;
 
-    let full_scopes: Vec<&str> = READ_ONLY_SCOPES
+    let full_scopes: Vec<&str> = wealthfolio_agent_tools::AgentScope::ALL
         .iter()
-        .copied()
-        .chain([
-            "activities:draft",
-            "activities:write",
-            "classification:suggest",
-            "classification:write",
-            "categorization:write",
-            "accounts:write",
-            "spending:write",
-            "budget:write",
-            "market-data:write",
-            "accounts:write",
-            "holdings:write",
-        ])
+        .map(wealthfolio_agent_tools::AgentScope::as_str)
         .collect();
     let (status, created) = create_pat(
         &server,
@@ -563,7 +546,7 @@ async fn mcp_write_scoped_token_sees_write_tools() {
     )
     .await;
     assert_eq!(status, 201);
-    assert_eq!(created["scopes"].as_array().unwrap().len(), 17);
+    assert_eq!(created["scopes"], serde_json::json!(full_scopes));
     let pat = created["token"].as_str().unwrap().to_string();
 
     let session = mcp_initialize(&server, &pat).await;
