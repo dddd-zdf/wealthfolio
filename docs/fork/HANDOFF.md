@@ -103,6 +103,29 @@ To see the full divergence:
 
 ## Upstream integration
 
+The 3.13 integration merges pinned upstream `v3.13.0` (`1edb80199`) into the
+fork. The web settings route retains its guarded, awaited currency rebuild,
+which already forces a full projection rebuild. Upstream's new agent market
+data jobs use the fork's server observer. MCP discovery still uses the fork's
+allowlist, and the OAuth resource challenge also covers requests rejected before
+profile startup.
+
+Saved grants and legacy MCP tool names retain their wire format. The new
+reviewed account tools require both account scopes. Newly created or edited
+tokens with `accounts:write` require `accounts:read`; holdings writes require
+`holdings:read`. The existing classification preset still includes its legacy
+account and categorization grants. The in-app assistant adopts the upstream
+Spending access default for AI providers with default data access.
+
+Three upstream migrations add recurring contribution limits, record snapshot
+basis provenance, and track projection failure versions. The provenance
+migration invalidates calculated holdings for a one-time rebuild and preserves
+observed snapshots. See the [3.13 release notes][release-3.13] for API changes
+including the holdings response envelope and nullable monetary values. Validate
+first startup against a disposable copy before upgrading a production profile.
+
+[release-3.13]: https://github.com/wealthfolio/wealthfolio/releases/tag/v3.13.0
+
 The 3.12 integration ([#53](https://github.com/dddd-zdf/wealthfolio/pull/53))
 merges pinned release `v3.12.0` (commit `f217ef5fb`) into the fork after 3.11
 and the web/FX fixes in #52. Upstream now owns credit/cash-back income

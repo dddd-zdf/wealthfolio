@@ -23,7 +23,7 @@ use axum::{
     Extension, Form, Json, Router,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use rand::RngCore;
+use rand::{rand_core::UnwrapErr, rngs::SysRng, Rng};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wealthfolio_agent_tools::AgentScope;
@@ -118,7 +118,7 @@ fn pkce_matches(verifier: &str, challenge: &str) -> bool {
 
 fn random_token() -> String {
     let mut bytes = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    UnwrapErr(SysRng).fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 

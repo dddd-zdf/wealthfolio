@@ -20,7 +20,7 @@ pub(super) async fn legacy_fallback_status(mut response: Response) -> Response {
 
 /// Points OAuth-capable clients at the protected-resource metadata when the
 /// PAT check rejects a request.
-pub(super) async fn resource_challenge(req: Request, next: Next) -> Response {
+pub(crate) async fn resource_challenge(req: Request, next: Next) -> Response {
     let challenge = format!(
         r#"Bearer resource_metadata="{}""#,
         super::oauth::resource_metadata_url(req.headers())

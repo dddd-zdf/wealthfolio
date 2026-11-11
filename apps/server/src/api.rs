@@ -285,7 +285,9 @@ fn app_router_with_profiles(
     if config.mcp_enabled {
         router = router.route(
             "/mcp",
-            axum::routing::any(crate::profiles::mcp).with_state(profiles.clone()),
+            axum::routing::any(crate::profiles::mcp)
+                .layer(middleware::from_fn(crate::mcp::resource_challenge))
+                .with_state(profiles.clone()),
         );
         router = router.merge(crate::mcp::oauth::router(profiles));
     }

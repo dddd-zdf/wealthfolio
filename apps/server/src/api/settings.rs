@@ -88,10 +88,7 @@ async fn update_settings(
 async fn is_auto_update_check_enabled(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<Json<bool>> {
-    let enabled = state
-        .settings_service
-        .is_auto_update_check_enabled()
-        .unwrap_or(true);
+    let enabled = state.settings_service.is_auto_update_check_enabled()?;
     Ok(Json(enabled))
 }
 
@@ -284,3 +281,6 @@ pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
         .route("/app/info", get(get_app_info))
         .route("/app/check-update", get(check_update))
 }
+
+#[cfg(test)]
+mod tests;
