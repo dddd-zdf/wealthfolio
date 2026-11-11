@@ -105,8 +105,8 @@ To see the full divergence:
 
 The 3.13 integration merges pinned upstream `v3.13.0` (`1edb80199`) into the
 fork. The web settings route retains its guarded, awaited currency rebuild,
-which already forces a full projection rebuild. Upstream's new agent market
-data jobs use the fork's server observer. MCP discovery still uses the fork's
+which already forces a full projection rebuild. Upstream's new agent market data
+jobs use the fork's server observer. MCP discovery still uses the fork's
 allowlist, and the OAuth resource challenge also covers requests rejected before
 profile startup.
 

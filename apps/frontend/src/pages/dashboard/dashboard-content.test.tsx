@@ -334,7 +334,7 @@ describe("DashboardContent", () => {
         }) as unknown as ReturnType<typeof useQuery>,
     );
 
-    render(<DashboardContent />);
+    const { rerender } = render(<DashboardContent />);
 
     expect(screen.getByText("gain-amount:30")).toBeInTheDocument();
     expect(screen.getByText("gain-percent:0.03")).toBeInTheDocument();
@@ -348,6 +348,18 @@ describe("DashboardContent", () => {
       "data-time-domain",
       JSON.stringify([open, open + 6.5 * 60 * 60 * 1000]),
     );
+
+    const completeHoldings = mockUseHoldings.mock.results.at(-1)?.value;
+    mockUseHoldings.mockReturnValue({
+      ...completeHoldings,
+      isComplete: false,
+      incompleteAccounts: [
+        { accountId: "pending", status: "pending", reasonCode: "PROJECTION_PENDING" },
+      ],
+    });
+    rerender(<DashboardContent />);
+    expect(screen.queryByText("gain-amount:30")).toBeNull();
+    expect(screen.queryByText("gain-percent:0.03")).toBeNull();
   });
 
   it("requests all-time valuation history without the 1970 sentinel range", () => {

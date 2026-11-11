@@ -43,11 +43,17 @@ vi.mock("@/lib/settings-provider", () => ({
 }));
 
 const queryMocks = vi.hoisted(() => ({
-  holdingsByScope: [] as
-    | ({
+  holdingsByScope: [] as (
+    | {
         holdings: { dayChange: { local: number; base: number } | null }[];
-        incompleteAccounts: { accountId: string; status: "pending" | "unavailable"; reasonCode: string }[];
-      } | undefined)[],
+        incompleteAccounts: {
+          accountId: string;
+          status: "pending" | "unavailable";
+          reasonCode: string;
+        }[];
+      }
+    | undefined
+  )[],
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -61,7 +67,7 @@ vi.mock("@tanstack/react-query", () => ({
     combine: (results: { data?: unknown; isLoading: boolean }[]) => unknown;
   }) =>
     combine(
-    queries.map((_, index) => ({ data: queryMocks.holdingsByScope[index], isLoading: false })),
+      queries.map((_, index) => ({ data: queryMocks.holdingsByScope[index], isLoading: false })),
     ),
 }));
 
