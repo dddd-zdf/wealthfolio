@@ -32,8 +32,14 @@ describe("useAccountPeriodGains", () => {
       const ids = (filter as { accountIds: string[] }).accountIds;
       return (
         ids[0] === "a"
-          ? [{ dayChange: { local: 30, base: 30 } }, { dayChange: { local: -10, base: -10 } }]
-          : [{ dayChange: null }]
+          ? {
+              holdings: [
+                { dayChange: { local: 30, base: 30 } },
+                { dayChange: { local: -10, base: -10 } },
+              ],
+              incompleteAccounts: [],
+            }
+          : { holdings: [{ dayChange: null }], incompleteAccounts: [] }
       ) as never;
     });
     const { result } = renderHook(

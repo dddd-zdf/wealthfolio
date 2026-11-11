@@ -96,10 +96,13 @@ pub fn intraday_exposures(holdings: &[Holding]) -> Vec<IntradayExposure> {
         let Some(instrument) = holding.instrument.as_ref() else {
             continue;
         };
-        if instrument.pricing_mode != "MARKET" || holding.market_value.base.is_zero() {
+        let Some(market_value_base) = holding.market_value.base else {
+            continue;
+        };
+        if instrument.pricing_mode != "MARKET" || market_value_base.is_zero() {
             continue;
         }
-        *by_asset.entry(instrument.id.clone()).or_default() += holding.market_value.base;
+        *by_asset.entry(instrument.id.clone()).or_default() += market_value_base;
     }
     by_asset
         .into_iter()
@@ -204,8 +207,9 @@ pub async fn intraday_valuations(
     range: IntradayRange,
     tz: Tz,
 ) -> Result<Vec<IntradayValuationPoint>> {
+    let anchors = intraday_anchors(daily);
     let exposures = intraday_exposures(holdings);
-    if exposures.is_empty() {
+    if anchors.is_empty() || exposures.is_empty() {
         return Ok(Vec::new());
     }
     let asset_ids: Vec<String> = exposures.iter().map(|e| e.asset_id.clone()).collect();
@@ -213,12 +217,7 @@ pub async fn intraday_valuations(
     let bars = quote_service
         .get_intraday_quotes(&asset_ids, interval, window)
         .await?;
-    Ok(build_intraday_series(
-        &intraday_anchors(daily),
-        &exposures,
-        &bars,
-        tz,
-    ))
+    Ok(build_intraday_series(&anchors, &exposures, &bars, tz))
 }
 
 /// One asset's live bars for the asset page chart, oldest first. Empty when

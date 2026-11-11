@@ -43,7 +43,17 @@ vi.mock("@/lib/settings-provider", () => ({
 }));
 
 const queryMocks = vi.hoisted(() => ({
-  holdingsByScope: [] as ({ dayChange: { local: number; base: number } | null }[] | undefined)[],
+  holdingsByScope: [] as (
+    | {
+        holdings: { dayChange: { local: number; base: number } | null }[];
+        incompleteAccounts: {
+          accountId: string;
+          status: "pending" | "unavailable";
+          reasonCode: string;
+        }[];
+      }
+    | undefined
+  )[],
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -139,7 +149,6 @@ function createAccount(overrides: Partial<Account>): Account {
     name: overrides.name ?? "Account 1",
     accountType,
     group: overrides.group,
-    balance: overrides.balance ?? 0,
     currency: overrides.currency ?? "USD",
     isDefault: overrides.isDefault ?? false,
     isActive: overrides.isActive ?? true,
@@ -407,7 +416,12 @@ describe("AccountsSummary", () => {
   });
 
   it("shows each row's summed holding day changes on 1D", () => {
-    queryMocks.holdingsByScope = [[{ dayChange: { local: 20, base: 20 } }, { dayChange: null }]];
+    queryMocks.holdingsByScope = [
+      {
+        holdings: [{ dayChange: { local: 20, base: 20 } }, { dayChange: null }],
+        incompleteAccounts: [],
+      },
+    ];
 
     renderAccountsSummary({
       accounts: [createAccount({ id: "brokerage", name: "Brokerage" })],

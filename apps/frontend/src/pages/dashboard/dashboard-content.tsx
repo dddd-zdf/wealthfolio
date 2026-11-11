@@ -5,6 +5,7 @@ import { HistoryChart } from "@/components/history-chart";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
+import { HoldingsScopeNotice } from "@/components/holdings-scope-notice";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
 import { QueryKeys } from "@/lib/query-keys";
@@ -14,9 +15,11 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { TimePeriod as UITimePeriod } from "@wealthfolio/ui";
 import { GainAmount, GainPercent, IntervalSelector } from "@wealthfolio/ui";
 import { SpendingDatePicker } from "@/features/spending/components/spending-date-picker";
+import { PeriodNavigation } from "@/features/spending/components/period-navigation";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { format } from "date-fns";
 import { useMemo } from "react";
+import { HealthStatusIndicator } from "@/components/health-status-icon";
 import { PrivacyToggle } from "@/components/privacy-toggle";
 import type { AccountScope } from "@/lib/types";
 import { accountScopeKey } from "@/pages/allocation-targets/components/target-scope";
@@ -94,7 +97,12 @@ export function DashboardContent({
   // totals, which stay flat over weekends and holidays.
   const isDayChange = selectedInterval === "1D";
 
-  const { holdings: allHoldings, isLoading: isHoldingsLoading } = useHoldings(scope);
+  const holdingsQuery = useHoldings(scope);
+  const {
+    holdings: allHoldings,
+    isLoading: isHoldingsLoading,
+    isComplete: isHoldingsComplete,
+  } = holdingsQuery;
   const {
     currentValuation: portfolioCurrentValuation,
     isLoading: isCurrentValuationLoading,
@@ -155,6 +163,7 @@ export function DashboardContent({
       performance: portfolioPerformance,
       isPerformanceLoading: isPortfolioPerformanceLoading,
       isHoldingsLoading,
+      isHoldingsComplete,
       isCurrentValuationLoading,
     });
   const isCurrentValuationUnavailable =
@@ -203,14 +212,31 @@ export function DashboardContent({
 
   return (
     <div className="flex min-h-full flex-col">
-      <div className="px-4 pt-2 pb-1 md:px-6 lg:px-8">
+      <div className="px-4 pt-2 pb-6 md:px-6 md:pb-2 lg:px-8">
         <div className="min-w-0">
           {scope.type === "portfolio" && scopeLabel && (
             <p className="text-muted-foreground mb-1 truncate text-xs" title={scopeLabel}>
               {scopeLabel}
             </p>
           )}
+          <div
+            className="flex max-w-full flex-wrap items-center gap-x-1"
+            data-testid="dashboard-period-header"
+          >
+            <div
+              className="text-muted-foreground/80 text-2xs font-semibold tracking-[0.12em] uppercase"
+              data-testid="dashboard-period-caption"
+            >
+              {t("dashboard:tabs.investments")} · {period.label}
+            </div>
+            <PeriodNavigation navigation={period.navigation} />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
+            {period.isHistorical && (
+              <span className="text-muted-foreground w-full text-xs">
+                {t("common:currentValue")}
+              </span>
+            )}
             <PortfolioUpdateTrigger
               lastCalculatedAt={portfolioSourceDataAsOf}
               notices={portfolioCurrentValuation?.summary.warnings}
@@ -224,6 +250,7 @@ export function DashboardContent({
               />
             </PortfolioUpdateTrigger>
             <PrivacyToggle variant="ghost" />
+            <HealthStatusIndicator />
           </div>
           <div className="text-md flex min-h-5 flex-wrap items-center gap-x-3">
             {isGainLoading ? (
@@ -262,9 +289,11 @@ export function DashboardContent({
                 <DashboardMoneyWeightedReturn value={moneyWeightedReturn} />
               </>
             )}
-            <span className="lg:text-md text-muted-foreground ms-1 text-sm font-light">
-              {period.label}
-            </span>
+            {period.isHistorical && (
+              <span className="text-muted-foreground text-sm font-light">
+                {t("common:periodReturn", { period: period.label })}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -296,11 +325,17 @@ export function DashboardContent({
                   onIntervalSelect={period.selectPreset}
                   onHaptic={triggerHaptic}
                   isLoading={isValuationHistoryLoading}
-                  value={selectedInterval}
+                  value={period.selectedPreset}
                 />
                 <SpendingDatePicker
                   customMonth={period.customMonth}
                   customRange={period.customRange}
+                  customYear={period.customYear}
+                  maxYear={period.maxYear}
+                  onCustomYearChange={period.selectYear}
+                  selectionLabel={
+                    period.customMonth || period.customYear !== null ? period.label : undefined
+                  }
                   maxMonth={period.maxMonth}
                   onCustomMonthChange={period.selectMonth}
                   onCustomRangeChange={period.selectRange}
@@ -325,11 +360,14 @@ export function DashboardContent({
               />
             </div>
             <div className="space-y-6">
-              <TopHoldings
-                holdings={holdings}
-                isLoading={isHoldingsLoading}
-                baseCurrency={baseCurrency}
-              />
+              <HoldingsScopeNotice {...holdingsQuery} />
+              {(holdingsQuery.isComplete || isHoldingsLoading) && (
+                <TopHoldings
+                  holdings={holdings}
+                  isLoading={isHoldingsLoading}
+                  baseCurrency={baseCurrency}
+                />
+              )}
               <SavingGoals />
             </div>
           </div>

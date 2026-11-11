@@ -24,6 +24,9 @@ vi.mock("@/adapters", () => ({
   isWeb: true,
 }));
 
+vi.mock("@/hooks/use-health", () => ({
+  useHealthStatus: () => ({ data: undefined, isLoading: false }),
+}));
 vi.mock("@/components/privacy-toggle", () => ({
   PrivacyToggle: () => <button onClick={uiMocks.togglePrivacy}>Hide Balance</button>,
 }));
@@ -295,6 +298,7 @@ describe("DashboardContent", () => {
         { holdingType: "security", dayChange: { local: 10, base: 10 } },
       ],
       isLoading: false,
+      isComplete: true,
       error: null,
     } as unknown as ReturnType<typeof useHoldings>);
     mockUseValuationHistory.mockReturnValue({
@@ -330,7 +334,7 @@ describe("DashboardContent", () => {
         }) as unknown as ReturnType<typeof useQuery>,
     );
 
-    render(<DashboardContent />);
+    const { rerender } = render(<DashboardContent />);
 
     expect(screen.getByText("gain-amount:30")).toBeInTheDocument();
     expect(screen.getByText("gain-percent:0.03")).toBeInTheDocument();
@@ -344,6 +348,18 @@ describe("DashboardContent", () => {
       "data-time-domain",
       JSON.stringify([open, open + 6.5 * 60 * 60 * 1000]),
     );
+
+    const completeHoldings = mockUseHoldings.mock.results.at(-1)?.value;
+    mockUseHoldings.mockReturnValue({
+      ...completeHoldings,
+      isComplete: false,
+      incompleteAccounts: [
+        { accountId: "pending", status: "pending", reasonCode: "PROJECTION_PENDING" },
+      ],
+    });
+    rerender(<DashboardContent />);
+    expect(screen.queryByText("gain-amount:30")).toBeNull();
+    expect(screen.queryByText("gain-percent:0.03")).toBeNull();
   });
 
   it("requests all-time valuation history without the 1970 sentinel range", () => {
@@ -533,7 +549,10 @@ describe("DashboardContent", () => {
 
     const privacy = screen.getByRole("button", { name: "Hide Balance" });
     expect(privacy.closest("a")).toBeNull();
-    await userEvent.tab();
+    // Header navigation comes before the balance controls in keyboard order.
+    for (let tabs = 0; tabs < 3 && document.activeElement !== privacy; tabs++) {
+      await userEvent.tab();
+    }
     expect(privacy).toHaveFocus();
     await new Promise((resolve) => setTimeout(resolve, 800));
     expect(screen.queryByRole("button", { name: "Update prices" })).not.toBeInTheDocument();

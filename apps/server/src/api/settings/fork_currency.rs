@@ -104,20 +104,34 @@ pub(crate) async fn spawn_startup_update(
         let _settings = state.currency_transition.settings.lock().await;
         state.currency_transition.begin();
         let result = rebuild(&state).await;
-        state.currency_transition.finish(result.is_ok());
         if result.is_ok() {
-            publish_completion(&state).await;
+            complete_transition(&state).await;
+        } else {
+            state.currency_transition.finish(false);
         }
     });
     Ok(())
 }
 
-async fn publish_completion(state: &AppState) {
+/// Persist dependent summaries while reads are guarded, then make the whole
+/// currency transition visible before announcing it to clients.
+async fn complete_transition(state: &AppState) {
+    let refreshed_goals = state.goal_service.refresh_all_goal_summaries().await;
     state.health_service.clear_cache().await;
+    state.currency_transition.finish(true);
     state.event_bus.publish(ServerEvent::with_payload(
         PORTFOLIO_UPDATE_COMPLETE,
         serde_json::json!({ "baseCurrencyChanged": true }),
     ));
+    match refreshed_goals {
+        Ok(goals) => {
+            crate::api::shared::emit_goal_summaries_updated(&state.event_bus, &goals, false)
+        }
+        Err(error) => tracing::warn!(
+            "Goal summary batch refresh failed ({})",
+            wealthfolio_core::goals::summary_refresh_error_kind(&error)
+        ),
+    }
 }
 
 // Publish completion only after the read guard is released, including on retries.
@@ -220,11 +234,10 @@ pub(super) async fn update_settings(
             // Validation can fail before the preference is persisted. In that
             // case the old history remains valid and must stay readable.
             let unchanged = !retry && state.base_currency().is_ok_and(|base| base == previous);
-            state
-                .currency_transition
-                .finish(result.is_ok() || unchanged);
             if result.is_ok() {
-                publish_completion(&state).await;
+                complete_transition(&state).await;
+            } else {
+                state.currency_transition.finish(unchanged);
             }
         }
         result

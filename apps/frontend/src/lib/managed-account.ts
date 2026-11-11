@@ -52,13 +52,14 @@ export function managedPrices(
   currentTotal: number,
   newTotal: number,
 ): ManagedPrice[] | null {
-  const manualValue = holdings.reduce((sum, holding) => sum + holding.marketValue.local, 0);
+  if (holdings.some((holding) => holding.marketValue.local == null)) return null;
+  const manualValue = holdings.reduce((sum, holding) => sum + (holding.marketValue.local ?? 0), 0);
   const fixedValue = currentTotal - manualValue;
   if (manualValue <= 0 || newTotal - fixedValue <= 0) return null;
   const factor = (newTotal - fixedValue) / manualValue;
   return holdings.map((holding) => ({
     assetId: holding.instrument?.id ?? "",
-    price: (holding.marketValue.local / holding.quantity) * factor,
+    price: ((holding.marketValue.local ?? 0) / holding.quantity) * factor,
     currency: holding.localCurrency,
   }));
 }

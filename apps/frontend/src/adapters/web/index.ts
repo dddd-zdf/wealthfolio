@@ -104,10 +104,14 @@ export {
   getImportTemplate,
   getBrokerSyncProfile,
   findTransferMatchCandidates,
+  convertToInternalTransfer,
+  reviewConvertToTransferSplitEffects,
   getTransferPairForActivity,
   getAccountImportMapping,
   linkAccountTemplate,
   linkTransferActivities,
+  linkTransferPairs,
+  reviewTransferMatches,
   unlinkTransferActivities,
   getActivities,
   importActivities,
@@ -187,6 +191,7 @@ export {
   checkHoldingsImport,
   deleteSnapshot,
   getAssetHoldings,
+  getAssetHoldingsScope,
   getAssetLots,
   getHistoricalValuations,
   getHolding,
@@ -251,6 +256,8 @@ export {
   deleteContributionLimit,
   getContributionLimit,
   updateContributionLimit,
+  getContributionLimitDetails,
+  setContributionActivityExcluded,
 } from "../shared/contribution-limits";
 
 // Exchange Rates Commands
@@ -409,6 +416,7 @@ export {
 
 // Data Export Commands
 export { exportDataFile } from "./exports";
+export { getDataExportSummary } from "../shared/exports";
 
 // ============================================================================
 // Platform-specific modules (different implementations for web vs desktop)

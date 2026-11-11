@@ -391,11 +391,11 @@ impl AgentTool for UpdateAccountSettings {
             Some(name) => name.to_string(),
             None => current.name.clone(),
         };
-        let group = match args.group.as_deref().map(str::trim) {
-            Some("") => None,
-            Some(group) => Some(group.to_string()),
-            None => current.group.clone(),
-        };
+        let group = args
+            .group
+            .as_deref()
+            .map(str::trim)
+            .map(|group| (!group.is_empty()).then(|| group.to_string()));
 
         let update = AccountUpdate {
             id: Some(current.id.clone()),

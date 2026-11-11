@@ -111,11 +111,10 @@ fn get_exchange_rate_for_date_errors_for_nonpositive_history() {
     let service = FxService::new(repo);
     service.initialize().unwrap();
 
-    let error = service
-        .get_exchange_rate_for_date("USD", "EUR", date)
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("nonpositive"));
+    assert!(matches!(
+        service.get_exchange_rate_for_date("USD", "EUR", date),
+        Err(crate::errors::Error::Fx(FxError::RateNotFound(_)))
+    ));
 }
 
 #[test]

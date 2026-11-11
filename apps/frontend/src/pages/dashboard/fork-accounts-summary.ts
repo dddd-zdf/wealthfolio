@@ -12,7 +12,7 @@ import type {
   Account,
   AccountScope,
   CurrentAccountValuation,
-  Holding,
+  HoldingsListResponse,
   PerformanceSummaryMap,
   PerformanceSummaryScope,
 } from "@/lib/types";
@@ -25,9 +25,10 @@ export interface PeriodGain {
 }
 
 // Module-level so useQueries keeps the combined result stable between renders.
-function combineDayChangeHoldings(results: { data?: Holding[]; isLoading: boolean }[]) {
+function combineDayChangeHoldings(results: { data?: HoldingsListResponse; isLoading: boolean }[]) {
   return {
-    data: results.map((result) => result.data),
+    data: results.map((result) => result.data?.holdings),
+    incompleteAccounts: results.map((result) => result.data?.incompleteAccounts ?? []),
     isLoading: results.some((result) => result.isLoading),
   };
 }
@@ -81,7 +82,11 @@ export function useAccountPeriodGains({
     );
     performanceScopes.forEach((scope, index) => {
       const holdings = dayChangeHoldings.data[index];
-      if (!holdings) return;
+      const incompleteAccounts = dayChangeHoldings.incompleteAccounts[index] ?? [];
+      if (!holdings || incompleteAccounts.length > 0) {
+        gains[performanceSummaryScopeKey(scope.accountIds)] = { amount: null, percent: null };
+        return;
+      }
       const totalValueBase = scope.accountIds.reduce((sum, id) => sum + (totals.get(id) ?? 0), 0);
       const dayChange = summarizeDayChange(holdings, totalValueBase);
       gains[performanceSummaryScopeKey(scope.accountIds)] = {
@@ -96,6 +101,7 @@ export function useAccountPeriodGains({
     currentAccountValuations,
     performanceScopes,
     dayChangeHoldings.data,
+    dayChangeHoldings.incompleteAccounts,
   ]);
 
   return { periodGains, isLoadingPerformanceQueries };

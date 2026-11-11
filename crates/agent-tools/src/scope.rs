@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use wealthfolio_core::errors::{AGENT_SCOPE_DEPENDENCY, AGENT_SCOPE_UNKNOWN};
 
 /// A single granted or required permission scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -29,6 +30,7 @@ pub enum AgentScope {
     MarketDataWrite,
     SpendingWrite,
     BudgetWrite,
+    HoldingsWrite,
 }
 
 impl AgentScope {
@@ -52,6 +54,7 @@ impl AgentScope {
         AgentScope::MarketDataWrite,
         AgentScope::SpendingWrite,
         AgentScope::BudgetWrite,
+        AgentScope::HoldingsWrite,
     ];
 
     /// The read-only scopes — what the `read-only` preset grants. Kept
@@ -88,6 +91,7 @@ impl AgentScope {
             AgentScope::SpendingRead => "spending:read",
             AgentScope::SpendingWrite => "spending:write",
             AgentScope::BudgetWrite => "budget:write",
+            AgentScope::HoldingsWrite => "holdings:write",
         }
     }
 
@@ -106,10 +110,13 @@ pub fn validate_requested_scopes(requested: &[String]) -> Result<Vec<String>, St
     }
     let mut set = AgentScopeSet::new();
     for scope in requested {
-        set.insert(AgentScope::parse(scope).ok_or_else(|| format!("Unknown scope: {scope}"))?);
+        set.insert(
+            AgentScope::parse(scope)
+                .ok_or_else(|| format!("{AGENT_SCOPE_UNKNOWN}: Unknown scope: {scope}"))?,
+        );
     }
     if let Some(error) = set.dependency_error() {
-        return Err(error);
+        return Err(format!("{AGENT_SCOPE_DEPENDENCY}: {error}"));
     }
     Ok(set.iter().map(|scope| scope.as_str().to_string()).collect())
 }
@@ -227,6 +234,18 @@ impl AgentScopeSet {
                     .to_string(),
             );
         }
+        if self.contains(AgentScope::AccountsWrite) && !self.contains(AgentScope::AccountsRead) {
+            return Some(
+                "accounts:write requires accounts:read (account changes show the stored accounts)"
+                    .to_string(),
+            );
+        }
+        if self.contains(AgentScope::HoldingsWrite) && !self.contains(AgentScope::HoldingsRead) {
+            return Some(
+                "holdings:write requires holdings:read (snapshot previews show the stored holdings)"
+                    .to_string(),
+            );
+        }
         for scope in [AgentScope::SpendingWrite, AgentScope::BudgetWrite] {
             if self.contains(scope) && !self.contains(AgentScope::SpendingRead) {
                 return Some(format!("{scope} requires spending:read"));
@@ -276,6 +295,8 @@ mod tests {
         assert!(!set.contains(AgentScope::ClassificationSuggest));
         assert!(!set.contains(AgentScope::ClassificationWrite));
         assert!(!set.contains(AgentScope::MarketDataWrite));
+        assert!(!set.contains(AgentScope::AccountsWrite));
+        assert!(!set.contains(AgentScope::HoldingsWrite));
     }
 
     #[test]
@@ -296,6 +317,7 @@ mod tests {
         assert!(full.contains(AgentScope::AccountsWrite));
         // Quote writes are only granted explicitly, never by a preset.
         assert!(!full.contains(AgentScope::MarketDataWrite));
+        assert!(!full.contains(AgentScope::HoldingsWrite));
     }
 
     #[test]
@@ -353,6 +375,24 @@ mod tests {
         set.insert(AgentScope::HoldingsRead);
         assert!(set.dependency_error().is_none());
     }
+
+    #[test]
+    fn dependency_error_flags_accounts_write_without_accounts_read() {
+        let mut set = AgentScopeSet::from_strs(["accounts:write"]);
+        assert!(set.dependency_error().is_some());
+
+        set.insert(AgentScope::AccountsRead);
+        assert!(set.dependency_error().is_none());
+    }
+
+    #[test]
+    fn dependency_error_flags_holdings_write_without_holdings_read() {
+        let mut set = AgentScopeSet::from_strs(["holdings:write"]);
+        assert!(set.dependency_error().is_some());
+
+        set.insert(AgentScope::HoldingsRead);
+        assert!(set.dependency_error().is_none());
+    }
 }
 
 #[cfg(test)]
@@ -367,6 +407,8 @@ mod request_validation_tests {
         assert!(validate_requested_scopes(&["market-data:write".into()]).is_err());
         assert!(validate_requested_scopes(&["spending:write".into()]).is_err());
         assert!(validate_requested_scopes(&["budget:write".into()]).is_err());
+        assert!(validate_requested_scopes(&["accounts:write".into()]).is_err());
+        assert!(validate_requested_scopes(&["holdings:write".into()]).is_err());
         assert_eq!(
             validate_requested_scopes(&["budget:write".into(), "spending:read".into()]).unwrap(),
             vec!["spending:read", "budget:write"]
