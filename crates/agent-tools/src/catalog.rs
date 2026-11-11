@@ -1155,7 +1155,7 @@ mod tests {
         let catalog = AgentToolCatalog::mcp_catalog();
         let args = serde_json::json!({ "accountId": "a", "name": "Renamed" });
         for granted in [
-            AgentScopeSet::read_activity_write_classification_suggest(),
+            AgentScopeSet::read_activity_write(),
             AgentScopeSet::from_strs(["accounts:write"]),
         ] {
             for name in ["prepare_account_change", "commit_account_change"] {

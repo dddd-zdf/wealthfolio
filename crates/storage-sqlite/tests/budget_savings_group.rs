@@ -7,7 +7,9 @@ mod common;
 use std::sync::Arc;
 
 use diesel::connection::SimpleConnection;
-use wealthfolio_core::fx::{FxService, FxServiceTrait, NewExchangeRate};
+use rust_decimal::Decimal;
+use wealthfolio_core::fx::{FxService, FxServiceTrait};
+use wealthfolio_core::quotes::DATA_SOURCE_MANUAL;
 use wealthfolio_core::taxonomies::TaxonomyService;
 use wealthfolio_spending::analytics::{AnalyticsService, MonthlyReport, ReportRequest};
 use wealthfolio_spending::budget::{
@@ -42,6 +44,7 @@ struct Fixture {
     analytics: AnalyticsService,
     settings: Arc<SpendingSettingsService>,
     fx: Arc<FxService>,
+    fx_repository: Arc<FxRepository>,
     _dir: common::TestDir,
 }
 
@@ -68,10 +71,8 @@ impl Fixture {
             pool.clone(),
             writer.clone(),
         ))));
-        let fx = Arc::new(FxService::new(Arc::new(FxRepository::new(
-            pool.clone(),
-            writer.clone(),
-        ))));
+        let fx_repository = Arc::new(FxRepository::new(pool.clone(), writer.clone()));
+        let fx = Arc::new(FxService::new(fx_repository.clone()));
         let service = BudgetService::new(
             budget_repo.clone(),
             activity_repo.clone(),
@@ -117,6 +118,7 @@ impl Fixture {
             analytics,
             settings: settings.clone(),
             fx,
+            fx_repository,
             _dir: dir,
         };
         // Two spending accounts and a brokerage account outside the spending set.
@@ -477,14 +479,24 @@ async fn budget_transfer_context_preserves_local_windows_fx_and_allocations() {
             })
             .await
             .unwrap();
-        f.fx.add_exchange_rate(NewExchangeRate {
-            from_currency: "EUR".into(),
-            to_currency: "USD".into(),
-            rate: rust_decimal::Decimal::from(2),
-            source: "MANUAL".into(),
-        })
-        .await
-        .unwrap();
+        // Each transaction group needs an observation within the dated FX carry window.
+        let pair_id = f
+            .fx_repository
+            .create_fx_asset("EUR", "USD", DATA_SOURCE_MANUAL)
+            .await
+            .unwrap();
+        for date in ["2026-05-31", "2026-06-15", "2026-06-30"] {
+            f.fx_repository
+                .add_quote(
+                    pair_id.clone(),
+                    date.into(),
+                    Decimal::from(2),
+                    DATA_SOURCE_MANUAL.into(),
+                )
+                .await
+                .unwrap();
+        }
+        f.fx.initialize().unwrap();
 
         for (id, account, kind, date, amount, pair, category) in [
             (
