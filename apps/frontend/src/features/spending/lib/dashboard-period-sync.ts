@@ -1,8 +1,7 @@
 /**
- * Keeps the dashboard's Investments, Net Worth and Spending tabs on the same
- * period. The last explicit pick on any tab is stored once, in the vocabulary
- * of the tab it was made on, and each tab maps it to the nearest period it can
- * show.
+ * Date ranges and period navigation for the portfolio and Spending views.
+ * The portfolio dashboard also reads older picks saved when Spending shared
+ * its period, so existing selections keep their original dates and presets.
  */
 import { getInitialIntervalData, type TimePeriod } from "@wealthfolio/ui";
 

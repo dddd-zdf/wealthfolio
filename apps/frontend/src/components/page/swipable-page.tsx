@@ -10,7 +10,8 @@ export interface SwipablePageView {
   value: string;
   label: string;
   icon?: Icon;
-  content: React.ReactNode;
+  /** The mobile carousel can render a view before it becomes active. */
+  content: React.ReactNode | ((isActive: boolean) => React.ReactNode);
   /** Optional actions to display in the header when this view is active */
   actions?: React.ReactNode;
 }
@@ -213,6 +214,7 @@ export function SwipablePage({
   const shownView = swipedView ?? currentView;
   // Scrolls the phone carousel; set once it is built.
   const scrollCarouselRef = React.useRef<((index: number) => void) | null>(null);
+  const currentContent = views.find((v) => v.value === currentView)?.content;
   const currentActions = views.find((v) => v.value === shownView)?.actions;
   const mobileActionsInHeader = mobileActionsPlacement === "header";
 
@@ -328,7 +330,9 @@ export function SwipablePage({
                         withMobileNavOffset && "pb-[var(--mobile-nav-total-offset)]",
                       )}
                     >
-                      {v.content}
+                      {typeof v.content === "function"
+                        ? v.content(v.value === currentView)
+                        : v.content}
                     </div>
                   ),
                 }))}
@@ -376,7 +380,7 @@ export function SwipablePage({
                 desktopContentClassName,
               )}
             >
-              {views.find((v) => v.value === currentView)?.content}
+              {typeof currentContent === "function" ? currentContent(true) : currentContent}
             </div>
           </div>
         )}

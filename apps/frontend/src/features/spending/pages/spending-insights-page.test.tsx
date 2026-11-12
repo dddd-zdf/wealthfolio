@@ -86,7 +86,7 @@ function Location() {
   return <output data-testid="location">{useLocation().search}</output>;
 }
 function sharedPick() {
-  return JSON.parse(localStorage.getItem("dashboard-period") ?? "null");
+  return JSON.parse(localStorage.getItem("spending-insights-pick") ?? "null");
 }
 function setup(stage = "where") {
   render(
@@ -418,7 +418,7 @@ it.each(["changed", "when"])(
   },
 );
 
-describe("period shared with the dashboard", () => {
+describe("period isolation and navigation", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-09-15T12:00:00Z"));
@@ -428,7 +428,7 @@ describe("period shared with the dashboard", () => {
   it.each(["2026", "invalid"])(
     "consumes invalid year-only link %s without replacing the shared selection",
     (year) => {
-      localStorage.setItem("dashboard-period", JSON.stringify({ kind: "year", year: 2025 }));
+      localStorage.setItem("spending-insights-pick", JSON.stringify({ kind: "year", year: 2025 }));
       render(
         <MemoryRouter initialEntries={[`/insights?tab=spending&spendingYear=${year}`]}>
           <SpendingInsightsPage />
@@ -471,7 +471,10 @@ describe("period shared with the dashboard", () => {
   });
 
   it("consumes a year link once, preserving year identity and calendar comparisons", () => {
-    localStorage.setItem("dashboard-period", JSON.stringify({ kind: "spending", code: "MTD" }));
+    localStorage.setItem(
+      "spending-insights-pick",
+      JSON.stringify({ kind: "spending", code: "MTD" }),
+    );
     render(
       <MemoryRouter
         initialEntries={[
@@ -498,7 +501,7 @@ describe("period shared with the dashboard", () => {
     expect(screen.getByRole("button", { name: "Next period" })).toBeDisabled();
   });
 
-  it("follows a dashboard year instead of an old month preference", () => {
+  it("ignores a portfolio dashboard year but keeps its own month preference", () => {
     localStorage.setItem("spending-month", JSON.stringify("2024-06"));
     localStorage.setItem("dashboard-period", JSON.stringify({ kind: "year", year: 2025 }));
     render(
@@ -506,11 +509,7 @@ describe("period shared with the dashboard", () => {
         <SpendingInsightsPage />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId("spending-selected-range")).toHaveTextContent("2025");
-    expect(insightQuery).toHaveBeenCalledWith(
-      expect.objectContaining({ compareStartDate: "2024-01-01T05:00:00.000Z" }),
-      undefined,
-    );
+    expect(screen.getByTestId("spending-selected-range")).toHaveTextContent("June 2024");
   });
   function renderAt(search: string) {
     render(
@@ -538,25 +537,26 @@ describe("period shared with the dashboard", () => {
     },
   );
 
-  it("follows the period picked on the dashboard when the URL names none", () => {
+  it("ignores a portfolio dashboard period when the URL names none", () => {
     localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code: "6M" }));
     renderAt("?stage=where");
-    expect(screen.getByRole("button", { name: "6M" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "6M" })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("shows dashboard custom dates", () => {
+  it("ignores dashboard custom dates without an explicit link", () => {
     localStorage.setItem(
       "dashboard-period",
       JSON.stringify({ kind: "range", from: "2025-03-08", to: "2025-03-10" }),
     );
     renderAt("?stage=where");
-    expect(screen.getByTestId("spending-selected-range")).toHaveTextContent(
-      "Mar 8, 2025 – Mar 10, 2025",
-    );
+    expect(screen.queryByTestId("spending-selected-range")).not.toBeInTheDocument();
   });
 
   it("applies a period named in the URL once, then drops it from the URL", () => {
-    localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code: "6M" }));
+    localStorage.setItem(
+      "spending-insights-pick",
+      JSON.stringify({ kind: "spending", code: "6M" }),
+    );
     renderAt("?stage=where&period=YTD");
     expect(screen.getByRole("button", { name: "YTD" })).toHaveAttribute("aria-pressed", "true");
     expect(sharedPick()).toEqual({ kind: "spending", code: "YTD" });
@@ -615,7 +615,10 @@ describe("period shared with the dashboard", () => {
   );
 
   it("restores historical navigation after remount and returns by reselecting the preset", async () => {
-    localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code: "6M" }));
+    localStorage.setItem(
+      "spending-insights-pick",
+      JSON.stringify({ kind: "spending", code: "6M" }),
+    );
     const user = userEvent.setup();
     const first = render(
       <MemoryRouter>
@@ -638,7 +641,10 @@ describe("period shared with the dashboard", () => {
 
   it("clears a stepped month back to the visible preset rather than a stale Insights preference", async () => {
     localStorage.setItem("spending-insights-period", JSON.stringify("6M"));
-    localStorage.setItem("dashboard-period", JSON.stringify({ kind: "spending", code: "MTD" }));
+    localStorage.setItem(
+      "spending-insights-pick",
+      JSON.stringify({ kind: "spending", code: "MTD" }),
+    );
     const user = renderAt("?stage=where");
     await user.click(screen.getByRole("button", { name: "Previous period" }));
     await user.click(screen.getByRole("button", { name: "Select dates" }));
@@ -650,23 +656,13 @@ describe("period shared with the dashboard", () => {
     );
   });
 
-  it("continues a dashboard 1M pick instead of treating it as a manual range", async () => {
+  it("ignores a portfolio-only 1M pick", () => {
     localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code: "1M" }));
-    const user = renderAt("?stage=where");
+    renderAt("?stage=where");
     expect(screen.getByRole("button", { name: /This month/ })).toHaveAttribute(
       "aria-pressed",
-      "false",
+      "true",
     );
-    await user.click(screen.getByRole("button", { name: "Previous period" }));
-    expect(sharedPick()).toMatchObject({
-      kind: "range",
-      from: "2026-07-15",
-      to: "2026-08-15",
-      presetWindow: { preset: { kind: "portfolio", code: "1M" }, offset: -1 },
-    });
-    await user.click(screen.getByRole("button", { name: "Next period" }));
-    expect(sharedPick()).toEqual({ kind: "portfolio", code: "1M" });
-    expect(screen.getByRole("button", { name: "Next period" })).toBeDisabled();
   });
 
   it("keeps manual custom ranges fixed and accepts legacy Last month links", async () => {

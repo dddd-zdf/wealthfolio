@@ -19,19 +19,10 @@ import { useDateFormatting, type TimePeriod } from "@wealthfolio/ui";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-const DEFAULT_INTERVAL: TimePeriod = "3M";
+const DEFAULT_INTERVAL: TimePeriod = "1D";
 
-/**
- * The period Investments and Net Worth share with the Spending tab. Before any
- * tab has picked one, each tab keeps reading its own saved preset.
- */
-export function useDashboardPeriod(
-  todayISO: string,
-  ownPreset: { key: string; initial: TimePeriod } = {
-    key: DASHBOARD_INTERVAL_STORAGE_KEY,
-    initial: DEFAULT_INTERVAL,
-  },
-) {
+/** The date range shared by Investments and Net Worth. */
+export function useDashboardPeriod(todayISO: string) {
   const { t } = useTranslation();
   const dateFormatting = useDateFormatting();
   const [pick, setPick] = usePersistentState<DashboardPeriodPick | null>(
@@ -42,15 +33,13 @@ export function useDashboardPeriod(
     DASHBOARD_INTERVAL_STORAGE_KEY,
     DEFAULT_INTERVAL,
   );
-  const [savedPreset] = usePersistentState<TimePeriod>(ownPreset.key, ownPreset.initial);
-
   const view = useMemo(
     () =>
       (pick && portfolioViewForPick(pick, todayISO)) ?? {
-        code: savedPreset,
-        range: portfolioPeriodRange(savedPreset, todayISO),
+        code: DEFAULT_INTERVAL,
+        range: portfolioPeriodRange(DEFAULT_INTERVAL, todayISO),
       },
-    [pick, savedPreset, todayISO],
+    [pick, todayISO],
   );
   const customMonth = pick?.kind === "month" && view.code === null ? pick.monthKey : null;
   const customYear =
@@ -102,8 +91,7 @@ export function useDashboardPeriod(
   };
   const clearCustom = () =>
     setPick(presetWindow?.preset ?? { kind: "portfolio", code: lastPreset });
-  // Clear returns to the preset this tab showed before the custom pick, which
-  // can differ from the last preset picked (Net Worth's own ALL, for example).
+  // Clear returns to the preset shown before the custom pick.
   const pickCustom = (next: DashboardPeriodPick) => {
     if (view.code) setLastPreset(view.code);
     setPick(next);
