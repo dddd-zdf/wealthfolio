@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 import { calculatePerformanceSummary } from "@/adapters";
-import { HistoryChart } from "@/components/history-chart";
+import { HistoryChart, type HistoryChartData } from "@/components/history-chart";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
@@ -18,13 +18,13 @@ import { SpendingDatePicker } from "@/features/spending/components/spending-date
 import { PeriodNavigation } from "@/features/spending/components/period-navigation";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { format } from "date-fns";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { HealthStatusIndicator } from "@/components/health-status-icon";
 import { PrivacyToggle } from "@/components/privacy-toggle";
 import type { AccountScope } from "@/lib/types";
 import { accountScopeKey } from "@/pages/allocation-targets/components/target-scope";
 import { AccountsSummary } from "./accounts-summary";
-import { useDashboardChart, useDashboardGain } from "./fork-dashboard";
+import { getDashboardChartGain, useDashboardChart, useDashboardGain } from "./fork-dashboard";
 import { DashboardMoneyWeightedReturn } from "./fork-dashboard-parts";
 import Balance from "./balance";
 import SavingGoals from "./goals";
@@ -198,6 +198,17 @@ export function DashboardContent({
     dayChange,
     isAllTime,
   });
+  const [activePoint, setActivePoint] = useState<HistoryChartData | null>(null);
+  const hoveredPoint =
+    activePoint && !isValuationHistoryLoading && forkChart.chartData.includes(activePoint)
+      ? activePoint
+      : null;
+  const hoveredGain = hoveredPoint
+    ? getDashboardChartGain(hoveredPoint, forkChart.chartData[0], forkChart.referenceValue)
+    : null;
+  const displayedCurrency = hoveredPoint?.currency ?? baseCurrency;
+  const displayedGain = hoveredGain ? hoveredGain.amount : gainLossAmount;
+  const displayedReturn = hoveredGain ? hoveredGain.percent : simpleReturn;
 
   const chartMinDomainSpanRatio = useMemo(
     () => getDashboardChartMinDomainSpanRatio(selectedInterval),
@@ -233,7 +244,9 @@ export function DashboardContent({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {period.isHistorical && (
-              <span className="text-muted-foreground w-full text-xs">
+              <span
+                className={`text-muted-foreground w-full text-xs${hoveredPoint ? " invisible" : ""}`}
+              >
                 {t("common:currentValue")}
               </span>
             )}
@@ -242,10 +255,10 @@ export function DashboardContent({
               notices={portfolioCurrentValuation?.summary.warnings}
             >
               <Balance
-                isLoading={isCurrentValuationLoading}
-                isUnavailable={isCurrentValuationUnavailable}
-                targetValue={totalValue}
-                currency={baseCurrency}
+                isLoading={!hoveredPoint && isCurrentValuationLoading}
+                isUnavailable={!hoveredPoint && isCurrentValuationUnavailable}
+                targetValue={hoveredPoint?.totalValue ?? totalValue}
+                currency={displayedCurrency}
                 displayCurrency={true}
               />
             </PortfolioUpdateTrigger>
@@ -253,7 +266,7 @@ export function DashboardContent({
             <HealthStatusIndicator />
           </div>
           <div className="text-md flex min-h-5 flex-wrap items-center gap-x-3">
-            {isGainLoading ? (
+            {isGainLoading && !hoveredGain ? (
               <div className="flex items-center gap-3">
                 <Skeleton className="h-4 w-24" />
                 <div className="border-secondary my-1 border-e pe-2" />
@@ -261,32 +274,32 @@ export function DashboardContent({
               </div>
             ) : (
               <>
-                {gainLossAmount == null ? (
+                {displayedGain == null ? (
                   <span className="text-muted-foreground lg:text-md text-sm font-light">
                     {t("performance:not_available")}
                   </span>
                 ) : (
                   <GainAmount
                     className="lg:text-md text-sm font-light"
-                    value={gainLossAmount}
-                    currency={baseCurrency}
+                    value={displayedGain}
+                    currency={displayedCurrency}
                     displayCurrency={false}
                   />
                 )}
                 {/* Stretch: the row centres its items, so an empty divider has no height. */}
                 <div className="border-secondary my-1 self-stretch border-e pe-2" />
-                {simpleReturn == null ? (
+                {displayedReturn == null ? (
                   <span className="text-muted-foreground lg:text-md text-sm font-light">
                     {t("performance:not_available")}
                   </span>
                 ) : (
                   <GainPercent
                     className="lg:text-md text-sm font-light"
-                    value={simpleReturn}
+                    value={displayedReturn}
                     animated={true}
                   />
                 )}
-                <DashboardMoneyWeightedReturn value={moneyWeightedReturn} />
+                {!hoveredPoint && <DashboardMoneyWeightedReturn value={moneyWeightedReturn} />}
               </>
             )}
             {period.isHistorical && (
@@ -315,6 +328,8 @@ export function DashboardContent({
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
             timeDomain={forkChart.timeDomain}
             referenceValue={forkChart.referenceValue}
+            onActivePointChange={setActivePoint}
+            keepTooltipWithinChart
             color="var(--investments)"
           />
           {valuationHistory && forkChart.chartData.length > 0 && (

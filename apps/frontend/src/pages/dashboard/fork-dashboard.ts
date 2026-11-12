@@ -5,6 +5,7 @@
 // - 1D/1W: the chart uses intraday values, with a faint guide where the period started.
 // - Other periods: money-weighted return beside the simple return.
 import { getIntradayValuations, isWeb } from "@/adapters";
+import type { HistoryChartData } from "@/components/history-chart";
 import { performanceMoneyWeightedReturn, summarizeDayChange } from "@/lib/fork-performance";
 import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
@@ -19,11 +20,16 @@ const REGULAR_SESSION_MS = 6.5 * 60 * 60 * 1000;
 type PerformanceSummary = Parameters<typeof performancePeriodPnl>[0];
 type DayChange = ReturnType<typeof summarizeDayChange>;
 
-interface ChartPoint {
-  date: string;
-  totalValue: number;
-  netContribution: number;
-  currency: string;
+export function getDashboardChartGain(
+  point: HistoryChartData,
+  first: HistoryChartData,
+  referenceValue: number | undefined,
+): { amount: number | null; percent: number | null } {
+  if (point.currency !== first.currency) return { amount: null, percent: null };
+  const startValue = referenceValue ?? first.totalValue;
+  const netDeposits = point.netContribution - first.netContribution;
+  const amount = point.totalValue - startValue - netDeposits;
+  return { amount, percent: startValue > 0 ? amount / startValue : null };
 }
 
 interface DashboardGainInput {
@@ -71,7 +77,7 @@ interface DashboardChartInput {
   scopeKey: string;
   totalValue: number;
   baseCurrency: string;
-  dailyChartData: ChartPoint[];
+  dailyChartData: HistoryChartData[];
   dayChange: DayChange | null;
   isAllTime: boolean;
 }

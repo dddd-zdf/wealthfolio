@@ -4,7 +4,7 @@ import { useIsMobileViewport, useViewportBelow } from "@/hooks/use-platform";
 import { formatDate, formatTime } from "@/lib/utils";
 import { AmountDisplay, useDateFormatting } from "@wealthfolio/ui";
 import { ChartConfig, ChartContainer } from "@wealthfolio/ui/components/ui/chart";
-import { useId, useMemo, useRef, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, AreaChart, ReferenceDot, ReferenceLine, Tooltip, XAxis, YAxis } from "recharts";
 import type { MouseHandlerDataParam } from "recharts/types/synchronisation/types";
@@ -51,6 +51,10 @@ interface HistoryChartProps {
   referenceValue?: number;
   /** The line's colour at or above zero, e.g. `var(--investments)`; below zero it is --loss. */
   color?: string;
+  /** Called with the currently selected point, or null when selection ends. */
+  onActivePointChange?: (point: HistoryChartData | null) => void;
+  /** Keep the tooltip below the top of the plot, even on wide screens. */
+  keepTooltipWithinChart?: boolean;
 }
 
 const timeOf = (item: HistoryChartData) => Date.parse(item.date);
@@ -69,6 +73,7 @@ interface CustomTooltipProps extends TooltipBaseProps {
   isBalanceHidden: boolean;
   isChartHovered: boolean;
   color: string;
+  onActivePointChange?: (point: HistoryChartData | null) => void;
 }
 
 const CustomTooltip = ({
@@ -77,25 +82,25 @@ const CustomTooltip = ({
   isBalanceHidden,
   isChartHovered,
   color,
+  onActivePointChange,
 }: CustomTooltipProps) => {
   const dateFormatting = useDateFormatting();
 
   const { t } = useTranslation();
-  if (!active || !payload?.length) {
-    return null;
-  }
-
-  const totalValueData = payload.find(
+  const totalValueData = payload?.find(
     (item): item is TooltipEntry & { dataKey: "totalValue"; payload: HistoryChartData } =>
       item?.dataKey === "totalValue" && item.payload !== undefined,
   );
-  const netContributionData = payload.find(
+  const netContributionData = payload?.find(
     (item): item is TooltipEntry & { dataKey: "netContribution"; payload: HistoryChartData } =>
       item?.dataKey === "netContribution" && item.payload !== undefined,
   );
 
-  const tvPayload = totalValueData?.payload;
+  const tvPayload = active ? totalValueData?.payload : undefined;
   const ncPayload = netContributionData?.payload;
+  useLayoutEffect(() => {
+    onActivePointChange?.(tvPayload ?? null);
+  }, [onActivePointChange, tvPayload]);
 
   if (!tvPayload) {
     return null;
@@ -162,6 +167,8 @@ export function HistoryChart({
   timeDomain,
   referenceValue,
   color = "var(--gain)",
+  onActivePointChange,
+  keepTooltipWithinChart,
 }: HistoryChartProps) {
   const { t } = useTranslation();
   const scrubHaptic = useChartScrubHaptic();
@@ -170,7 +177,8 @@ export function HistoryChart({
   const [hoveredMarker, setHoveredMarker] = useState(false);
   const isMobile = useIsMobileViewport();
   // globals.css clips flex overflow through 1024px; useViewportBelow is exclusive.
-  const keepTooltipInside = useViewportBelow(1025);
+  const isViewportBelowTooltipBreakpoint = useViewportBelow(1025);
+  const keepTooltipInside = keepTooltipWithinChart ?? isViewportBelowTooltipBreakpoint;
   const isTouchScrubbingRef = useRef(false);
   const id = useId();
   const fillGradientId = `historyFill-${id}`;
@@ -270,6 +278,12 @@ export function HistoryChart({
     scrubHaptic.reset();
   };
 
+  const clearHover = () => {
+    setIsChartHovered(false);
+    setHoveredMarker(false);
+    resetTouchScrubState();
+  };
+
   const handleChartMove = (chartState: MouseHandlerDataParam) => {
     if (!showMarkers || chartState.activeLabel == null) {
       setHoveredMarker(false);
@@ -295,11 +309,7 @@ export function HistoryChart({
           bottom: 0,
         }}
         onMouseEnter={() => setIsChartHovered(true)}
-        onMouseLeave={() => {
-          setIsChartHovered(false);
-          setHoveredMarker(false);
-          resetTouchScrubState();
-        }}
+        onMouseLeave={clearHover}
         onMouseMove={handleChartMove}
         onClick={(chartState) => {
           if (!showMarkers || chartState?.activeLabel == null) return;
@@ -314,11 +324,7 @@ export function HistoryChart({
           handleChartMove(chartState);
         }}
         onTouchMove={handleChartMove}
-        onTouchEnd={() => {
-          setIsChartHovered(false);
-          setHoveredMarker(false);
-          resetTouchScrubState();
-        }}
+        onTouchEnd={clearHover}
       >
         <defs>
           <linearGradient id={fillGradientId} x1="0" y1="0" x2="0" y2="1">
@@ -360,14 +366,14 @@ export function HistoryChart({
           position={keepTooltipInside ? { y: 60 } : { y: -20 }}
           cursor={{ stroke: "var(--border)", strokeWidth: 1, pointerEvents: "none" }}
           wrapperStyle={{ pointerEvents: "none" }}
-          content={(props) => (
+          content={
             <CustomTooltip
-              {...(props as unknown as TooltipBaseProps)}
               isBalanceHidden={isBalanceHidden}
               isChartHovered={isChartHovered}
               color={color}
+              onActivePointChange={onActivePointChange}
             />
-          )}
+          }
         />
         {timeDomain ? (
           <XAxis hide dataKey={timeOf} type="number" scale="time" domain={timeDomain} />
