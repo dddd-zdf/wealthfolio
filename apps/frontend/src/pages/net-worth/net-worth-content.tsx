@@ -9,13 +9,7 @@ import { AllocationDetailSheet } from "@/pages/holdings/components/allocation-de
 import { DashboardCard } from "@/components/dashboard-card";
 import { HealthStatusIndicator } from "@/components/health-status-icon";
 import { PrivacyToggle } from "@/components/privacy-toggle";
-import {
-  GainAmount,
-  GainPercent,
-  IntervalSelector,
-  useNumberFormatting,
-  type TimePeriod,
-} from "@wealthfolio/ui";
+import { GainAmount, GainPercent, IntervalSelector, useNumberFormatting } from "@wealthfolio/ui";
 import { SpendingDatePicker } from "@/features/spending/components/spending-date-picker";
 import { PeriodNavigation } from "@/features/spending/components/period-navigation";
 import { useDashboardPeriod } from "@/pages/dashboard/use-dashboard-period";
@@ -47,9 +41,6 @@ import { VelocityCard } from "./components/velocity-card";
 import { NetWorthChart } from "./net-worth-chart";
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 
-const DEFAULT_INTERVAL: TimePeriod = "ALL";
-// Read only until any dashboard tab picks a shared period.
-const INTERVAL_STORAGE_KEY = "networth-interval";
 const MS_PER_DAY = 86_400_000;
 
 export function NetWorthContent() {
@@ -67,10 +58,7 @@ export function NetWorthContent() {
   });
   const isMobile = useIsMobileViewport();
 
-  const period = useDashboardPeriod(currentDateISO, {
-    key: INTERVAL_STORAGE_KEY,
-    initial: DEFAULT_INTERVAL,
-  });
+  const period = useDashboardPeriod(currentDateISO);
   const { code: periodCode, range: dateRange } = period;
   // A local Date carries the configured calendar day for the date-only interval helper.
   const currentDate = useMemo(() => parseLocalDate(currentDateISO), [currentDateISO]);

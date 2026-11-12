@@ -47,9 +47,7 @@ describe("useDashboardPeriod", () => {
       }),
     );
     const investments = renderHook(() => useDashboardPeriod("2026-09-15"));
-    const netWorth = renderHook(() =>
-      useDashboardPeriod("2026-09-15", { key: "networth-interval", initial: "ALL" }),
-    );
+    const netWorth = renderHook(() => useDashboardPeriod("2026-09-15"));
     expect(investments.result.current.selectedPreset).toBe("6M");
     expect(dates(netWorth.result.current.range)).toEqual(["2025-10-01", "2026-03-31"]);
     act(() => netWorth.result.current.navigation.onStep(-1));
@@ -80,24 +78,23 @@ describe("useDashboardPeriod", () => {
     expect(netWorth.result.current.navigation.nextDisabled).toBe(true);
   });
 
-  it("keeps each tab's own preset until a period is picked", () => {
+  it("starts both tabs on 1D and synchronizes preset changes in both directions", () => {
     localStorage.setItem("networth-interval", JSON.stringify("ALL"));
     const investments = renderHook(() => useDashboardPeriod(TODAY));
-    const netWorth = renderHook(() =>
-      useDashboardPeriod(TODAY, { key: "networth-interval", initial: "ALL" }),
-    );
-    expect(investments.result.current.code).toBe("3M");
-    expect(netWorth.result.current.code).toBe("ALL");
+    const netWorth = renderHook(() => useDashboardPeriod(TODAY));
+    expect(investments.result.current.code).toBe("1D");
+    expect(netWorth.result.current.code).toBe("1D");
+    expect(dates(netWorth.result.current.range)).toEqual(dates(investments.result.current.range));
 
     act(() => investments.result.current.selectPreset("6M"));
     expect(netWorth.result.current.code).toBe("6M");
+    act(() => netWorth.result.current.selectPreset("1D"));
+    expect(investments.result.current.code).toBe("1D");
   });
 
   it("shares a picked month as a custom range and restores the last preset on clear", () => {
     const investments = renderHook(() => useDashboardPeriod(TODAY));
-    const netWorth = renderHook(() =>
-      useDashboardPeriod(TODAY, { key: "networth-interval", initial: "ALL" }),
-    );
+    const netWorth = renderHook(() => useDashboardPeriod(TODAY));
     act(() => investments.result.current.selectPreset("1Y"));
     act(() => netWorth.result.current.selectMonth("2026-02"));
 
@@ -109,33 +106,26 @@ describe("useDashboardPeriod", () => {
     expect(netWorth.result.current.code).toBe("1Y");
   });
 
-  it.each(["dashboard-interval", "networth-interval"])(
-    "keeps calendar-month navigation bounded to completed months on %s",
-    (key) => {
-      const { result } = renderHook(() => useDashboardPeriod(TODAY, { key, initial: "3M" }));
-      act(() => result.current.selectMonth("2026-02"));
-      expect(result.current.navigation.nextDisabled).toBe(true);
-      act(() => result.current.navigation.onStep(1));
-      expect(result.current.customMonth).toBe("2026-02");
-      act(() => result.current.navigation.onStep(-1));
-      expect(result.current.customMonth).toBe("2026-01");
-      expect(result.current.navigation.nextDisabled).toBe(false);
-      act(() => result.current.navigation.onStep(1));
-      expect(result.current.customMonth).toBe("2026-02");
-      expect(result.current.navigation.nextDisabled).toBe(true);
-    },
-  );
+  it("keeps calendar-month navigation bounded to completed months", () => {
+    const { result } = renderHook(() => useDashboardPeriod(TODAY));
+    act(() => result.current.selectMonth("2026-02"));
+    expect(result.current.navigation.nextDisabled).toBe(true);
+    act(() => result.current.navigation.onStep(1));
+    expect(result.current.customMonth).toBe("2026-02");
+    act(() => result.current.navigation.onStep(-1));
+    expect(result.current.customMonth).toBe("2026-01");
+    expect(result.current.navigation.nextDisabled).toBe(false);
+    act(() => result.current.navigation.onStep(1));
+    expect(result.current.customMonth).toBe("2026-02");
+    expect(result.current.navigation.nextDisabled).toBe(true);
+  });
 
-  it("clears a custom period back to the preset this tab showed", () => {
-    // An old Investments preset is stored, but Net Worth shows its own ALL.
+  it("clears a custom period back to 1D when started from the default", () => {
     localStorage.setItem("dashboard-interval", JSON.stringify("3M"));
-    localStorage.setItem("networth-interval", JSON.stringify("ALL"));
-    const netWorth = renderHook(() =>
-      useDashboardPeriod(TODAY, { key: "networth-interval", initial: "ALL" }),
-    );
+    const netWorth = renderHook(() => useDashboardPeriod(TODAY));
     act(() => netWorth.result.current.selectMonth("2026-02"));
     act(() => netWorth.result.current.selectMonth(null));
-    expect(netWorth.result.current.code).toBe("ALL");
+    expect(netWorth.result.current.code).toBe("1D");
   });
 
   it("highlights a preset when a picked range matches it", () => {
@@ -153,7 +143,7 @@ describe("useDashboardPeriod", () => {
     expect(dates(result.current.customRange)).toEqual(["2026-01-05", "2026-02-10"]);
   });
 
-  it("follows a Spending pick", () => {
+  it("keeps a legacy preset saved from Spending", () => {
     localStorage.setItem(
       "dashboard-period",
       JSON.stringify({ kind: "spending", code: "LAST_MONTH" }),

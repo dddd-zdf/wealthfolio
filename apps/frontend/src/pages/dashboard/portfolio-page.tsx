@@ -170,9 +170,9 @@ export default function PortfolioPage() {
         value: "spending",
         label: t("dashboard:tabs.spending"),
         icon: SpendingTabIcon,
-        content: (
+        content: (active) => (
           <Suspense fallback={<PageLoader />}>
-            <SpendingTabContent compareEnabled={spendingCompareEnabled} />
+            <SpendingTabContent compareEnabled={spendingCompareEnabled} isActive={active} />
           </Suspense>
         ),
         actions: (

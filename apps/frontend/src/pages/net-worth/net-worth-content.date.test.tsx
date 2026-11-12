@@ -8,7 +8,10 @@ const queryMocks = vi.hoisted(() => ({
   useNetWorthHistory: vi.fn<(options: Parameters<typeof useNetWorthHistory>[0]) => unknown>(),
 }));
 const settingsMock = vi.hoisted(() => ({ timezone: "Asia/Shanghai" }));
-const intervalMocks = vi.hoisted(() => ({ period: "ALL" as "ALL" | "1M" | "YTD" }));
+
+function seedDashboardPeriod(code: "1M" | "ALL") {
+  localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code }));
+}
 
 vi.mock("@/hooks/use-alternative-assets", () => queryMocks);
 vi.mock("@/hooks/use-portfolio-allocations", () => ({
@@ -81,11 +84,7 @@ vi.mock("@wealthfolio/ui", async () => {
     usePersistentState: (key: string, initial: unknown) =>
       useState(() => {
         const stored = localStorage.getItem(key);
-        return stored
-          ? JSON.parse(stored)
-          : key.endsWith("interval")
-            ? intervalMocks.period
-            : initial;
+        return stored ? JSON.parse(stored) : initial;
       }),
     useDateFormatting: () => ({ formatCalendarDate: () => "" }),
   };
@@ -125,7 +124,6 @@ describe("NetWorthContent current-date queries", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-15T12:00:00+08:00"));
     settingsMock.timezone = "Asia/Shanghai";
-    intervalMocks.period = "ALL";
     queryMocks.useNetWorth.mockReturnValue({
       data: {
         netWorth: 100,
@@ -174,20 +172,28 @@ describe("NetWorthContent current-date queries", () => {
   });
 
   it.each([
-    ["Asia/Shanghai", "2026-09-15T16:30:00Z", "2026-09-16"],
-    ["America/Los_Angeles", "2026-09-16T01:30:00Z", "2026-09-15"],
-  ])("uses the configured %s day for the summary and chart", (timezone, instant, day) => {
-    settingsMock.timezone = timezone;
-    vi.setSystemTime(new Date(instant));
-    render(<NetWorthContent />);
-    expect(latestEnabledHistoryCall()?.endDate).toBe(day);
-    expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: day });
-  });
+    ["Asia/Shanghai", "2026-09-15T16:30:00Z", "2026-09-15", "2026-09-16"],
+    ["America/Los_Angeles", "2026-09-16T01:30:00Z", "2026-09-14", "2026-09-15"],
+  ])(
+    "uses the configured %s day for the summary and default 1D chart",
+    (timezone, instant, priorDay, day) => {
+      settingsMock.timezone = timezone;
+      vi.setSystemTime(new Date(instant));
+      render(<NetWorthContent />);
+      expect(latestEnabledHistoryCalls(2)[0]).toEqual({
+        startDate: priorDay,
+        endDate: day,
+        enabled: true,
+      });
+      expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: day });
+    },
+  );
 
   it("keeps the summary and rolling range aligned on the next render", () => {
-    intervalMocks.period = "1M";
+    seedDashboardPeriod("1M");
     vi.setSystemTime(new Date("2026-09-15T23:59:59+08:00"));
     const { rerender } = render(<NetWorthContent />);
+    const timers = vi.getTimerCount();
     vi.setSystemTime(new Date("2026-09-16T00:00:01+08:00"));
     rerender(<NetWorthContent />);
     expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: "2026-09-16" });
@@ -199,7 +205,7 @@ describe("NetWorthContent current-date queries", () => {
       "2026-09-16",
       "2026-09-16",
     ]);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(timers);
   });
 
   it("uses the configured day when a new period is selected", () => {
@@ -217,7 +223,7 @@ describe("NetWorthContent current-date queries", () => {
   });
 
   it("clamps the rolling month at month end", () => {
-    intervalMocks.period = "1M";
+    seedDashboardPeriod("1M");
     vi.setSystemTime(new Date("2026-03-31T12:00:00+08:00"));
     render(<NetWorthContent />);
     expect(latestEnabledHistoryCalls(2)[0]).toMatchObject({
@@ -247,6 +253,7 @@ describe("NetWorthContent current-date queries", () => {
   ])(
     "displays the unchanged amount with the appropriate percentage for $series",
     ({ series, amount, percent }) => {
+      seedDashboardPeriod("ALL");
       queryMocks.useNetWorthHistory.mockReturnValue({
         data: series.map((netWorth, index) => ({
           date: `2026-09-${10 + index}`,
@@ -264,6 +271,7 @@ describe("NetWorthContent current-date queries", () => {
   it.each([{ series: [100, 12330] }, { series: [100, -50, 12330] }])(
     "keeps the growth multiple for $series",
     ({ series }) => {
+      seedDashboardPeriod("ALL");
       queryMocks.useNetWorthHistory.mockReturnValue({
         data: series.map((netWorth, index) => ({
           date: `2026-09-${10 + index}`,
@@ -283,7 +291,7 @@ describe("NetWorthContent current-date queries", () => {
   ])(
     "only offers a 12-month comparison with a full year of history ($start)",
     ({ start, available }) => {
-      intervalMocks.period = "1M";
+      seedDashboardPeriod("1M");
       queryMocks.useNetWorthHistory.mockImplementation(({ startDate }) => ({
         data: [
           { date: startDate === "2026-08-15" ? startDate : start, netWorth: 100 },

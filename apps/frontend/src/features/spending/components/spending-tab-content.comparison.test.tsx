@@ -95,9 +95,9 @@ function Location() {
   );
 }
 
-function setup(compareEnabled = true) {
+function setup(compareEnabled = true, entry = "/dashboard?tab=spending&spendingYear=2025") {
   return render(
-    <MemoryRouter initialEntries={["/dashboard?tab=spending"]}>
+    <MemoryRouter initialEntries={[entry]}>
       <PrivacyProvider>
         <SpendingTabContent compareEnabled={compareEnabled} />
         <Location />
@@ -132,6 +132,14 @@ it("shows both amounts and their difference, and opens the prior bucket's exact 
   fireEvent.click(screen.getByRole("button", { name: "priorValue" }));
   expect(screen.getByTestId("location")).toHaveTextContent(
     "/activities?tab=spending&from=2024-01-01&to=2024-01-31",
+  );
+});
+
+it("carries the local dashboard period into Insights links", () => {
+  setup();
+  expect(screen.getByRole("link", { name: /View all/ })).toHaveAttribute(
+    "href",
+    "/insights?tab=spending&stage=where&spendingYear=2025",
   );
 });
 
@@ -173,26 +181,13 @@ it("keeps the selected report visible when comparison is off and the prior repor
   expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
 });
 
-it("preserves the prior calendar block for an Insights window shared with Spending", () => {
-  localStorage.setItem(
-    "dashboard-period",
-    JSON.stringify({
-      kind: "range",
-      from: "2026-04-01",
-      to: "2026-06-30",
-      presetWindow: {
-        preset: { kind: "spending", code: "3M" },
-        anchor: "2026-09-15",
-        offset: -1,
-        alignment: "calendar",
-      },
-    }),
-  );
-  setup();
+it("opens on This month even when the portfolio dashboard has another period", () => {
+  localStorage.setItem("dashboard-period", JSON.stringify({ kind: "portfolio", code: "6M" }));
+  setup(true, "/dashboard?tab=spending");
   expect(mocks.reportQuery).toHaveBeenCalledWith(
     expect.objectContaining({
-      startDate: "2026-01-01T00:00:00.000Z",
-      endDate: "2026-03-31T23:59:59.999Z",
+      startDate: "2026-11-01T00:00:00.000Z",
+      endDate: "2026-11-08T23:59:59.999Z",
     }),
   );
 });

@@ -40,22 +40,19 @@ import {
   monthReportsRange,
   monthLabel,
   parseMonthKey,
-  SPENDING_MONTH_PARAM,
   SPENDING_MONTH_STORAGE_KEY,
+  SPENDING_MONTH_PARAM,
 } from "../lib/month-period";
 import {
-  DASHBOARD_INTERVAL_STORAGE_KEY,
-  DASHBOARD_PERIOD_STORAGE_KEY,
-  portfolioPresetForSpendingPeriod,
   rangePick,
   spendingViewForPick,
   stepDashboardPeriod,
   type DashboardPeriodPick,
 } from "../lib/dashboard-period-sync";
 import {
+  INSIGHTS_PICK_STORAGE_KEY,
   INSIGHTS_PERIOD_STORAGE_KEY,
   normalizeReportsPeriod,
-  SPENDING_INTERVAL_STORAGE_KEY,
 } from "../lib/period-preferences";
 import {
   SPENDING_RANGE_FROM_PARAM,
@@ -176,16 +173,12 @@ export default function SpendingInsightsPage({
     null,
   );
   const [sharedPick, setSharedPick] = usePersistentState<DashboardPeriodPick | null>(
-    DASHBOARD_PERIOD_STORAGE_KEY,
+    INSIGHTS_PICK_STORAGE_KEY,
     null,
   );
-  const [, setPortfolioPreset] = usePersistentState<string>(DASHBOARD_INTERVAL_STORAGE_KEY, "3M");
-  // Kept in step so the Spending tab falls back to the same preset.
-  const [, setSpendingInterval] = usePersistentState<string>(SPENDING_INTERVAL_STORAGE_KEY, "MTD");
   const todayISO = formatZonedDateKey(new Date(), appTimezone);
   // A link that names a period opens on it; it is applied once below and then
-  // removed from the URL. Otherwise follow the period last picked on the
-  // dashboard tabs or here, then the persisted preference.
+  // removed from the URL. Otherwise use the last period picked in Insights.
   const urlPeriod = normalizeReportsPeriod(searchParams.get("period"));
   const urlMonth = parseMonthKey(searchParams.get(SPENDING_MONTH_PARAM))
     ? searchParams.get(SPENDING_MONTH_PARAM)
@@ -227,9 +220,8 @@ export default function SpendingInsightsPage({
   const sharePeriod = useCallback(
     (code: ReportsPeriod) => {
       setSharedPick({ kind: "spending", code });
-      setPortfolioPreset(portfolioPresetForSpendingPeriod(code));
     },
-    [setSharedPick, setPortfolioPreset],
+    [setSharedPick],
   );
 
   const setStageAndUrl = useCallback(
@@ -247,16 +239,15 @@ export default function SpendingInsightsPage({
     [setStage, setSearchParams],
   );
 
-  // Picks live in the shared period and the persisted preference, never in the
-  // URL, so back/forward cannot bring back an older period.
+  // Picks live in the Insights preference and the URL is only a one-shot link,
+  // so back/forward cannot bring back an older period.
   const selectPeriod = useCallback(
     (next: ReportsPeriod) => {
       setPersistedPeriod(next);
-      setSpendingInterval(next);
       sharePeriod(next);
       setPersistedMonth(null);
     },
-    [setPersistedPeriod, setSpendingInterval, sharePeriod, setPersistedMonth],
+    [setPersistedPeriod, sharePeriod, setPersistedMonth],
   );
 
   const selectCustomMonth = useCallback(
@@ -300,7 +291,6 @@ export default function SpendingInsightsPage({
     if (!hasUrlPeriod && !searchParams.has(SPENDING_YEAR_PARAM)) return;
     if (urlRange || urlMonth || urlYear !== null) {
       setPersistedPeriod(period);
-      setSpendingInterval(period);
       if (urlRange) selectCustomRange(urlRange);
       else if (urlYear !== null) selectCustomYear(urlYear);
       else selectCustomMonth(urlMonth);
@@ -643,8 +633,6 @@ export default function SpendingInsightsPage({
       if (navigationPick.kind === "spending" && next.kind !== "spending") {
         const visiblePreset = navigationPick.code === "LAST_MONTH" ? "MTD" : navigationPick.code;
         setPersistedPeriod(visiblePreset);
-        setSpendingInterval(visiblePreset);
-        setPortfolioPreset(portfolioPresetForSpendingPeriod(visiblePreset));
       }
       if (next.kind === "month") selectCustomMonth(next.monthKey);
       else if (next.kind === "year") selectCustomYear(next.year);

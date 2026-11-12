@@ -74,6 +74,9 @@ To see the full divergence:
 
 ### Behaviour worth knowing
 
+- **Dashboard dates.** Investments and Net Worth share a saved date range and
+  default to 1D. Spending opens on This month unless the link specifies a
+  period. Its links to Spending Insights carry the selected period.
 - **Background updates (#15).** The server refreshes prices every 5 minutes
   during NYSE/TSX hours and hourly otherwise. The first scheduled opening
   refresh targets 09:30:30 New York to allow opening prices to arrive. It skips

@@ -15,7 +15,7 @@ import { DashboardContent } from "./dashboard-content";
 
 const uiMocks = vi.hoisted(() => ({
   realIntervals: false,
-  intervalCode: "3M" as "1D" | "3M" | "ALL",
+  intervalCode: "3M" as "1D" | "3M" | "ALL" | null,
   togglePrivacy: vi.fn(),
 }));
 
@@ -108,7 +108,12 @@ vi.mock("@wealthfolio/ui", async () => {
               description: "3M",
             },
     IntervalSelector: () => <div>interval-selector</div>,
-    usePersistentState: () => [uiMocks.intervalCode, vi.fn()],
+    usePersistentState: (key: string, initial: unknown) => [
+      key.endsWith("dashboard-period") && uiMocks.intervalCode
+        ? { kind: "portfolio", code: uiMocks.intervalCode }
+        : initial,
+      vi.fn(),
+    ],
     useDateFormatting: () => ({ formatDate: () => "Jun 1, 2026", formatTime: () => "12:30" }),
   };
 });
@@ -516,11 +521,12 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("balance:0")).not.toBeInTheDocument();
     expect(screen.getByTestId("portfolio-as-of")).toHaveTextContent("");
   });
-  it("anchors the real preset to the configured day rather than the host day", () => {
+  it("anchors the default 1D preset to the configured day", () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date("2026-12-31T16:30:00Z"));
       uiMocks.realIntervals = true;
+      uiMocks.intervalCode = null;
       mockCurrentValuation();
       mockUseSettingsContext.mockReturnValue({
         settings: { baseCurrency: "USD", timezone: "Asia/Shanghai" },
@@ -535,7 +541,7 @@ describe("DashboardContent", () => {
       render(<DashboardContent />);
       expect(mockUseValuationHistory).toHaveBeenLastCalledWith(
         {
-          from: new Date(2026, 9, 1),
+          from: new Date(2026, 11, 31),
           to: new Date(2027, 0, 1),
         },
         { type: "all" },

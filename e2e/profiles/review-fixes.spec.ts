@@ -196,9 +196,10 @@ for (const tab of ["investments", "net-worth"]) {
     await verify("1Y", 365);
     await switchProfile(page, a.name, b.name);
     await go();
-    await expect(
-      page.getByRole("button", { name: tab === "investments" ? "3M" : "ALL", exact: true }),
-    ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "1D", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     requests.length = 0;
     await page.getByRole("button", { name: "1M", exact: true }).click();
     await verify("1M", 30);
