@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from "vitest";
 import { AccountType } from "./constants";
 import { cryptoMoneyDecimals, currencyFractionDigits } from "./currency-decimals";
