@@ -3,22 +3,42 @@
 # Usage:
 #   bash scripts/ci-check.sh           # fast checks (commit mode)
 #   bash scripts/ci-check.sh --full    # full PR CI checks (push mode)
+#   bash scripts/ci-check.sh --format-only  # Oxfmt and rustfmt only
 
 set -euo pipefail
 
 FULL=false
-if [[ "${1:-}" == "--full" ]]; then
-  FULL=true
-  shift
-fi
-
+FORMAT_ONLY=false
+case "${1:-}" in
+  --full) FULL=true; shift ;;
+  --format-only) FORMAT_ONLY=true; shift ;;
+esac
 if [[ "$#" -ne 0 ]]; then
-  echo "Usage: scripts/ci-check.sh [--full]" >&2
+  echo "Usage: scripts/ci-check.sh [--full|--format-only]" >&2
   exit 2
 fi
 
 REPO_ROOT="$(git -C "$(dirname "${BASH_SOURCE[0]}")/.." rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+PNPM=(pnpm)
+if ! command -v pnpm >/dev/null && command -v corepack >/dev/null; then
+  PNPM=(corepack pnpm)
+fi
+
+check_format() {
+  echo "=== pnpm format:check ===" >&2
+  "${PNPM[@]}" format:check
+}
+
+if [[ "$FORMAT_ONLY" == "true" || "$FULL" == "true" ]]; then
+  check_format
+fi
+if [[ "$FORMAT_ONLY" == "true" ]]; then
+  echo "=== cargo fmt ===" >&2
+  cargo fmt --all -- --check
+  exit 0
+fi
 
 changed_files() {
   if [[ "$FULL" == "false" ]]; then
@@ -135,22 +155,23 @@ fi
 
 if [[ "$RUN_FRONTEND" == "true" ]]; then
   echo "=== pnpm build:types ===" >&2
-  pnpm run build:types
+  "${PNPM[@]}" run build:types
 
-  echo "=== pnpm format:check ===" >&2
-  pnpm format:check
+  if [[ "$FULL" == "false" ]]; then
+    check_format
+  fi
 
   echo "=== pnpm lint ===" >&2
-  pnpm lint
+  "${PNPM[@]}" lint
 
   echo "=== pnpm type-check ===" >&2
-  pnpm type-check
+  "${PNPM[@]}" type-check
 
   if [[ "$FULL" == "true" ]]; then
     echo "=== pnpm test ===" >&2
-    pnpm test
+    "${PNPM[@]}" test
 
     echo "=== pnpm build ===" >&2
-    pnpm build
+    "${PNPM[@]}" build
   fi
 fi

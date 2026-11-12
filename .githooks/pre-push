@@ -2,4 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
-exec "$REPO_ROOT/scripts/ci-check.sh" --full
+if [[ "$(git config --get wealthfolio.pre-push-checks || true)" == "format" ]]; then
+  exec bash "$REPO_ROOT/scripts/ci-check.sh" --format-only
+fi
+exec bash "$REPO_ROOT/scripts/ci-check.sh" --full
