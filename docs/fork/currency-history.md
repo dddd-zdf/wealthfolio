@@ -60,14 +60,17 @@ merges. Old snapshots that used future or unlimited carried rates necessarily
 change; review their valuation dates, flow dates, return availability and
 diagnostics when regenerating them.
 
-## Intraday limits
+## Intraday observations
 
-No dated intraday FX source is configured. The web intraday handler therefore
-returns no intraday points for a scope with any open nonzero foreign exposure
-(including cash and manual assets), letting the dashboard use stored daily
-values. Other intraday curves use current position weights and do not
-reconstruct within-session FX, trades or cash flows. Daily values and
-performance still use the engine.
+After the scheduled market-hours refresh, the server records the engine's
+current daily account values as timestamped observations. Each observation
+includes the FX rates the refresh made available to the engine. The web
+dashboard combines observations for its selected accounts and base currency.
+When fewer than two complete observations are available, it shows daily values.
+The 1W view fills in as the server observes more sessions. Samples are kept for
+14 days and live in a chart-only table in the profile database. A currency
+change selects samples already recorded in that currency and starts collecting
+new ones in it. Provider delays can make the observed values lag the market.
 
 ## Architecture impact
 

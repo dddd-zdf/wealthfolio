@@ -68,6 +68,13 @@ pnpm hooks:install
 Git does not enable repository hooks automatically, so each contributor must opt
 in once per clone.
 
+To run only Oxfmt and rustfmt before pushing, set this checkout's hook mode
+after installing it. Both modes check Markdown formatting on docs-only pushes.
+
+```bash
+git config --local wealthfolio.pre-push-checks format
+```
+
 ### Code Style
 
 - **Rust**: Follow standard Rust conventions, use `cargo fmt` and `cargo clippy`

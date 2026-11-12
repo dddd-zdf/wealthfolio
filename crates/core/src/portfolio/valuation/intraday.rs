@@ -71,6 +71,71 @@ pub struct IntradayValuationPoint {
     pub net_contribution_base: Decimal,
 }
 
+/// An observed intraday account valuation. Storage filters these by the
+/// reporting currency before the selected account scope is assembled.
+#[derive(Debug, Clone)]
+pub struct IntradayAccountSample {
+    pub account_id: String,
+    pub point: IntradayValuationPoint,
+}
+
+/// Sum only observations that include every account in the selected scope.
+/// The latest observed session supplies 1D; up to five sessions supply 1W.
+pub fn observed_intraday_series(
+    account_ids: &[String],
+    samples: Vec<IntradayAccountSample>,
+    range: IntradayRange,
+) -> Vec<IntradayValuationPoint> {
+    let mut by_time = BTreeMap::<_, Vec<_>>::new();
+    for sample in samples {
+        by_time
+            .entry(sample.point.timestamp)
+            .or_default()
+            .push(sample);
+    }
+
+    let mut points = Vec::new();
+    let mut last_session = None;
+    let mut sessions = 0;
+    let max_sessions = match range {
+        IntradayRange::Day => 1,
+        IntradayRange::Week => 5,
+    };
+    let expected: BTreeSet<_> = account_ids.iter().map(String::as_str).collect();
+    for (timestamp, samples) in by_time.into_iter().rev() {
+        let observed: BTreeSet<_> = samples
+            .iter()
+            .map(|sample| sample.account_id.as_str())
+            .collect();
+        if observed != expected || samples.len() != expected.len() {
+            continue;
+        }
+        let session = timestamp
+            .with_timezone(&chrono_tz::America::New_York)
+            .date_naive();
+        if last_session != Some(session) {
+            if sessions == max_sessions {
+                break;
+            }
+            last_session = Some(session);
+            sessions += 1;
+        }
+        points.push(IntradayValuationPoint {
+            timestamp,
+            total_value_base: samples
+                .iter()
+                .map(|sample| sample.point.total_value_base)
+                .sum(),
+            net_contribution_base: samples
+                .iter()
+                .map(|sample| sample.point.net_contribution_base)
+                .sum(),
+        });
+    }
+    points.reverse();
+    points
+}
+
 /// Weight of one market-priced asset in the portfolio, in base currency.
 #[derive(Debug, Clone)]
 pub struct IntradayExposure {
@@ -417,5 +482,40 @@ mod tests {
         assert_eq!(IntradayRange::parse("1D"), Some(IntradayRange::Day));
         assert_eq!(IntradayRange::parse("1W"), Some(IntradayRange::Week));
         assert_eq!(IntradayRange::parse("1M"), None);
+    }
+
+    #[test]
+    fn observed_series_requires_the_whole_scope_and_sorts_by_session() {
+        let accounts = vec!["a".to_string(), "b".to_string()];
+        let sample = |account_id: &str, timestamp, value| IntradayAccountSample {
+            account_id: account_id.to_string(),
+            point: IntradayValuationPoint {
+                timestamp,
+                total_value_base: value,
+                net_contribution_base: dec!(25),
+            },
+        };
+        let mut samples = Vec::new();
+        for day in 1..=6 {
+            let ts = at_day(day, 14, 30);
+            samples.push(sample("b", ts, dec!(60)));
+            samples.push(sample("a", ts, dec!(45)));
+        }
+        let latest = at_day(6, 14, 35);
+        samples.push(sample("a", latest, dec!(40)));
+        samples.push(sample("b", latest, dec!(55)));
+        samples.push(sample("a", at_day(7, 14, 30), dec!(90)));
+
+        let day = observed_intraday_series(&accounts, samples.clone(), IntradayRange::Day);
+        assert_eq!(day.len(), 2);
+        assert_eq!(day[0].total_value_base, dec!(105));
+        assert_eq!(day[1].timestamp, latest);
+        assert_eq!(day[1].total_value_base, dec!(95));
+        assert_eq!(day[1].net_contribution_base, dec!(50));
+
+        let week = observed_intraday_series(&accounts, samples, IntradayRange::Week);
+        assert_eq!(week.len(), 6);
+        assert_eq!(week[0].timestamp, at_day(2, 14, 30));
+        assert_eq!(week[5].timestamp, latest);
     }
 }
