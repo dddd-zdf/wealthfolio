@@ -407,25 +407,24 @@ pub fn reconstruct_intraday_samples(
         let Some(timestamps) = grid.get(&day) else {
             continue;
         };
-        let account_legs: Vec<(&str, &DailyAccountValuation, Vec<(Decimal, &DayBars)>)> =
-            account_ids
-                .iter()
-                .filter_map(|account_id| {
-                    let anchor = anchors.get(&(*account_id, day))?;
-                    let account_exposures =
-                        exposures.get(*account_id).map(Vec::as_slice).unwrap_or(&[]);
-                    let legs = account_exposures
-                        .iter()
-                        .filter_map(|exposure| {
-                            per_asset
-                                .get(exposure.asset_id.as_str())?
-                                .get(&day)
-                                .map(|day_bars| (exposure.market_value_base, day_bars))
-                        })
-                        .collect();
-                    Some((*account_id, *anchor, legs))
-                })
-                .collect();
+        let account_legs: Vec<_> = account_ids
+            .iter()
+            .filter_map(|account_id| {
+                let anchor = anchors.get(&(*account_id, day))?;
+                let account_exposures =
+                    exposures.get(*account_id).map(Vec::as_slice).unwrap_or(&[]);
+                let legs = account_exposures
+                    .iter()
+                    .filter_map(|exposure| {
+                        per_asset
+                            .get(exposure.asset_id.as_str())?
+                            .get(&day)
+                            .map(|day_bars| (exposure.market_value_base, day_bars))
+                    })
+                    .collect::<Vec<_>>();
+                Some((*account_id, *anchor, legs))
+            })
+            .collect();
         for &timestamp in timestamps {
             for (account_id, anchor, legs) in &account_legs {
                 samples.push(ReconstructedIntradaySample {
