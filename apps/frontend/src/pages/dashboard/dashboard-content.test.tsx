@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculatePerformanceSummary, getIntradayValuations } from "@/adapters";
+import type { HistoryChartData } from "@/components/history-chart";
 import { AccountsSummary } from "./accounts-summary";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
@@ -37,8 +38,21 @@ vi.mock("@/hooks/use-calculate-portfolio", () => ({
 }));
 
 vi.mock("@/components/history-chart", () => ({
-  HistoryChart: ({ timeDomain }: { timeDomain?: [number, number] }) => (
-    <div data-testid="history-chart" data-time-domain={JSON.stringify(timeDomain ?? null)}>
+  HistoryChart: ({
+    data,
+    timeDomain,
+    onActivePointChange,
+  }: {
+    data: HistoryChartData[];
+    timeDomain?: [number, number];
+    onActivePointChange: (point: HistoryChartData | null) => void;
+  }) => (
+    <div
+      data-testid="history-chart"
+      data-time-domain={JSON.stringify(timeDomain ?? null)}
+      onMouseEnter={() => onActivePointChange(data[1] ?? null)}
+      onMouseLeave={() => onActivePointChange(null)}
+    >
       history-chart
     </div>
   ),
@@ -287,6 +301,44 @@ describe("DashboardContent", () => {
     expect(screen.queryByText("balance:100")).not.toBeInTheDocument();
     expect(screen.getByTestId("portfolio-as-of")).toHaveTextContent("2026-06-01T12:30:00Z");
     expect(screen.getByTestId("portfolio-as-of")).not.toHaveTextContent("2026-06-01T13:00:00Z");
+  });
+
+  it("shows the hovered point and its deposit-adjusted gain until the pointer leaves", async () => {
+    mockCurrentValuation(160);
+    mockUseHoldings.mockReturnValue({
+      holdings: [],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useHoldings>);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [
+        { valuationDate: "2026-05-01", totalValueBase: 100, netContributionBase: 80 },
+        { valuationDate: "2026-05-02", totalValueBase: 130, netContributionBase: 100 },
+      ],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useValuationHistory>);
+    mockUseSettingsContext.mockReturnValue({
+      settings: { baseCurrency: "USD" },
+    } as unknown as ReturnType<typeof useSettingsContext>);
+    mockUseQuery.mockReturnValue({
+      isLoading: false,
+      data: {
+        period: { startDate: "2026-05-01", endDate: "2026-05-02" },
+        summary: { amount: 40, amountStatus: "complete", percent: 0.4, percentStatus: "complete" },
+      },
+    } as unknown as ReturnType<typeof useQuery>);
+
+    render(<DashboardContent />);
+    const user = userEvent.setup();
+    const chart = screen.getByTestId("history-chart");
+    await user.hover(chart);
+    expect(screen.getByText("balance:130")).toBeInTheDocument();
+    expect(screen.getByText("gain-amount:10")).toBeInTheDocument();
+    expect(screen.getByText("gain-percent:0.1")).toBeInTheDocument();
+
+    await user.unhover(chart);
+    expect(screen.getByText("balance:160")).toBeInTheDocument();
+    expect(screen.getByText("gain-amount:40")).toBeInTheDocument();
+    expect(screen.getByText("gain-percent:0.4")).toBeInTheDocument();
   });
 
   it("sums holdings' last-session moves for 1D instead of the flat weekend period", () => {
