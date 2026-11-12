@@ -164,19 +164,24 @@ production rollback; changing the image tag alone does not undo a migration.
 
 ## CI scope
 
-This fork deploys the **web app and ARM64 server**. Default PR checks cover web
-lint/types/build, two parallel frontend test shards, browser harnesses, and Rust
-Clippy and tests (parallel jobs, tests via `cargo nextest`) for the server and
-every shared crate (`--exclude wealthfolio-app`). The Rust suite includes HTTP
-certificate policy, vault/config and portable-backup tests; its Linux
-mounted-vault fixture runs in the tests job. Both Rust jobs restore the cache
-that `cache-warm.yml` seeds, keyed on `rust-toolchain.toml` and `Cargo.lock`;
-keep their build flags in sync or PRs compile cold. Do not add desktop or mobile
-builds to the acceptance gate unless the owner requests them.
+This fork deploys the **web app and ARM64 server**. Frontend Check runs
+formatting when required, translation parity, the design ratchet, lint, type
+checks, the web build, and the addon sandbox browser harness when its inputs
+change. Two frontend test shards run in parallel. The standalone formatting job
+handles changes such as docs-only PRs. Rust Clippy and `cargo nextest` run in
+parallel for the server and every shared crate (`--exclude wealthfolio-app`).
+The Rust suite includes HTTP certificate policy, vault/config and
+portable-backup tests. Its Linux mounted-vault fixture runs in the tests job.
+Both Rust jobs restore the cache that `cache-warm.yml` seeds on `main`, keyed on
+the pinned toolchain, lockfile, Cargo manifests and Cargo config. The warmer
+compiles on a cache miss. Keep the Cargo commands and environment in sync, and
+bump the key prefix if the build flags change. Desktop and mobile checks are
+opt-in.
 
 Native secret-store checks are manual. Separate server-vault and HTTP workflows
-are also manual, with optional macOS/Windows coverage. Weekly cache warming only
-builds server-check dependencies and ARM Docker dependencies.
+are also manual, with optional macOS/Windows coverage. Scheduled cache warming
+covers the Rust PR cache. ARM64 dependency warming is available via a manual
+`cache-warm.yml` run on `main`.
 
 PR Docker builds run only for packaging/configuration changes and use ARM64.
 Ordinary application changes use web/server checks; the deployable image still
@@ -195,20 +200,29 @@ There is no build on the server. CI builds the image; the server pulls it.
 
 1. Merge the validated PR into `main` (preserve merge ancestry for upstream
    syncs). PR checks are `pr-check.yml`, scoped as described above.
-2. Build the image:
+2. Prepare the image:
+
    ```bash
    gh workflow run docker-branch.yml --repo dddd-zdf/wealthfolio --ref main
    ```
-   It builds arm64 by default (`amd64` is optional for separate compatibility
-   checks), runs `.github/scripts/encryption_smoke.py` against the image, and
-   publishes `mcp-<7-char sha>` and the moving `mcp-categorization` tag. Main
-   exports a shared registry cache; feature builds read it but save no cache of
-   their own, so they stay out of the 10 GB Actions cache that holds the Rust
-   check cache. Only main can replace the shared cache. The first run with new
-   dependencies can still be cold; measure actual times rather than promising a
-   fixed duration. If an already-tested image's source tree exactly matches
-   merged main, reuse that immutable image revision. Do not rebuild solely for a
-   new merge label.
+
+   The default ARM64 run on `main` looks up an image published by the branch
+   workflow for the exact Git source tree. A match is retagged by digest as
+   `mcp-<7-char main sha>` and `mcp-categorization`. The OCI revision label
+   records the commit that originally built the image. On a miss, the workflow
+   builds the image, runs `.github/scripts/encryption_smoke.py`, then publishes
+   the revision and tree tags. Explicit amd64 runs build and test both
+   architectures. Set `force_rebuild=true` on a manual dispatch to refresh the
+   image for the same tree, for example after a base-image update. The separate
+   Docker packaging PR workflow smoke-tests its image on the runner. To prepare
+   a deployable candidate before merge, run `docker-branch.yml` on the PR
+   branch.
+
+   A fresh `main` build exports its BuildKit cache to GHCR, including the ARM64
+   dependency layers. Branch and packaging builds can read that cache. A manual
+   ARM64 warm is useful after dependency changes when `main` reused a candidate
+   and the shared dependency layers have yet to be published.
+
 3. Verify the image revision/architecture, take and verify a fresh backup, then
    deploy on `home`:
    ```bash

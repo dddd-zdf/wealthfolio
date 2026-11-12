@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import globalI18n, { createInstance } from "i18next";
 import { afterEach, describe, expect, it } from "vitest";
 import en from "@/i18n/locales/en/common.json";

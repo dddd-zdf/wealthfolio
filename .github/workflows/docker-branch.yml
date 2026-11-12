@@ -1,9 +1,7 @@
 name: Docker branch build
 
-# Builds the feature branch image for arm64 (A1 VM) and pushes it to GHCR so
-# the server can pull it instead of compiling locally. amd64 (the old E2 micro
-# VM) is opt-in on manual runs. Triggered on pushes to the MCP categorization
-# branch, or manually.
+# Publishes a smoke-tested ARM64 image to GHCR. Manual main runs reuse an image
+# for the same Git tree when available. amd64 is opt-in on manual runs.
 on:
   push:
     branches: [feature/mcp-commit-category-assignments]
@@ -11,6 +9,10 @@ on:
     inputs:
       amd64:
         description: Also build amd64 (old E2 VM)
+        type: boolean
+        default: false
+      force_rebuild:
+        description: Rebuild ARM64 even when a smoke-tested tree image exists
         type: boolean
         default: false
 
@@ -23,7 +25,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  resolve:
+    name: Resolve tested tree image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    env:
+      LOOKUP_ENABLED:
+        ${{ github.ref == 'refs/heads/main' && !inputs.amd64 && !inputs.force_rebuild }}
+    outputs:
+      tree_sha: ${{ steps.lookup.outputs.tree_sha }}
+      reuse_source: ${{ steps.lookup.outputs.reuse_source }}
+    steps:
+      - name: Checkout source tree
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Docker Buildx for lookup
+        if: env.LOOKUP_ENABLED == 'true'
+        uses: docker/setup-buildx-action@v3
+        continue-on-error: true
+
+      - name: Log in to GHCR for lookup
+        if: env.LOOKUP_ENABLED == 'true'
+        uses: docker/login-action@v3
+        continue-on-error: true
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Look up smoke-tested tree image
+        id: lookup
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/wealthfolio
+        shell: bash
+        run: |
+          tree_sha="$(git rev-parse 'HEAD^{tree}')"
+          echo "tree_sha=$tree_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$LOOKUP_ENABLED" != true ]]; then exit 0; fi
+
+          tree_tag="$IMAGE:mcp-tree-${tree_sha}-arm64"
+          # Validate the platform using the same digest that will be published.
+          if digest="$(docker buildx imagetools inspect "$tree_tag" --format '{{.Manifest.Digest}}' 2>/dev/null)" &&
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] &&
+            docker buildx imagetools inspect "$IMAGE@$digest" --format '{{json .Image}}' 2>/dev/null |
+              jq -e '.os == "linux" and .architecture == "arm64"' >/dev/null; then
+            echo "reuse_source=$IMAGE@$digest" >> "$GITHUB_OUTPUT"
+          else
+            echo "No reusable ARM64 image found for tree $tree_sha. Building it." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   build:
+    needs: resolve
+    if: needs.resolve.result == 'success' && needs.resolve.outputs.reuse_source == ''
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +113,7 @@ jobs:
           context: .
           platforms: linux/${{ matrix.arch }}
           load: true
+          pull: ${{ inputs.force_rebuild || false }}
           tags: wealthfolio-branch:ci
           labels: ${{ steps.meta.outputs.labels }}
           # Main's registry cache is readable across refs and only main
@@ -81,8 +141,11 @@ jobs:
           docker push "$STAGING"
 
   publish:
-    # Branch tags move only after every built architecture has passed its tests.
-    needs: build
+    # Publish an already-tested digest or wait for every architecture's smoke test.
+    needs: [resolve, build]
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' && (needs.build.result == 'success' ||
+      (needs.build.result == 'skipped' && needs.resolve.outputs.reuse_source != ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -106,12 +169,31 @@ jobs:
 
       - name: Publish branch tags
         env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/wealthfolio
           STAGING: ghcr.io/${{ github.repository_owner }}/wealthfolio:ci-${{ github.run_id }}
           ARCHES: ${{ inputs.amd64 && 'amd64 arm64' || 'arm64' }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          TREE_SHA: ${{ needs.resolve.outputs.tree_sha }}
+          REUSE_SOURCE: ${{ needs.resolve.outputs.reuse_source }}
+        shell: bash
         run: |
-          sources=()
-          for arch in $ARCHES; do sources+=("$STAGING-$arch"); done
+          tags=()
           while IFS= read -r tag; do
             test -n "$tag"
-            docker buildx imagetools create --tag "$tag" "${sources[@]}"
-          done <<< "${{ steps.meta.outputs.tags }}"
+            tags+=(--tag "$tag")
+          done <<< "$IMAGE_TAGS"
+
+          prefer_index=true
+          if [[ -n "$REUSE_SOURCE" ]]; then
+            prefer_index=false
+            sources=("$REUSE_SOURCE")
+          else
+            sources=()
+            for arch in $ARCHES; do sources+=("$STAGING-$arch"); done
+            if [[ "$ARCHES" == arm64 ]]; then
+              tags+=(--tag "$IMAGE:mcp-tree-${TREE_SHA}-arm64")
+            fi
+          fi
+
+          docker buildx imagetools create --prefer-index="$prefer_index" "${tags[@]}" "${sources[@]}"
+          printf 'Published from tested image(s) `%s` for tree `%s`.\n' "${sources[*]}" "$TREE_SHA" >> "$GITHUB_STEP_SUMMARY"

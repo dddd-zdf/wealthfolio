@@ -1,7 +1,6 @@
 import "@testing-library/jest-dom";
 import { cleanup } from "@testing-library/react";
 import { vi, afterEach } from "vitest";
-import * as matchers from "@testing-library/jest-dom/matchers";
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
@@ -89,9 +88,6 @@ if (!i18n.isInitialized) {
     react: { useSuspense: false },
   });
 }
-
-// Extend Vitest's expect method with methods from react-testing-library
-expect.extend(matchers);
 
 // Cleanup after each test case (e.g. clearing jsdom)
 afterEach(() => {

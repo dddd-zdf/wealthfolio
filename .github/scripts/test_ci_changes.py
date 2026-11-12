@@ -1,4 +1,5 @@
 import unittest
+import shutil
 import subprocess
 import tempfile
 import os
@@ -168,11 +169,9 @@ class BuildStatusTests(unittest.TestCase):
         for job in ["FRONTEND", "FRONTEND_TESTS", "RUST", "RUST_CLIPPY", "RUST_TESTS", "FORMATTING"]:
             env[job + "_REQUIRED"] = "false"
             env[job + "_RESULT"] = "skipped"
-        env["TRANSLATION_RESULT"] = "skipped"
-        env["FRONTEND_TESTS_RESULT"] = "skipped"
-        env["DESIGN_RATCHET_RESULT"] = "skipped"
         env.update(overrides)
-        return subprocess.run(["bash", "-e", "-c", script], env=env, capture_output=True).returncode
+        bash = shutil.which("bash") or "bash"
+        return subprocess.run([bash, "-e", "-c", script], env=env, capture_output=True).returncode
 
     def test_unrequested_jobs_may_skip(self):
         self.assertEqual(self.run_gate(), 0)
@@ -184,7 +183,6 @@ class BuildStatusTests(unittest.TestCase):
                     FRONTEND_REQUIRED="true",
                     FRONTEND_RESULT=result,
                     FRONTEND_TESTS_RESULT="success",
-                    TRANSLATION_RESULT="success",
                 ), 0)
 
     def test_required_frontend_tests_must_succeed(self):
@@ -194,14 +192,11 @@ class BuildStatusTests(unittest.TestCase):
                     FRONTEND_REQUIRED="true",
                     FRONTEND_RESULT="success",
                     FRONTEND_TESTS_RESULT=result,
-                    TRANSLATION_RESULT="success",
                 ), 0)
         self.assertEqual(self.run_gate(
             FRONTEND_REQUIRED="true",
             FRONTEND_RESULT="success",
             FRONTEND_TESTS_RESULT="success",
-            TRANSLATION_RESULT="success",
-            DESIGN_RATCHET_RESULT="success",
         ), 0)
 
     def test_required_server_checks_must_succeed(self):
@@ -219,18 +214,22 @@ class BuildStatusTests(unittest.TestCase):
             RUST_TESTS_RESULT="success",
         ), 0)
 
-    def test_required_frontend_jobs_must_succeed(self):
-        passing = {
-            "FRONTEND_RESULT": "success",
-            "FRONTEND_TESTS_RESULT": "success",
-            "TRANSLATION_RESULT": "success",
-            "DESIGN_RATCHET_RESULT": "success",
-        }
-        for job in passing:
-            for result in ["failure", "cancelled", "skipped"]:
-                with self.subTest(job=job, result=result):
-                    self.assertNotEqual(self.run_gate(FRONTEND_REQUIRED="true", **{**passing, job: result}), 0)
-        self.assertEqual(self.run_gate(FRONTEND_REQUIRED="true", **passing), 0)
+    def test_formatting_only_job_must_succeed_when_needed(self):
+        for result in ["failure", "cancelled", "skipped"]:
+            with self.subTest(result=result):
+                self.assertNotEqual(self.run_gate(FORMATTING_REQUIRED="true", FORMATTING_RESULT=result), 0)
+        self.assertEqual(self.run_gate(FORMATTING_REQUIRED="true", FORMATTING_RESULT="success"), 0)
+
+    def test_frontend_check_covers_required_formatting(self):
+        workflow = (Path(__file__).parents[1] / "workflows/pr-check.yml").read_text()
+        frontend_check = workflow.split("\n  frontend-check:\n")[1].split("\n  frontend-tests:\n")[0]
+        self.assertIn("if: needs.changes.outputs.formatting == 'true'\n        run: pnpm format:check", frontend_check)
+        self.assertEqual(self.run_gate(
+            FORMATTING_REQUIRED="true",
+            FRONTEND_REQUIRED="true",
+            FRONTEND_RESULT="success",
+            FRONTEND_TESTS_RESULT="success",
+        ), 0)
 
     def test_failed_detection_blocks_merge(self):
         self.assertNotEqual(self.run_gate(CHANGES_RESULT="failure"), 0)

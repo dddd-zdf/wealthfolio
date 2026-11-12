@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { createAmountFormatting, createFormatter } from "@wealthfolio/ui";
 import { describe, expect, it } from "vitest";
 import {

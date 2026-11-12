@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { describe, expect, it } from "vitest";
 import type { CategoryAllocation } from "@/lib/types";
 import { namedChildren } from "./allocation-children";

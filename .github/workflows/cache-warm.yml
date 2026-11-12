@@ -13,7 +13,8 @@ name: Warm Rust Cache
 # wealthfolio-build-cache GHCR package, outside the Actions cache budget.
 # docker-publish.yml imports it without logging in, except on release tags, so
 # the package must stay public, or Docker builds compile every dependency.
-# Dockerfile changes also rewarm it.
+# Docker dependency warming is manual on main so packaging-only changes do not
+# rebuild the Rust cache job.
 
 on:
   push:
@@ -22,9 +23,8 @@ on:
       - "Cargo.lock"
       - "**/Cargo.toml"
       - "rust-toolchain*"
+      - ".cargo/config.toml"
       - ".github/workflows/cache-warm.yml"
-      - "Dockerfile"
-      - ".dockerignore"
   schedule:
     - cron: "0 3 * * 1"
   workflow_dispatch:
@@ -52,24 +52,28 @@ jobs:
         run: rustup toolchain install
 
       - name: Rust cache
+        id: rust-cache
         uses: swatinem/rust-cache@v2
         with:
-          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
-          shared-key: pr-server-check
+          prefix-key: v2-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key:
+            pr-server-check-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml') }}
           add-rust-environment-hash-key: false
+          save-if: github.ref == 'refs/heads/main'
 
       - name: Build PR check dependencies
         # The Rust Clippy and Rust Tests builds, without running tests. The
         # desktop app is excluded because this fork ships the server/web build
         # only.
+        if: steps.rust-cache.outputs.cache-hit != 'true'
         run: |
           cargo clippy --locked --workspace --exclude wealthfolio-app --all-targets --all-features
           CONNECT_API_URL=http://test.local cargo test --locked --workspace --exclude wealthfolio-app --features wealthfolio-ai/test-utils --no-run
 
   warm-docker-deps:
-    # Unlike Actions caches, these registry tags are shared by every ref, so
-    # only main writes them.
-    if: github.ref == 'refs/heads/main'
+    # Unlike Actions caches, these registry tags are shared by every ref. Keep
+    # this dependency-only warm-up explicit and main-only.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     # Keep the cache refs, platforms and runners in sync with docker-publish.yml,
     # which imports these layers; any drift makes Docker builds cold.
     strategy:
@@ -104,9 +108,11 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           target: deps
           outputs: type=cacheonly
-          cache-from:
-            type=registry,ref=ghcr.io/${{ github.repository_owner
-            }}/wealthfolio-build-cache:deps-${{ matrix.arch }}
+          # Reuse main's full graph when available, then the dependency-only
+          # cache this job refreshes.
+          cache-from: |
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/wealthfolio-build-cache:branch-${{ matrix.arch }}
+            type=registry,ref=ghcr.io/${{ github.repository_owner }}/wealthfolio-build-cache:deps-${{ matrix.arch }}
           cache-to:
             type=registry,ref=ghcr.io/${{ github.repository_owner
             }}/wealthfolio-build-cache:deps-${{ matrix.arch

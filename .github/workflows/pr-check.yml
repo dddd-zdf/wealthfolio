@@ -40,40 +40,10 @@ jobs:
           git diff --no-renames --name-only -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
           python3 .github/scripts/ci_changes.py < "$RUNNER_TEMP/changed-files" >> "$GITHUB_OUTPUT"
 
-  translation-parity:
-    name: Translation parity
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - name: Test translation checker
-        run: node --test apps/frontend/scripts/check-translations.test.mjs
-      - name: Check every language and namespace
-        run: node apps/frontend/scripts/check-translations.mjs
-
-  design-ratchet:
-    name: Design ratchet
-    needs: changes
-    if: needs.changes.outputs.frontend == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .node-version
-      - name: Check that no file gains design-system debt
-        run: node scripts/design-ratchet.mjs
-
   formatting:
     name: Formatting
     needs: changes
-    if: needs.changes.outputs.formatting == 'true'
+    if: needs.changes.outputs.formatting == 'true' && needs.changes.outputs.frontend != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -110,6 +80,18 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        if: needs.changes.outputs.formatting == 'true'
+        run: pnpm format:check
+
+      - name: Check translation parity
+        run: |
+          node --test apps/frontend/scripts/check-translations.test.mjs
+          node apps/frontend/scripts/check-translations.mjs
+
+      - name: Check that no file gains design-system debt
+        run: node scripts/design-ratchet.mjs
 
       - name: Build package types
         run: pnpm run build:types
@@ -207,13 +189,11 @@ jobs:
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
-          # cache-warm.yml seeds this key on main. A PR's own copy (~2 GB) is
-          # readable only by that PR and evicts the shared caches, so PRs
-          # restore without saving. The key follows rust-toolchain.toml rather
-          # than every installed toolchain, so runner image updates to stable
-          # Rust do not invalidate it.
-          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
-          shared-key: pr-server-check
+          # Main warms this dependency cache in cache-warm.yml. PRs only
+          # restore it so per-PR copies do not evict shared caches.
+          prefix-key: v2-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key:
+            pr-server-check-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml') }}
           add-rust-environment-hash-key: false
           save-if: false
 
@@ -255,8 +235,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           # Keep in sync with Rust Clippy above and cache-warm.yml.
-          prefix-key: v1-rust-${{ hashFiles('rust-toolchain.toml') }}
-          shared-key: pr-server-check
+          prefix-key: v2-rust-${{ hashFiles('rust-toolchain.toml') }}
+          shared-key:
+            pr-server-check-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '.cargo/config.toml') }}
           add-rust-environment-hash-key: false
           save-if: false
 
@@ -294,17 +275,7 @@ jobs:
     name: Build Status
     timeout-minutes: 5
     runs-on: ubuntu-latest
-    needs:
-      [
-        changes,
-        formatting,
-        translation-parity,
-        design-ratchet,
-        frontend-check,
-        frontend-tests,
-        rust-clippy,
-        rust-tests,
-      ]
+    needs: [changes, formatting, frontend-check, frontend-tests, rust-clippy, rust-tests]
     if: always()
 
     steps:
@@ -315,8 +286,6 @@ jobs:
           FORMATTING_RESULT: ${{ needs.formatting.result }}
           FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
           RUST_REQUIRED: ${{ needs.changes.outputs.rust }}
-          TRANSLATION_RESULT: ${{ needs.translation-parity.result }}
-          DESIGN_RATCHET_RESULT: ${{ needs.design-ratchet.result }}
           FRONTEND_RESULT: ${{ needs.frontend-check.result }}
           FRONTEND_TESTS_RESULT: ${{ needs.frontend-tests.result }}
           RUST_CLIPPY_RESULT: ${{ needs.rust-clippy.result }}
@@ -326,14 +295,12 @@ jobs:
           if [ "$FRONTEND_REQUIRED" = true ]; then
             test "$FRONTEND_RESULT" = success
             test "$FRONTEND_TESTS_RESULT" = success
-            test "$TRANSLATION_RESULT" = success
-            test "$DESIGN_RATCHET_RESULT" = success
           fi
           if [ "$RUST_REQUIRED" = true ]; then
             test "$RUST_CLIPPY_RESULT" = success
             test "$RUST_TESTS_RESULT" = success
           fi
-          if [ "$FORMATTING_REQUIRED" = true ]; then
+          if [ "$FORMATTING_REQUIRED" = true ] && [ "$FRONTEND_REQUIRED" != true ]; then
             test "$FORMATTING_RESULT" = success
           fi
           echo "All required checks passed."
