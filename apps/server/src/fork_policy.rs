@@ -4,6 +4,8 @@
 //! its observer events for unattended web-server jobs and selects the fork's
 //! refresh cadence for the always-on ARM64 deployment.
 
+mod intraday_bootstrap;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -249,31 +251,38 @@ async fn record_intraday_sample(
 /// separate one-shot job in `main_lib`.
 pub(crate) fn spawn_periodic_update(state: Arc<AppState>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-        tracing::info!("Periodic portfolio update started with adaptive market-hours cadence");
-        loop {
-            let session_open = market_clock(Utc::now())
-                .is_some_and(|seconds| (OPEN_SECS..CLOSE_SECS).contains(&seconds));
-            let observer = ServerJobObserver::background(&state);
-            let report = state
-                .portfolio_coordinator
-                .update_all(MarketSyncMode::Incremental { asset_ids: None }, &observer)
-                .await;
-            if session_open
-                && report.failures.is_empty()
-                && report.market_sync.is_some_and(|sync| sync.is_ok())
-                && record_intraday_sample(&state, Utc::now()).await.is_err()
-            {
-                tracing::warn!("Could not record intraday portfolio sample");
-            }
-            tracing::info!(
-                "Periodic portfolio update: {} account(s) rebuilt, {} failure(s)",
-                report.account_ids.len(),
-                report.failures.len()
-            );
-            tokio::time::sleep(background_update_interval(chrono::Utc::now())).await;
-        }
+        tokio::join!(
+            intraday_bootstrap::bootstrap_intraday_history(&state),
+            run_periodic_update(&state),
+        );
     })
+}
+
+async fn run_periodic_update(state: &AppState) {
+    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+    tracing::info!("Periodic portfolio update started with adaptive market-hours cadence");
+    loop {
+        let session_open = market_clock(Utc::now())
+            .is_some_and(|seconds| (OPEN_SECS..CLOSE_SECS).contains(&seconds));
+        let observer = ServerJobObserver::background(state);
+        let report = state
+            .portfolio_coordinator
+            .update_all(MarketSyncMode::Incremental { asset_ids: None }, &observer)
+            .await;
+        if session_open
+            && report.failures.is_empty()
+            && report.market_sync.is_some_and(|sync| sync.is_ok())
+            && record_intraday_sample(state, Utc::now()).await.is_err()
+        {
+            tracing::warn!("Could not record intraday portfolio sample");
+        }
+        tracing::info!(
+            "Periodic portfolio update: {} account(s) rebuilt, {} failure(s)",
+            report.account_ids.len(),
+            report.failures.len()
+        );
+        tokio::time::sleep(background_update_interval(chrono::Utc::now())).await;
+    }
 }
 
 #[cfg(test)]

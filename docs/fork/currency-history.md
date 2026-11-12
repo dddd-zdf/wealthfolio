@@ -65,7 +65,14 @@ diagnostics when regenerating them.
 After the scheduled market-hours refresh, the server records the engine's
 current daily account values as timestamped observations. Each observation
 includes the FX rates the refresh made available to the engine. The web
-dashboard combines observations for its selected accounts and base currency.
+dashboard combines observations for its selected accounts and base currency. At
+profile startup, a background task waits for usable daily history if needed and
+fills missing sessions from five-minute provider bars. It estimates price
+movement using current holdings and anchors each day to its complete daily
+valuation in the reporting currency. A session with stored samples takes
+precedence over the estimate. The dashboard refreshes its short-range chart when
+the backfill commits.
+
 When fewer than two complete observations are available, it shows daily values.
 The 1W view fills in as the server observes more sessions. Samples are kept for
 14 days and live in a chart-only table in the profile database. A currency

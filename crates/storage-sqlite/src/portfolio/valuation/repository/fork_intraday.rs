@@ -1,16 +1,19 @@
-//! Fork: short-lived account valuation observations for intraday charts.
+//! Fork: short-lived account valuation samples for intraday charts.
 //!
 //! These chart observations come from complete, clean daily projection rows.
 
+use std::collections::{HashMap, HashSet};
+
 use chrono::{DateTime, NaiveDate, Utc};
 use diesel::sql_query;
-use diesel::sql_types::{BigInt, Text};
-use diesel::{QueryableByName, RunQueryDsl};
+use diesel::sql_types::{BigInt, Date, Text};
+use diesel::{QueryableByName, RunQueryDsl, SqliteConnection};
 use rust_decimal::Decimal;
 use wealthfolio_core::errors::Result;
 use wealthfolio_core::portfolio::valuation::intraday::{
-    IntradayAccountSample, IntradayValuationPoint,
+    IntradayAccountSample, IntradayValuationPoint, ReconstructedIntradaySample,
 };
+use wealthfolio_core::portfolio::valuation::DailyAccountValuation;
 
 use super::ValuationRepository;
 use crate::db::get_connection;
@@ -28,7 +31,96 @@ struct IntradaySampleRow {
     net_contribution_base: String,
 }
 
+#[derive(QueryableByName)]
+struct IntradaySessionRow {
+    #[diesel(sql_type = Date)]
+    session: NaiveDate,
+}
+
+fn sampled_days(
+    conn: &mut SqliteConnection,
+    base_currency: &str,
+    since: DateTime<Utc>,
+) -> Result<HashSet<NaiveDate>> {
+    // New York regular-session samples and their UTC timestamps share the date.
+    let rows = sql_query(
+        "SELECT DISTINCT date(timestamp, 'unixepoch') AS session
+         FROM intraday_account_samples WHERE base_currency = ? AND timestamp >= ?",
+    )
+    .bind::<Text, _>(base_currency)
+    .bind::<BigInt, _>(since.timestamp())
+    .load::<IntradaySessionRow>(conn)
+    .map_err(StorageError::from)?;
+    Ok(rows.into_iter().map(|row| row.session).collect())
+}
+
 impl ValuationRepository {
+    pub fn intraday_sample_days(
+        &self,
+        base_currency: &str,
+        since: DateTime<Utc>,
+    ) -> Result<HashSet<NaiveDate>> {
+        let mut conn = get_connection(&self.pool)?;
+        sampled_days(&mut conn, base_currency, since)
+    }
+
+    /// Seed completed sessions with reconstructed chart values. An observed
+    /// session wins as a whole, even if its timestamps differ from the bars.
+    /// The original daily projection must still be clean and current at write time.
+    pub async fn seed_intraday_samples(
+        &self,
+        daily: Vec<DailyAccountValuation>,
+        samples: Vec<ReconstructedIntradaySample>,
+        base_currency: String,
+        since: DateTime<Utc>,
+    ) -> Result<usize> {
+        self.writer
+            .exec(move |conn| {
+                let existing = sampled_days(conn, &base_currency, since)?;
+                let anchors: HashMap<_, _> = daily
+                    .into_iter()
+                    .map(|row| ((row.account_id, row.valuation_date), row.calculated_at))
+                    .collect();
+                let mut inserted = 0;
+                for ReconstructedIntradaySample { anchor_date: date, sample } in samples {
+                    let point = sample.point;
+                    if existing.contains(&point.timestamp.date_naive()) {
+                        continue;
+                    }
+                    let key = (sample.account_id, date);
+                    let Some(calculated_at) = anchors.get(&key) else {
+                        continue;
+                    };
+                    inserted += sql_query(
+                        "INSERT INTO intraday_account_samples
+                         (account_id, timestamp, base_currency, total_value_base, net_contribution_base)
+                         SELECT d.account_id, ?, d.base_currency, ?, ?
+                         FROM daily_account_valuation d JOIN accounts a ON a.id = d.account_id
+                         WHERE d.account_id = ? AND d.valuation_date = ?
+                           AND d.base_currency = ? AND d.calculated_at = ?
+                           AND d.value_status = 'COMPLETE' AND a.is_archived = 0
+                           AND NOT EXISTS (
+                               SELECT 1 FROM projection_state ps
+                               WHERE ps.dirty_from <= d.valuation_date
+                                 AND (ps.scope = '@all' OR ps.scope = d.account_id)
+                           )
+                         ON CONFLICT(account_id, timestamp, base_currency) DO NOTHING",
+                    )
+                    .bind::<BigInt, _>(point.timestamp.timestamp())
+                    .bind::<Text, _>(point.total_value_base.to_string())
+                    .bind::<Text, _>(point.net_contribution_base.to_string())
+                    .bind::<Text, _>(&key.0)
+                    .bind::<Text, _>(date.to_string())
+                    .bind::<Text, _>(&base_currency)
+                    .bind::<Text, _>(calculated_at.to_rfc3339())
+                    .execute(conn)
+                    .map_err(StorageError::from)?;
+                }
+                Ok(inserted)
+            })
+            .await
+    }
+
     /// Record one scheduled intraday observation for every eligible account.
     ///
     /// The writer transaction prunes stale observations and copies only rows
@@ -309,6 +401,39 @@ mod tests {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].account_id, "complete");
         assert_eq!(samples[0].point.total_value_base, Decimal::new(12345, 2));
+
+        let anchors = repository
+            .get_historical_valuations_for_accounts(
+                &["complete".into(), "other_currency".into()],
+                Some(date()),
+                Some(date()),
+            )
+            .expect("read seed anchors");
+        let seed = |account_id: &str| ReconstructedIntradaySample {
+            anchor_date: date(),
+            sample: IntradayAccountSample {
+                account_id: account_id.into(),
+                point: IntradayValuationPoint {
+                    timestamp: second,
+                    total_value_base: Decimal::ONE,
+                    net_contribution_base: Decimal::ZERO,
+                },
+            },
+        };
+        assert_eq!(
+            repository
+                .seed_intraday_samples(anchors.clone(), vec![seed("complete")], "USD".into(), first)
+                .await
+                .expect("preserve the observed USD session"),
+            0
+        );
+        assert_eq!(
+            repository
+                .seed_intraday_samples(anchors, vec![seed("other_currency")], "CAD".into(), first)
+                .await
+                .expect("seed the unsampled CAD session"),
+            1
+        );
 
         {
             let mut conn = get_connection(&pool).expect("connection");

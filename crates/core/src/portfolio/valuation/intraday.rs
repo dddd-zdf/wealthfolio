@@ -15,8 +15,8 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use chrono::{DateTime, NaiveDate, Utc};
-use chrono_tz::Tz;
+use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveTime, TimeZone, Utc, Weekday};
+use chrono_tz::{America, Tz};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -79,6 +79,13 @@ pub struct IntradayAccountSample {
     pub point: IntradayValuationPoint,
 }
 
+/// A reconstructed observation together with its daily valuation anchor date.
+#[derive(Debug, Clone)]
+pub struct ReconstructedIntradaySample {
+    pub anchor_date: NaiveDate,
+    pub sample: IntradayAccountSample,
+}
+
 /// Sum only observations that include every account in the selected scope.
 /// The latest observed session supplies 1D; up to five sessions supply 1W.
 pub fn observed_intraday_series(
@@ -102,6 +109,35 @@ pub fn observed_intraday_series(
         IntradayRange::Week => 5,
     };
     let expected: BTreeSet<_> = account_ids.iter().map(String::as_str).collect();
+    let selected_day = if range == IntradayRange::Day {
+        let mut complete_points_by_day = BTreeMap::<NaiveDate, usize>::new();
+        for (timestamp, samples) in &by_time {
+            let observed: BTreeSet<_> = samples
+                .iter()
+                .map(|sample| sample.account_id.as_str())
+                .collect();
+            if observed == expected && samples.len() == expected.len() {
+                let day = timestamp
+                    .with_timezone(&chrono_tz::America::New_York)
+                    .date_naive();
+                *complete_points_by_day.entry(day).or_default() += 1;
+            }
+        }
+        let latest = complete_points_by_day.keys().next_back().copied();
+        latest.and_then(|latest| {
+            if complete_points_by_day[&latest] >= 2 {
+                Some(latest)
+            } else {
+                complete_points_by_day
+                    .iter()
+                    .rev()
+                    .find_map(|(day, count)| (*count >= 2).then_some(*day))
+                    .or(Some(latest))
+            }
+        })
+    } else {
+        None
+    };
     for (timestamp, samples) in by_time.into_iter().rev() {
         let observed: BTreeSet<_> = samples
             .iter()
@@ -113,6 +149,11 @@ pub fn observed_intraday_series(
         let session = timestamp
             .with_timezone(&chrono_tz::America::New_York)
             .date_naive();
+        if let Some(selected_day) = selected_day {
+            if session != selected_day {
+                continue;
+            }
+        }
         if last_session != Some(session) {
             if sessions == max_sessions {
                 break;
@@ -242,26 +283,170 @@ pub fn build_intraday_series(
             .collect();
 
         for ts in timestamps {
-            let mut delta = Decimal::ZERO;
-            for (weight, day_bars) in &legs {
-                let last = day_bars[day_bars.len() - 1].1;
-                // Price as of `ts`: latest bar at or before it, else the first bar.
-                let price = day_bars
-                    .iter()
-                    .rev()
-                    .find(|(bar_ts, _)| *bar_ts <= ts)
-                    .unwrap_or(&day_bars[0])
-                    .1;
-                delta += *weight * (price / last - Decimal::ONE);
-            }
             points.push(IntradayValuationPoint {
                 timestamp: ts,
-                total_value_base: (anchor.total_value_base + delta).round_dp(2),
+                total_value_base: intraday_total_at(anchor.total_value_base, &legs, ts),
                 net_contribution_base: anchor.net_contribution_base,
             });
         }
     }
     points
+}
+
+/// Apply the current position weights to one point in a day's price series.
+fn intraday_total_at(
+    anchor_total: Decimal,
+    legs: &[(Decimal, &DayBars)],
+    timestamp: DateTime<Utc>,
+) -> Decimal {
+    let mut delta = Decimal::ZERO;
+    for (weight, day_bars) in legs {
+        let last = day_bars[day_bars.len() - 1].1;
+        // Price as of `timestamp`: latest bar at or before it, else the first bar.
+        let position = day_bars.partition_point(|(bar_ts, _)| *bar_ts <= timestamp);
+        let price = if position == 0 {
+            day_bars[0].1
+        } else {
+            day_bars[position - 1].1
+        };
+        delta += *weight * (price / last - Decimal::ONE);
+    }
+    (anchor_total + delta).round_dp(2)
+}
+
+fn ny_session_close(day: NaiveDate) -> Option<DateTime<Utc>> {
+    America::New_York
+        .from_local_datetime(&day.and_time(NaiveTime::from_hms_opt(16, 0, 0)?))
+        .single()
+        .map(|timestamp| timestamp.with_timezone(&Utc))
+}
+
+/// Reconstruct intraday observations after a cold profile start.
+///
+/// Provider bars are five-minute intervals whose timestamps denote their
+/// starts. Reconstructed observations use interval ends, so the final regular
+/// session bar is observed at 16:00 New York time. A single grid is shared by
+/// every account; accounts without usable bars retain their daily total.
+pub fn reconstruct_intraday_samples(
+    daily: &[DailyAccountValuation],
+    exposures: &HashMap<String, Vec<IntradayExposure>>,
+    bars: &HashMap<String, Vec<Quote>>,
+    tz: Tz,
+    now: DateTime<Utc>,
+) -> Vec<ReconstructedIntradaySample> {
+    let open = NaiveTime::from_hms_opt(9, 30, 0).expect("valid NYSE open");
+    let close = NaiveTime::from_hms_opt(16, 0, 0).expect("valid NYSE close");
+
+    // Keep only bars belonging to an exposed asset so unrelated provider
+    // history cannot create a grid with no usable portfolio market history.
+    let asset_ids: BTreeSet<&str> = exposures
+        .values()
+        .flat_map(|account_exposures| account_exposures.iter().map(|e| e.asset_id.as_str()))
+        .collect();
+    let mut per_asset: HashMap<&str, BTreeMap<NaiveDate, DayBars>> = HashMap::new();
+    let mut grid: BTreeMap<NaiveDate, BTreeSet<DateTime<Utc>>> = BTreeMap::new();
+
+    for asset_id in asset_ids {
+        let Some(quotes) = bars.get(asset_id) else {
+            continue;
+        };
+        for quote in quotes.iter().filter(|quote| quote.close > Decimal::ZERO) {
+            let ny_timestamp = quote.timestamp.with_timezone(&America::New_York);
+            let ny_day = ny_timestamp.date_naive();
+            if matches!(ny_day.weekday(), Weekday::Sat | Weekday::Sun)
+                || ny_timestamp.time() < open
+                || ny_timestamp.time() >= close
+            {
+                continue;
+            }
+            let Some(session_close) = ny_session_close(ny_day) else {
+                continue;
+            };
+            if now < session_close {
+                continue;
+            }
+
+            // The profile timezone determines the daily-anchor date. This is
+            // the NY session date for North American profiles and correctly
+            // handles profiles configured east of New York as well.
+            let anchor_day = session_close.with_timezone(&tz).date_naive();
+            let endpoint = (quote.timestamp + Duration::minutes(5)).min(session_close);
+            per_asset
+                .entry(asset_id)
+                .or_default()
+                .entry(anchor_day)
+                .or_default()
+                .push((endpoint, quote.close));
+            grid.entry(anchor_day).or_default().insert(endpoint);
+        }
+    }
+
+    for day_bars in per_asset.values_mut().flat_map(BTreeMap::values_mut) {
+        day_bars.sort_by_key(|(timestamp, _)| *timestamp);
+    }
+
+    // A cold start can receive more than five sessions from a provider. Keep
+    // the newest five completed weekdays, then render them chronologically.
+    let mut sessions: Vec<NaiveDate> = grid.keys().rev().take(5).copied().collect();
+    sessions.sort_unstable();
+
+    let anchors: HashMap<(&str, NaiveDate), &DailyAccountValuation> = daily
+        .iter()
+        .filter(|valuation| valuation.value_status.is_complete())
+        .map(|valuation| {
+            (
+                (valuation.account_id.as_str(), valuation.valuation_date),
+                valuation,
+            )
+        })
+        .collect();
+    let account_ids: BTreeSet<&str> = anchors.keys().map(|(account_id, _)| *account_id).collect();
+
+    let mut samples = Vec::new();
+    for day in sessions {
+        let Some(timestamps) = grid.get(&day) else {
+            continue;
+        };
+        let account_legs: Vec<(&str, &DailyAccountValuation, Vec<(Decimal, &DayBars)>)> =
+            account_ids
+                .iter()
+                .filter_map(|account_id| {
+                    let anchor = anchors.get(&(*account_id, day))?;
+                    let account_exposures =
+                        exposures.get(*account_id).map(Vec::as_slice).unwrap_or(&[]);
+                    let legs = account_exposures
+                        .iter()
+                        .filter_map(|exposure| {
+                            per_asset
+                                .get(exposure.asset_id.as_str())?
+                                .get(&day)
+                                .map(|day_bars| (exposure.market_value_base, day_bars))
+                        })
+                        .collect();
+                    Some((*account_id, *anchor, legs))
+                })
+                .collect();
+        for &timestamp in timestamps {
+            for (account_id, anchor, legs) in &account_legs {
+                samples.push(ReconstructedIntradaySample {
+                    anchor_date: day,
+                    sample: IntradayAccountSample {
+                        account_id: (*account_id).to_string(),
+                        point: IntradayValuationPoint {
+                            timestamp,
+                            total_value_base: intraday_total_at(
+                                anchor.total_value_base,
+                                legs,
+                                timestamp,
+                            ),
+                            net_contribution_base: anchor.net_contribution_base,
+                        },
+                    },
+                });
+            }
+        }
+    }
+    samples
 }
 
 /// Fetch bars for the holdings and build the curve.
@@ -335,6 +520,13 @@ mod tests {
 
     fn at_day(day: u32, h: u32, m: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, day, h, m, 0).unwrap()
+    }
+
+    fn ny(day: u32, h: u32, m: u32) -> DateTime<Utc> {
+        chrono_tz::America::New_York
+            .with_ymd_and_hms(2026, 10, day, h, m, 0)
+            .unwrap()
+            .with_timezone(&Utc)
     }
 
     fn daily_anchor(
@@ -517,5 +709,94 @@ mod tests {
         assert_eq!(week.len(), 6);
         assert_eq!(week[0].timestamp, at_day(2, 14, 30));
         assert_eq!(week[5].timestamp, latest);
+    }
+
+    #[test]
+    fn reconstruction_uses_completed_sessions_and_a_common_grid() {
+        let tz: Tz = "America/New_York".parse().unwrap();
+        let mut daily = Vec::new();
+        for day in [5, 6, 7] {
+            let mut account = daily_anchor(day, ValuationStatus::Complete, dec!(100));
+            account.account_id = "account-1".to_string();
+            daily.push(account);
+            let mut cash = daily_anchor(day, ValuationStatus::Complete, dec!(200));
+            cash.account_id = "account-2".to_string();
+            daily.push(cash);
+        }
+
+        let mut exposures = HashMap::new();
+        exposures.insert(
+            "account-1".to_string(),
+            vec![IntradayExposure {
+                asset_id: "xeqt".to_string(),
+                market_value_base: dec!(100),
+            }],
+        );
+        exposures.insert("account-2".to_string(), Vec::new());
+
+        let mut bars = HashMap::new();
+        bars.insert(
+            "xeqt".to_string(),
+            vec![
+                bar("xeqt", ny(5, 9, 30), dec!(10)),
+                bar("xeqt", ny(5, 15, 55), dec!(11)),
+                bar("xeqt", ny(6, 9, 30), dec!(20)),
+                bar("xeqt", ny(6, 15, 55), dec!(22)),
+                // The open session must not be fabricated before its close.
+                bar("xeqt", ny(7, 9, 30), dec!(30)),
+            ],
+        );
+
+        let samples = reconstruct_intraday_samples(&daily, &exposures, &bars, tz, ny(7, 15, 0));
+        assert_eq!(
+            samples.len(),
+            8,
+            "two sessions x two accounts x two grid points"
+        );
+        assert!(samples.iter().all(
+            |sample| sample.sample.point.timestamp.date_naive() != at_day(7, 0, 0).date_naive()
+        ));
+        assert!(samples.iter().all(|sample| {
+            sample.sample.point.timestamp == ny(5, 9, 35)
+                || sample.sample.point.timestamp == ny(5, 16, 0)
+                || sample.sample.point.timestamp == ny(6, 9, 35)
+                || sample.sample.point.timestamp == ny(6, 16, 0)
+        }));
+        assert!(samples.iter().any(|sample| {
+            sample.sample.account_id == "account-2"
+                && sample.sample.point.total_value_base == dec!(200)
+        }));
+        assert!(samples.iter().any(|sample| {
+            sample.sample.account_id == "account-1"
+                && sample.sample.point.timestamp == ny(5, 16, 0)
+                && sample.sample.point.total_value_base == dec!(100)
+        }));
+    }
+
+    #[test]
+    fn day_series_hands_off_a_singleton_latest_session() {
+        let accounts = vec!["a".to_string(), "b".to_string()];
+        let sample = |account_id: &str, timestamp| IntradayAccountSample {
+            account_id: account_id.to_string(),
+            point: IntradayValuationPoint {
+                timestamp,
+                total_value_base: dec!(1),
+                net_contribution_base: Decimal::ZERO,
+            },
+        };
+        let mut samples = vec![
+            sample("a", ny(5, 14, 30)),
+            sample("b", ny(5, 14, 30)),
+            sample("a", ny(5, 14, 35)),
+            sample("b", ny(5, 14, 35)),
+            sample("a", ny(6, 14, 30)),
+            sample("b", ny(6, 14, 30)),
+        ];
+        let points =
+            observed_intraday_series(&accounts, std::mem::take(&mut samples), IntradayRange::Day);
+        assert_eq!(points.len(), 2);
+        assert!(points
+            .iter()
+            .all(|point| point.timestamp == ny(5, 14, 30) || point.timestamp == ny(5, 14, 35)));
     }
 }
