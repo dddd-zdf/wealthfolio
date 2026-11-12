@@ -237,6 +237,19 @@ const useGlobalEventListener = () => {
     };
 
     const handlePortfolioUpdateComplete = async (event: { payload: unknown }) => {
+      const { payload } = event;
+      if (
+        !isTauriEnv &&
+        typeof payload === "object" &&
+        payload !== null &&
+        "intradayHistoryReady" in payload &&
+        payload.intradayHistoryReady === true
+      ) {
+        const filter = { queryKey: [QueryKeys.HISTORY_VALUATION, "intraday"] };
+        await queryClientRef.current.cancelQueries(filter);
+        await queryClientRef.current.invalidateQueries(filter);
+        return;
+      }
       portfolioUpdateRunning = false;
       dayAdvanceRequested = false;
       if (!isTauriEnv && isWebCurrencyCompletion(event.payload)) {
