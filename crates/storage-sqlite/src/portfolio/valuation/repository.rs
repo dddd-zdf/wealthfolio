@@ -20,6 +20,7 @@ use wealthfolio_core::portfolio::valuation::{
     ValuationStatus,
 };
 
+mod fork_intraday;
 mod fork_negative_balance;
 
 pub struct ValuationRepository {

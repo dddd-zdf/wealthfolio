@@ -2,8 +2,7 @@
 // hooks, so the upstream component keeps its own data flow and markup.
 // - 1D: the headline gain sums each holding's last-session move (stored daily
 //   totals stay flat over weekends and holidays).
-// - 1D/1W: the chart is drawn from live intraday prices, anchored to the
-//   stored daily totals, with a faint guide where the period started.
+// - 1D/1W: the chart uses intraday values, with a faint guide where the period started.
 // - Other periods: money-weighted return beside the simple return.
 import { getIntradayValuations, isWeb } from "@/adapters";
 import { performanceMoneyWeightedReturn, summarizeDayChange } from "@/lib/fork-performance";
@@ -87,8 +86,7 @@ export function useDashboardChart({
   dayChange,
   isAllTime,
 }: DashboardChartInput) {
-  // 1D/1W: daily valuations only give a point per day, so draw the curve from
-  // live intraday prices instead (falls back to the daily points if empty).
+  // 1D/1W uses the daily values until at least two intraday points are available.
   const intradayRange =
     selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
   const { data: intradayPoints } = useQuery({
@@ -110,11 +108,11 @@ export function useDashboardChart({
 
   const chartData = useMemo(() => {
     if (intradayRange && intradayPoints && intradayPoints.length > 1) {
-      // The curve is anchored to the stored daily total; shift the latest
-      // session so it ends on the live headline value.
+      // Native curves are reconstructed from daily anchors. Web points are
+      // observed values and keep their original amounts.
       const last = intradayPoints[intradayPoints.length - 1];
       const lastDay = last.timestamp.slice(0, 10);
-      const offset = totalValue > 0 ? totalValue - last.totalValueBase : 0;
+      const offset = !isWeb && totalValue > 0 ? totalValue - last.totalValueBase : 0;
       return intradayPoints.map((point) => ({
         date: point.timestamp,
         totalValue: point.totalValueBase + (point.timestamp.startsWith(lastDay) ? offset : 0),

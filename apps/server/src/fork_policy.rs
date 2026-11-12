@@ -7,13 +7,14 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use chrono::{DateTime, Datelike, Timelike, Utc, Weekday};
 use serde_json::json;
 use wealthfolio_core::{
     goals::GoalServiceTrait,
     health::HealthServiceTrait,
     portfolio::coordinator::{AccountFailure, JobObserver},
     quotes::{MarketSyncMode, SyncResult},
-    utils::time_utils::parse_user_timezone,
+    utils::time_utils::{parse_user_timezone, parse_user_timezone_or_default},
 };
 
 use crate::{
@@ -204,27 +205,44 @@ fn cache_action(background: bool, warm_after_update: bool, prices_changed: bool)
 /// Keep prices fresh every five minutes during North American trading hours,
 /// hourly otherwise, with the last pre-open wait ending at 09:30:30 New York
 /// to give providers time to publish opening prices.
-pub(crate) fn background_update_interval(
-    now: chrono::DateTime<chrono::Utc>,
-) -> std::time::Duration {
-    use chrono::{Datelike, Timelike, Weekday};
-
-    let Ok(new_york) = parse_user_timezone("America/New_York") else {
-        return std::time::Duration::from_secs(3600);
-    };
-    const OPEN_SECS: u32 = 9 * 3600 + 30 * 60 + 30;
-    const CLOSE_SECS: u32 = 16 * 3600 + 15 * 60;
-
-    let local = now.with_timezone(&new_york);
-    let seconds = local.num_seconds_from_midnight();
-    let weekday = !matches!(local.weekday(), Weekday::Sat | Weekday::Sun);
-    if weekday && (OPEN_SECS..CLOSE_SECS).contains(&seconds) {
-        std::time::Duration::from_secs(5 * 60)
-    } else if weekday && seconds < OPEN_SECS {
-        std::time::Duration::from_secs(u64::from((OPEN_SECS - seconds).min(3600)))
-    } else {
-        std::time::Duration::from_secs(3600)
+pub(crate) fn background_update_interval(now: DateTime<Utc>) -> std::time::Duration {
+    match market_clock(now) {
+        Some(seconds) if (OPEN_SECS..CLOSE_SECS).contains(&seconds) => {
+            std::time::Duration::from_secs(5 * 60)
+        }
+        Some(seconds) if seconds < OPEN_SECS => {
+            std::time::Duration::from_secs(u64::from((OPEN_SECS - seconds).min(3600)))
+        }
+        _ => std::time::Duration::from_secs(3600),
     }
+}
+
+const OPEN_SECS: u32 = 9 * 3600 + 30 * 60 + 30;
+const CLOSE_SECS: u32 = 16 * 3600 + 15 * 60;
+const INTRADAY_RETENTION_DAYS: i64 = 14;
+
+fn market_clock(now: DateTime<Utc>) -> Option<u32> {
+    let new_york = parse_user_timezone("America/New_York").ok()?;
+    let local = now.with_timezone(&new_york);
+    (!matches!(local.weekday(), Weekday::Sat | Weekday::Sun))
+        .then(|| local.num_seconds_from_midnight())
+}
+
+async fn record_intraday_sample(
+    state: &AppState,
+    timestamp: DateTime<Utc>,
+) -> crate::error::ApiResult<()> {
+    let tz = parse_user_timezone_or_default(&state.timezone()?);
+    state
+        .valuation_repository
+        .record_intraday_sample(
+            timestamp,
+            timestamp.with_timezone(&tz).date_naive(),
+            state.base_currency()?,
+            timestamp - chrono::Duration::days(INTRADAY_RETENTION_DAYS),
+        )
+        .await?;
+    Ok(())
 }
 
 /// One periodic coordinator loop for the profile. Startup refresh remains a
@@ -234,11 +252,20 @@ pub(crate) fn spawn_periodic_update(state: Arc<AppState>) -> tokio::task::JoinHa
         tokio::time::sleep(std::time::Duration::from_secs(120)).await;
         tracing::info!("Periodic portfolio update started with adaptive market-hours cadence");
         loop {
+            let session_open = market_clock(Utc::now())
+                .is_some_and(|seconds| (OPEN_SECS..CLOSE_SECS).contains(&seconds));
             let observer = ServerJobObserver::background(&state);
             let report = state
                 .portfolio_coordinator
                 .update_all(MarketSyncMode::Incremental { asset_ids: None }, &observer)
                 .await;
+            if session_open
+                && report.failures.is_empty()
+                && report.market_sync.is_some_and(|sync| sync.is_ok())
+                && record_intraday_sample(&state, Utc::now()).await.is_err()
+            {
+                tracing::warn!("Could not record intraday portfolio sample");
+            }
             tracing::info!(
                 "Periodic portfolio update: {} account(s) rebuilt, {} failure(s)",
                 report.account_ids.len(),

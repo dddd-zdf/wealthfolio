@@ -51,7 +51,7 @@ describe("useDashboardChart", () => {
     mockIntraday.mockReset();
   });
 
-  it("draws 1D from intraday bars ending on the live total, spanning the whole session", async () => {
+  it("draws recorded 1D values as observed, spanning the whole session", async () => {
     mockIntraday.mockResolvedValue([
       bar("2026-10-15T13:30:00Z", 1000),
       bar("2026-10-15T15:30:00Z", 1004),
@@ -69,8 +69,7 @@ describe("useDashboardChart", () => {
     );
 
     await waitFor(() => expect(result.current.chartData).toHaveLength(2));
-    // The latest session is shifted so it ends on the headline value.
-    expect(result.current.chartData.map((p) => p.totalValue)).toEqual([1006, 1010]);
+    expect(result.current.chartData.map((p) => p.totalValue)).toEqual([1000, 1004]);
     const open = Date.parse("2026-10-15T13:30:00Z");
     expect(result.current.timeDomain).toEqual([open, open + 6.5 * 60 * 60 * 1000]);
     // Yesterday's close: the live total minus today's move.
