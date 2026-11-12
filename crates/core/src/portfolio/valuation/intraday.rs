@@ -109,35 +109,6 @@ pub fn observed_intraday_series(
         IntradayRange::Week => 5,
     };
     let expected: BTreeSet<_> = account_ids.iter().map(String::as_str).collect();
-    let selected_day = if range == IntradayRange::Day {
-        let mut complete_points_by_day = BTreeMap::<NaiveDate, usize>::new();
-        for (timestamp, samples) in &by_time {
-            let observed: BTreeSet<_> = samples
-                .iter()
-                .map(|sample| sample.account_id.as_str())
-                .collect();
-            if observed == expected && samples.len() == expected.len() {
-                let day = timestamp
-                    .with_timezone(&chrono_tz::America::New_York)
-                    .date_naive();
-                *complete_points_by_day.entry(day).or_default() += 1;
-            }
-        }
-        let latest = complete_points_by_day.keys().next_back().copied();
-        latest.and_then(|latest| {
-            if complete_points_by_day[&latest] >= 2 {
-                Some(latest)
-            } else {
-                complete_points_by_day
-                    .iter()
-                    .rev()
-                    .find_map(|(day, count)| (*count >= 2).then_some(*day))
-                    .or(Some(latest))
-            }
-        })
-    } else {
-        None
-    };
     for (timestamp, samples) in by_time.into_iter().rev() {
         let observed: BTreeSet<_> = samples
             .iter()
@@ -149,11 +120,6 @@ pub fn observed_intraday_series(
         let session = timestamp
             .with_timezone(&chrono_tz::America::New_York)
             .date_naive();
-        if let Some(selected_day) = selected_day {
-            if session != selected_day {
-                continue;
-            }
-        }
         if last_session != Some(session) {
             if sessions == max_sessions {
                 break;
@@ -783,7 +749,7 @@ mod tests {
                 net_contribution_base: Decimal::ZERO,
             },
         };
-        let mut samples = vec![
+        let samples = vec![
             sample("a", ny(5, 14, 30)),
             sample("b", ny(5, 14, 30)),
             sample("a", ny(5, 14, 35)),
@@ -791,11 +757,9 @@ mod tests {
             sample("a", ny(6, 14, 30)),
             sample("b", ny(6, 14, 30)),
         ];
-        let points =
-            observed_intraday_series(&accounts, std::mem::take(&mut samples), IntradayRange::Day);
-        assert_eq!(points.len(), 2);
-        assert!(points
-            .iter()
-            .all(|point| point.timestamp == ny(5, 14, 30) || point.timestamp == ny(5, 14, 35)));
+        let points = observed_intraday_series(&accounts, samples, IntradayRange::Day);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].timestamp, ny(6, 14, 30));
+        assert_eq!(points[0].total_value_base, dec!(2));
     }
 }
