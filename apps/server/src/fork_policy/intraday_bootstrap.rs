@@ -49,9 +49,11 @@ async fn seed_intraday_history(state: &Arc<AppState>) -> ApiResult<bool> {
     let tz = parse_user_timezone_or_default(&timezone);
     let now = Utc::now();
     let since = now - Duration::days(IntradayRange::Week.anchor_days());
+    let first_date = since.with_timezone(&tz).date_naive();
+    let today = now.with_timezone(&tz).date_naive();
     let read_state = state.clone();
     let read_base = base.clone();
-    let Some((account_ids, daily, existing)) =
+    let Some((account_ids, has_history, existing)) =
         tokio::task::spawn_blocking(move || -> ApiResult<_> {
             let repo = &read_state.valuation_repository;
             let existing = repo.intraday_sample_days(&read_base, since)?;
@@ -67,15 +69,17 @@ async fn seed_intraday_history(state: &Arc<AppState>) -> ApiResult<bool> {
                 })
                 .map(|account| account.id)
                 .collect();
-            let mut daily = repo.get_historical_valuations_for_accounts(
+            let daily = repo.get_historical_valuations_for_accounts(
                 &account_ids,
-                Some(since.with_timezone(&tz).date_naive()),
-                Some(now.with_timezone(&tz).date_naive()),
+                Some(first_date),
+                Some(today),
             )?;
-            daily.retain(|row| {
-                row.base_currency == read_base && row.value_status == ValuationStatus::Complete
+            let has_history = daily.iter().any(|row| {
+                row.base_currency == read_base
+                    && row.value_status == ValuationStatus::Complete
+                    && row.valuation_date < today
             });
-            Ok(Some((account_ids, daily, existing)))
+            Ok(Some((account_ids, has_history, existing)))
         })
         .await
         .map_err(|_| {
@@ -86,10 +90,7 @@ async fn seed_intraday_history(state: &Arc<AppState>) -> ApiResult<bool> {
     };
     // An account created today may have no historical activity yet. Keep
     // listening so a later import can seed its first completed sessions.
-    if !daily
-        .iter()
-        .any(|row| row.valuation_date < now.with_timezone(&tz).date_naive())
-    {
+    if !has_history {
         return Ok(false);
     }
     let scope = state
@@ -123,7 +124,17 @@ async fn seed_intraday_history(state: &Arc<AppState>) -> ApiResult<bool> {
         // The provider's five-day window can include a session still in progress.
         .get_intraday_quotes(&assets.into_iter().collect::<Vec<_>>(), "5m", "1mo")
         .await?;
-    let (daily, samples) = tokio::task::spawn_blocking(move || {
+    let repository = state.valuation_repository.clone();
+    let read_base = base.clone();
+    let (daily, samples) = tokio::task::spawn_blocking(move || -> ApiResult<_> {
+        // Read the anchors after the provider call so the startup refresh can
+        // finish replacing its daily projections while the bars are loading.
+        let mut daily = repository.get_historical_valuations_for_accounts(
+            &account_ids,
+            Some(first_date),
+            Some(today),
+        )?;
+        daily.retain(|row| row.base_currency == read_base);
         // The scheduled refresh may observe the closing print until 16:15.
         let mut samples = reconstruct_intraday_samples(
             &daily,
@@ -133,10 +144,10 @@ async fn seed_intraday_history(state: &Arc<AppState>) -> ApiResult<bool> {
             now - Duration::minutes(15),
         );
         samples.retain(|row| !existing.contains(&row.sample.point.timestamp.date_naive()));
-        (daily, samples)
+        Ok((daily, samples))
     })
     .await
-    .map_err(|_| ApiError::Internal("Could not reconstruct intraday history".into()))?;
+    .map_err(|_| ApiError::Internal("Could not reconstruct intraday history".into()))??;
     if state.base_currency()? != base || state.timezone()? != timezone {
         return Ok(false);
     }

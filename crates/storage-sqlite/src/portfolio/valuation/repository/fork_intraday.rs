@@ -5,9 +5,10 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate, Utc};
+use diesel::result::Error as DieselError;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Date, Text};
-use diesel::{QueryableByName, RunQueryDsl, SqliteConnection};
+use diesel::{Connection, QueryableByName, RunQueryDsl, SqliteConnection};
 use rust_decimal::Decimal;
 use wealthfolio_core::errors::Result;
 use wealthfolio_core::portfolio::valuation::intraday::{
@@ -81,6 +82,9 @@ impl ValuationRepository {
                     .into_iter()
                     .map(|row| ((row.account_id, row.valuation_date), row.calculated_at))
                     .collect();
+                // A history rebuild can replace some anchors while the bars
+                // are loading. Leave the whole batch eligible for a retry.
+                let result = conn.transaction::<_, StorageError, _>(|conn| {
                 let mut inserted = 0;
                 for ReconstructedIntradaySample { anchor_date: date, sample } in samples {
                     let point = sample.point;
@@ -89,9 +93,9 @@ impl ValuationRepository {
                     }
                     let key = (sample.account_id, date);
                     let Some(calculated_at) = anchors.get(&key) else {
-                        continue;
+                        return Err(DieselError::RollbackTransaction.into());
                     };
-                    inserted += sql_query(
+                    let count = sql_query(
                         "INSERT INTO intraday_account_samples
                          (account_id, timestamp, base_currency, total_value_base, net_contribution_base)
                          SELECT d.account_id, ?, d.base_currency, ?, ?
@@ -114,9 +118,18 @@ impl ValuationRepository {
                     .bind::<Text, _>(&base_currency)
                     .bind::<Text, _>(calculated_at.to_rfc3339())
                     .execute(conn)
-                    .map_err(StorageError::from)?;
+                    ?;
+                    if count == 0 {
+                        return Err(DieselError::RollbackTransaction.into());
+                    }
+                    inserted += count;
                 }
                 Ok(inserted)
+                });
+                match result {
+                    Err(StorageError::QueryFailed(DieselError::RollbackTransaction)) => Ok(0),
+                    result => Ok(result?),
+                }
             })
             .await
     }
@@ -425,6 +438,18 @@ mod tests {
                 .seed_intraday_samples(anchors.clone(), vec![seed("complete")], "USD".into(), first)
                 .await
                 .expect("preserve the observed USD session"),
+            0
+        );
+        assert_eq!(
+            repository
+                .seed_intraday_samples(
+                    anchors.clone(),
+                    vec![seed("other_currency"), seed("complete")],
+                    "CAD".into(),
+                    first,
+                )
+                .await
+                .expect("roll back a seed batch with a superseded anchor"),
             0
         );
         assert_eq!(
