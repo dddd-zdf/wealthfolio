@@ -86,9 +86,10 @@ export function useDashboardChart({
   dayChange,
   isAllTime,
 }: DashboardChartInput) {
-  // 1D/1W uses the daily values until at least two intraday points are available.
+  // The web 1D chart can show one observed point as a dot.
   const intradayRange =
     selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
+  const minimumPoints = isWeb && intradayRange === "1D" ? 1 : 2;
   const { data: intradayPoints } = useQuery({
     // Include the display/base currency so a settings transition cannot reuse
     // a curve calculated for the previous currency and merely relabel it.
@@ -107,7 +108,7 @@ export function useDashboardChart({
   });
 
   const chartData = useMemo(() => {
-    if (intradayRange && intradayPoints && intradayPoints.length > 1) {
+    if (intradayRange && intradayPoints && intradayPoints.length >= minimumPoints) {
       // Native curves are reconstructed from daily anchors. Web points are
       // observed values and keep their original amounts.
       const last = intradayPoints[intradayPoints.length - 1];
@@ -121,18 +122,18 @@ export function useDashboardChart({
       }));
     }
     return dailyChartData;
-  }, [intradayRange, intradayPoints, totalValue, dailyChartData, baseCurrency]);
+  }, [intradayRange, intradayPoints, minimumPoints, totalValue, dailyChartData, baseCurrency]);
 
   // 1D shows a single session: span all of it so a half-finished day fills half
   // the chart instead of stretching across the full width.
   const timeDomain = useMemo((): [number, number] | undefined => {
-    if (selectedInterval !== "1D" || !intradayPoints || intradayPoints.length < 2) {
+    if (selectedInterval !== "1D" || !intradayPoints || intradayPoints.length < minimumPoints) {
       return undefined;
     }
     const open = Date.parse(intradayPoints[0].timestamp);
     const lastPoint = Date.parse(intradayPoints[intradayPoints.length - 1].timestamp);
     return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
-  }, [selectedInterval, intradayPoints]);
+  }, [selectedInterval, intradayPoints, minimumPoints]);
 
   // Faint guide at where the period started: yesterday's close on 1D (live
   // total minus today's move), the first point otherwise. ALL starts near zero.

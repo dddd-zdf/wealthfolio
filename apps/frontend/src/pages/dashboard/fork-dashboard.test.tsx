@@ -77,6 +77,28 @@ describe("useDashboardChart", () => {
     expect(mockIntraday).toHaveBeenCalledWith({ type: "all" }, "1D");
   });
 
+  it("shows the first 1D snapshot with the previous-close guide", async () => {
+    const timestamp = "2026-10-15T13:30:30Z";
+    mockIntraday.mockResolvedValue([bar(timestamp, 1000)]);
+    const { result } = renderHook(
+      () =>
+        useDashboardChart(
+          input({
+            selectedInterval: "1D",
+            totalValue: 1010,
+            dayChange: { amount: 12, percent: 0.012 },
+          }),
+        ),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.chartData).toHaveLength(1));
+    expect(result.current.chartData[0]).toMatchObject({ date: timestamp, totalValue: 1000 });
+    const open = Date.parse(timestamp);
+    expect(result.current.timeDomain).toEqual([open, open + 6.5 * 60 * 60 * 1000]);
+    expect(result.current.referenceValue).toBe(998);
+  });
+
   it("falls back to daily points when intraday has too few bars", async () => {
     mockIntraday.mockResolvedValue([bar("2026-10-15T13:30:00Z", 1000)] as never);
     const { result } = renderHook(() => useDashboardChart(input({ selectedInterval: "1W" })), {
