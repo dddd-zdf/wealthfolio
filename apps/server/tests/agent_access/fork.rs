@@ -3,6 +3,56 @@
 
 use super::*;
 
+#[tokio::test]
+async fn mcp_valuation_history_includes_inactive_accounts() {
+    let server = spawn_server(true, false).await;
+    let cookie = login(&server).await;
+    let (status, token) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({ "name": "history reader", "scopes": ["holdings:read"] }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let pat = token["token"].as_str().unwrap();
+    let session = mcp_initialize(&server, pat).await;
+
+    // Seed stored history directly so the read test does not depend on a
+    // background rebuild or market data.
+    let db_path = server._tmp.path().join("test.db");
+    let db = wealthfolio_storage_sqlite::db::DbAccess::plaintext(db_path.to_str().unwrap())
+        .connect_rusqlite()
+        .unwrap();
+    db.execute_batch(
+        "INSERT INTO accounts (id, name, currency, is_active, is_archived) VALUES
+            ('inactive', 'Inactive account', 'USD', false, false),
+            ('archived', 'Archived account', 'USD', false, true);
+         INSERT INTO daily_account_valuation (
+            id, account_id, valuation_date, account_currency, base_currency,
+            fx_rate_to_base, cash_balance, investment_market_value, total_value,
+            cost_basis, net_contribution, cash_balance_base, total_value_base
+         ) VALUES
+            ('inactive-history', 'inactive', '2026-04-01', 'USD', 'USD',
+             '1', '125', '0', '125', '0', '0', '125', '125'),
+            ('archived-history', 'archived', '2026-04-01', 'USD', 'USD',
+             '1', '50', '0', '50', '0', '0', '50', '50');",
+    )
+    .unwrap();
+
+    let result = mcp_call_tool(
+        &server,
+        pat,
+        &session,
+        "get_valuation_history",
+        serde_json::json!({ "startDate": "2026-04-01", "endDate": "2026-04-01" }),
+    )
+    .await;
+    let valuations = result["valuations"].as_array().unwrap();
+    assert_eq!(valuations.len(), 1, "{result}");
+    assert_eq!(valuations[0]["date"], "2026-04-01");
+    assert_eq!(valuations[0]["totalValue"], 125.0);
+}
+
 /// Calls an MCP tool over the stateful session; returns the parsed `result`.
 async fn mcp_call(
     server: &TestServer,
