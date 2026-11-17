@@ -19,7 +19,20 @@ async fn mcp_valuation_history_includes_inactive_accounts() {
 
     // Seed stored history directly so the read test does not depend on a
     // background rebuild or market data.
-    let db_path = server._tmp.path().join("test.db");
+    let profile = api_post(
+        &server,
+        &cookie,
+        "profiles/get_profile_state",
+        serde_json::json!({}),
+    )
+    .await;
+    let db_path = server
+        ._tmp
+        .path()
+        .join("profiles")
+        .join(profile["session"]["profileId"].as_str().unwrap())
+        .join("app.db");
+    assert!(db_path.is_file());
     let db = wealthfolio_storage_sqlite::db::DbAccess::plaintext(db_path.to_str().unwrap())
         .connect_rusqlite()
         .unwrap();
