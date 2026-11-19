@@ -1060,7 +1060,7 @@ impl MarketDataProvider for YahooProvider {
             .metadata()
             .ok()
             .and_then(|m| m.currency)
-            .unwrap_or_else(|| self.get_currency(context));
+            .unwrap_or_else(|| ResolverChain::new().quote_currency(&"YAHOO".into(), context));
         match response.quotes() {
             // Bars with no trades come back without a close; skip them.
             Ok(bars) => Ok(bars
