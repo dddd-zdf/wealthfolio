@@ -12,7 +12,7 @@ use wealthfolio_core::portfolio::valuation::intraday::{
 use wealthfolio_core::portfolios::AccountScope;
 
 use super::{get_historical_valuations_for_scope, resolve_holdings_scope};
-use crate::api::{holdings::dto::HistoryFilterBody, shared::holdings_account_ids};
+use crate::api::{holdings::dto::HistoryFilterBody, shared::holdings_accounts};
 use crate::{
     error::{ApiError, ApiResult},
     main_lib::AppState,
@@ -57,14 +57,18 @@ pub async fn get_intraday_valuations(
 
     tokio::task::spawn_blocking(move || {
         let scope = resolve_holdings_scope(&parsed.filter, &state)?;
-        let account_ids = holdings_account_ids(&state, &scope.account_ids)?;
+        let accounts = holdings_accounts(&state, &scope.account_ids)?;
+        let account_ids = accounts
+            .iter()
+            .map(|account| account.id.clone())
+            .collect::<Vec<_>>();
         let since = chrono::Utc::now() - chrono::Duration::days(range.anchor_days());
         let samples = state.valuation_repository.get_intraday_samples(
             &account_ids,
             &scope.base_currency,
             since,
         )?;
-        Ok(Json(observed_intraday_series(&account_ids, samples, range)))
+        Ok(Json(observed_intraday_series(&accounts, samples, range)))
     })
     .await
     .map_err(|_| ApiError::Internal("Could not load intraday valuations".into()))?
