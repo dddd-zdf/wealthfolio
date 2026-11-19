@@ -214,6 +214,12 @@ validation of new code.
 
 There is no build on the server. CI builds the image; the server pulls it.
 
+Application changes merged into `main` trigger the ARM64 image workflow. The
+production timer on `home` looks for its smoke-tested Git tree tag and a
+successful PR Check for the matching merged source. It keeps one rollback image
+and one verified SQLite backup. See the private infra runbook for the timer,
+rollback, and schema changes that still use the manual procedure below.
+
 1. Merge the validated PR into `main` (preserve merge ancestry for upstream
    syncs). PR checks are `pr-check.yml`, scoped as described above.
 2. Prepare the image:

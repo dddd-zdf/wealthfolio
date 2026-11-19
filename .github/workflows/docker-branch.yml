@@ -1,10 +1,15 @@
 name: Docker branch build
 
-# Publishes a smoke-tested ARM64 image to GHCR. Manual main runs reuse an image
+# Publishes a smoke-tested ARM64 image to GHCR. Main runs reuse an image
 # for the same Git tree when available. amd64 is opt-in on manual runs.
 on:
   push:
-    branches: [feature/mcp-commit-category-assignments]
+    branches: [main, feature/mcp-commit-category-assignments]
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "**/*.mdx"
+      - ".github/**"
   workflow_dispatch:
     inputs:
       amd64:
