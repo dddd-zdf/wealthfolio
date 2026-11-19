@@ -1657,7 +1657,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(recent.failed, 0, "{:?}", recent.failures);
-        assert_eq!(recent.quotes_synced, 3);
+        // The fork reports changed closes. The three rows share one rate.
+        assert_eq!(recent.quotes_synced, 1);
+        assert_eq!(raw_rows(&repo, "COPUSD").len(), 3);
         let state = states.get_by_asset_id("COPUSD").unwrap().unwrap();
         assert_eq!(state.last_synced_at, None);
         assert_eq!(state.error_count, 0);
@@ -1667,7 +1669,7 @@ mod tests {
         assert!(before[0].start_date < NaiveDate::from_ymd_opt(2010, 1, 4).unwrap());
         let result = sync.sync(SyncMode::Incremental, None).await.unwrap();
         assert_eq!(result.failed, 0, "{:?}", result.failures);
-        assert_eq!(result.quotes_synced, 5);
+        assert_eq!(result.quotes_synced, 1);
         assert_eq!(raw_rows(&repo, "COPUSD").len(), 5);
         assert!(states
             .get_by_asset_id("COPUSD")
@@ -1686,7 +1688,8 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(recent_after_history.quotes_synced, 3);
+        assert_eq!(recent_after_history.synced, 1);
+        assert_eq!(recent_after_history.quotes_synced, 0);
         assert!(states
             .get_by_asset_id("COPUSD")
             .unwrap()
