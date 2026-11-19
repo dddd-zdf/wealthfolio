@@ -1,3 +1,4 @@
+import { isValuationComplete } from "@/lib/valuation";
 import { useNetWorth, useNetWorthHistory } from "@/hooks/use-alternative-assets";
 import { usePortfolioAllocations } from "@/hooks/use-portfolio-allocations";
 import { useIsMobileViewport } from "@/hooks/use-platform";
@@ -133,6 +134,16 @@ export function NetWorthContent() {
 
   const parsedHistory = useMemo(() => parseHistory(historyData), [historyData]);
   const longHistory = useMemo(() => parseHistory(longHistoryData), [longHistoryData]);
+  const hasIncompleteValuation =
+    !isValuationComplete(netWorthData?.valueStatus) ||
+    (historyData?.some((point) => !isValuationComplete(point.valueStatus)) ?? false);
+  const missingFx = useMemo(
+    () => [
+      ...(netWorthData?.missingFx ?? []),
+      ...(historyData?.flatMap((point) => point.missingFx ?? []) ?? []),
+    ],
+    [netWorthData?.missingFx, historyData],
+  );
 
   const velocity = useMemo(() => computeVelocity(parsedHistory), [parsedHistory]);
   const trailingYearMonthly = useMemo(() => {
@@ -235,6 +246,9 @@ export function NetWorthContent() {
               )}
               <Balance
                 isLoading={isLoading}
+                isUnavailable={
+                  !!netWorthData?.valueStatus && netWorthData.valueStatus !== "complete"
+                }
                 targetValue={parsedData?.netWorth ?? 0}
                 currency={currency}
                 displayCurrency={true}
@@ -251,6 +265,10 @@ export function NetWorthContent() {
                   <div className="border-secondary my-1 border-e pe-2" />
                   <Skeleton className="h-4 w-16" />
                 </div>
+              ) : parsedHistory.length < 2 ? (
+                <span className="text-muted-foreground text-sm">
+                  {t("performance:not_available")}
+                </span>
               ) : (
                 <>
                   <GainAmount
@@ -367,6 +385,7 @@ export function NetWorthContent() {
                   history={parsedHistory}
                   currency={currency}
                   periodLabel={periodLabel}
+                  isIncomplete={!isValuationComplete(netWorthData?.valueStatus)}
                   onSelect={setSelected}
                 />
               ) : (
@@ -401,7 +420,11 @@ export function NetWorthContent() {
                 <MomentumCard momentum={momentum} currency={currency} periodLabel={periodLabel} />
               )}
 
-              <NetWorthAttention staleAssets={netWorthData?.staleAssets ?? []} />
+              <NetWorthAttention
+                staleAssets={netWorthData?.staleAssets ?? []}
+                hasIncompleteValuation={hasIncompleteValuation}
+                missingFx={missingFx}
+              />
             </div>
           </div>
         </div>

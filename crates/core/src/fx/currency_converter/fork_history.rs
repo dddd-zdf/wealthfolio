@@ -125,10 +125,10 @@ fn direct_rate_as_of(
         )));
     };
 
-    if *rate <= Decimal::ZERO {
+    if rate.rate <= Decimal::ZERO {
         return Err(FxError::ConversionError(format!(
             "Invalid nonpositive historical rate for {}/{} on {}: {}",
-            from_currency, to_currency, rate_date, rate
+            from_currency, to_currency, rate_date, rate.rate
         )));
     }
 
@@ -140,5 +140,5 @@ fn direct_rate_as_of(
         )));
     }
 
-    Ok(Some(*rate))
+    Ok(Some(rate.rate))
 }

@@ -1,5 +1,7 @@
 "use client";
 
+import { isValuationComplete } from "@/lib/valuation";
+
 import { calculatePerformanceSummaries, performanceSummaryScopeKey } from "@/adapters";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useCurrentAccountValuations } from "@/hooks/use-current-account-valuations";
@@ -33,6 +35,8 @@ import { statusSurfaceVariants } from "@wealthfolio/ui/components/ui/status-surf
 import { cn } from "@/lib/utils";
 
 interface AccountSummaryDisplayData {
+  isBaseUnavailable?: boolean;
+  isAccountUnavailable?: boolean;
   accountName: string;
   baseCurrency: string;
   totalValueBaseCurrency: number;
@@ -212,6 +216,9 @@ const AccountSummaryComponent = React.memo(
       ? (item.accountCurrency ?? item.baseCurrency)
       : item.baseCurrency;
 
+    const isValueUnavailable = useAccountCurrency
+      ? item.isAccountUnavailable
+      : item.isBaseUnavailable;
     const gainAmountToDisplay = useAccountCurrency
       ? item.totalGainLossAmountAccountCurrency
       : item.totalGainLossAmountBaseCurrency;
@@ -314,9 +321,13 @@ const AccountSummaryComponent = React.memo(
         <div className="flex shrink-0 items-center gap-2 md:gap-3">
           <div className="flex min-h-[3rem] flex-col items-end justify-center gap-1 md:gap-1.5">
             <div className="text-sm leading-tight font-semibold md:text-base md:font-semibold">
-              <AccountTotalValue managed={managed} value={totalValue} currency={currency} />
+              {isValueUnavailable ? (
+                t("performance:not_available")
+              ) : (
+                <AccountTotalValue managed={managed} value={totalValue} currency={currency} />
+              )}
             </div>
-            {secondaryMetricContent && (
+            {!isValueUnavailable && secondaryMetricContent && (
               <div
                 className="flex items-center gap-1.5 md:gap-2"
                 data-testid={
@@ -527,6 +538,8 @@ export const AccountsSummary = React.memo(
 
         return {
           accountName: acc.name,
+          isBaseUnavailable: !isValuationComplete(valuation.valueStatus),
+          isAccountUnavailable: !isValuationComplete(valuation.accountValueStatus),
           totalValueBaseCurrency,
           baseCurrency,
           totalGainLossAmountBaseCurrency: gainLossBaseCurrency,
@@ -658,6 +671,8 @@ export const AccountsSummary = React.memo(
 
           actualGroups.push({
             accountName: groupName,
+            isBaseUnavailable: groupAccounts.some((account) => account.isBaseUnavailable),
+            isAccountUnavailable: groupAccounts.some((account) => account.isBaseUnavailable),
             totalValueBaseCurrency,
             baseCurrency,
             totalGainLossAmountBaseCurrency: totalGainLossAmountBase,

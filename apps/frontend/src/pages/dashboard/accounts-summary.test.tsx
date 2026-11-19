@@ -214,6 +214,8 @@ function createCurrentValuation(
     sourceDataAsOf: overrides.sourceDataAsOf ?? "2026-03-17T11:59:00Z",
     calculatedAt: overrides.calculatedAt ?? "2026-03-17T12:00:00Z",
     warnings: overrides.warnings ?? [],
+    valueStatus: overrides.valueStatus ?? "complete",
+    accountValueStatus: overrides.accountValueStatus ?? "complete",
   };
 }
 
@@ -438,6 +440,39 @@ describe("AccountsSummary", () => {
     expect(within(row).getByText("gain-percent:0.02")).toBeInTheDocument();
     const lastCall = mockUseQuery.mock.calls[mockUseQuery.mock.calls.length - 1];
     expect((lastCall?.[0] as { enabled?: boolean }).enabled).toBe(false);
+  });
+
+  it("keeps a group total unavailable while retaining complete local balances", async () => {
+    const user = userEvent.setup();
+    renderAccountsSummary({
+      accounts: [
+        createAccount({ id: "cop", name: "COP account", currency: "COP", group: "FX group" }),
+        createAccount({ id: "aed", name: "AED account", currency: "AED", group: "FX group" }),
+      ],
+      valuations: [],
+      currentValuations: [
+        createCurrentValuation({
+          accountId: "cop",
+          accountCurrency: "COP",
+          baseCurrency: "AED",
+          valueStatus: "unavailable",
+          accountValueStatus: "complete",
+          totalValue: 100000,
+          totalValueBase: 0,
+        }),
+        createCurrentValuation({
+          accountId: "aed",
+          accountCurrency: "AED",
+          baseCurrency: "AED",
+          totalValue: 20,
+          totalValueBase: 20,
+        }),
+      ],
+    });
+    expect(screen.getByText("N/A")).toBeInTheDocument();
+    expect(screen.queryByText("value:AED:20")).not.toBeInTheDocument();
+    await user.click(screen.getByText("FX group"));
+    expect(screen.getByText("value:COP:100000")).toBeInTheDocument();
   });
 
   it("requests performance for visible grouped dashboard rows only", async () => {

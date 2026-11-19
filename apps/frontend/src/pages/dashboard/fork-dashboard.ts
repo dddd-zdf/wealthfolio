@@ -34,6 +34,7 @@ export function getDashboardChartGain(
 
 interface DashboardGainInput {
   isDayChange: boolean;
+  hasIncompletePeriod: boolean;
   holdings: Holding[] | undefined;
   totalValue: number;
   performance: PerformanceSummary;
@@ -45,6 +46,7 @@ interface DashboardGainInput {
 
 export function useDashboardGain({
   isDayChange,
+  hasIncompletePeriod,
   holdings,
   totalValue,
   performance,
@@ -55,16 +57,25 @@ export function useDashboardGain({
 }: DashboardGainInput) {
   const dayChange = useMemo(
     () =>
-      isDayChange && isHoldingsComplete ? summarizeDayChange(holdings ?? [], totalValue) : null,
-    [isDayChange, isHoldingsComplete, holdings, totalValue],
+      isDayChange && isHoldingsComplete && !hasIncompletePeriod
+        ? summarizeDayChange(holdings ?? [], totalValue)
+        : null,
+    [isDayChange, isHoldingsComplete, hasIncompletePeriod, holdings, totalValue],
   );
   return {
     dayChange,
-    gainLossAmount: isDayChange ? (dayChange?.amount ?? null) : performancePeriodPnl(performance),
-    simpleReturn: isDayChange
-      ? (dayChange?.percent ?? null)
-      : performanceSummaryReturn(performance),
-    moneyWeightedReturn: isDayChange ? null : performanceMoneyWeightedReturn(performance),
+    gainLossAmount: hasIncompletePeriod
+      ? null
+      : isDayChange
+        ? (dayChange?.amount ?? null)
+        : performancePeriodPnl(performance),
+    simpleReturn: hasIncompletePeriod
+      ? null
+      : isDayChange
+        ? (dayChange?.percent ?? null)
+        : performanceSummaryReturn(performance),
+    moneyWeightedReturn:
+      hasIncompletePeriod || isDayChange ? null : performanceMoneyWeightedReturn(performance),
     isGainLoading: isDayChange
       ? isHoldingsLoading || isCurrentValuationLoading
       : isPerformanceLoading,
@@ -113,7 +124,7 @@ export function useDashboardChart({
     retry: 1,
   });
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<HistoryChartData[]>(() => {
     if (intradayRange && intradayPoints && intradayPoints.length >= minimumPoints) {
       // Native curves are reconstructed from daily anchors. Web points are
       // observed values and keep their original amounts.
@@ -148,7 +159,7 @@ export function useDashboardChart({
       ? timeDomain && dayChange
         ? totalValue - dayChange.amount
         : undefined
-      : !isAllTime && chartData.length > 1
+      : !isAllTime && chartData.length > 1 && !chartData[0].isUnavailable
         ? chartData[0].totalValue
         : undefined;
 
