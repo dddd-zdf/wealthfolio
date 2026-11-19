@@ -10,6 +10,7 @@ import { performanceMoneyWeightedReturn, summarizeDayChange } from "@/lib/fork-p
 import { performancePeriodPnl, performanceSummaryReturn } from "@/lib/performance";
 import { QueryKeys } from "@/lib/query-keys";
 import type { AccountScope, Holding } from "@/lib/types";
+import { fromAbsolute } from "@internationalized/date";
 import { useQuery } from "@tanstack/react-query";
 import type { TimePeriod as UITimePeriod } from "@wealthfolio/ui";
 import { useMemo } from "react";
@@ -147,8 +148,15 @@ export function useDashboardChart({
     if (selectedInterval !== "1D" || !intradayPoints || intradayPoints.length < minimumPoints) {
       return undefined;
     }
-    const open = Date.parse(intradayPoints[0].timestamp);
+    const firstPoint = Date.parse(intradayPoints[0].timestamp);
     const lastPoint = Date.parse(intradayPoints[intradayPoints.length - 1].timestamp);
+    // Web observations use the New York session date even if recording starts late.
+    const open = isWeb
+      ? fromAbsolute(firstPoint, "America/New_York")
+          .set({ hour: 9, minute: 30, second: 0, millisecond: 0 })
+          .toDate()
+          .getTime()
+      : firstPoint;
     return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
   }, [selectedInterval, intradayPoints, minimumPoints]);
 
