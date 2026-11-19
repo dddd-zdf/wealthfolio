@@ -1,3 +1,4 @@
+import { isValuationComplete } from "@/lib/valuation";
 import { useTranslation } from "react-i18next";
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 import { calculatePerformanceSummary } from "@/adapters";
@@ -155,9 +156,16 @@ export function DashboardContent({
     retry: 1,
   });
 
+  const hasIncompleteHistory =
+    valuationHistory?.some((point) => !isValuationComplete(point.valueStatus)) ?? false;
+  const hasIncompletePeriod =
+    ((endDate === undefined || endDate >= todayISO) &&
+      !isValuationComplete(portfolioCurrentValuation?.summary.valueStatus)) ||
+    hasIncompleteHistory;
   const { dayChange, gainLossAmount, simpleReturn, moneyWeightedReturn, isGainLoading } =
     useDashboardGain({
       isDayChange,
+      hasIncompletePeriod,
       holdings: allHoldings,
       totalValue,
       performance: portfolioPerformance,
@@ -167,7 +175,9 @@ export function DashboardContent({
       isCurrentValuationLoading,
     });
   const isCurrentValuationUnavailable =
-    !isCurrentValuationLoading && !portfolioCurrentValuation && Boolean(currentValuationError);
+    !isCurrentValuationLoading &&
+    (!isValuationComplete(portfolioCurrentValuation?.summary.valueStatus) ||
+      (!portfolioCurrentValuation && Boolean(currentValuationError)));
   const portfolioSourceDataAsOf =
     portfolioCurrentValuation?.summary.sourceDataAsOf ??
     (!isCurrentValuationUnavailable
@@ -179,8 +189,8 @@ export function DashboardContent({
       valuationHistory
         // A day the engine could not fully convert carries a partial value;
         // it is not plotted rather than drawn as if it were complete.
-        ?.filter((item) => item.valueStatus !== "unavailable")
-        .map((item) => ({
+        ?.map((item) => ({
+          isUnavailable: !isValuationComplete(item.valueStatus),
           date: item.valuationDate,
           totalValue: item.totalValueBase,
           netContribution: item.netContributionBase,
@@ -204,7 +214,9 @@ export function DashboardContent({
       ? activePoint
       : null;
   const hoveredGain = hoveredPoint
-    ? getDashboardChartGain(hoveredPoint, forkChart.chartData[0], forkChart.referenceValue)
+    ? hasIncompleteHistory && forkChart.chartData === chartData
+      ? { amount: null, percent: null }
+      : getDashboardChartGain(hoveredPoint, forkChart.chartData[0], forkChart.referenceValue)
     : null;
   const displayedCurrency = hoveredPoint?.currency ?? baseCurrency;
   const displayedGain = hoveredGain ? hoveredGain.amount : gainLossAmount;

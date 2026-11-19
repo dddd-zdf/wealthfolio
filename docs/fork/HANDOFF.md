@@ -107,6 +107,19 @@ To see the full divergence:
 
 ## Upstream integration
 
+The 3.13.1 integration merges upstream `v3.13.1` (`e9410048b`). The dashboard
+keeps observed intraday charts and suppresses returns for incomplete valuation
+periods. Historical FX still uses the fork's seven-day as-of window, while
+upstream tracks the source quote timestamp for live FX. MCP valuation history
+uses upstream's shared holdings scope, which includes inactive eligible
+accounts. Health keeps the fork's activity review check alongside upstream's
+option expiry check.
+
+This release adds no SQLite migrations. For slow import and backup requests,
+upstream recommends a 33-minute proxy timeout. See the
+[3.13.1 release notes](https://github.com/wealthfolio/wealthfolio/releases/tag/v3.13.1)
+and [self-hosted timeout settings](../self-host/timeouts.md).
+
 The 3.13 integration merges pinned upstream `v3.13.0` (`1edb80199`) into the
 fork. The web settings route retains its guarded, awaited currency rebuild,
 which already forces a full projection rebuild. Upstream's new agent market data
