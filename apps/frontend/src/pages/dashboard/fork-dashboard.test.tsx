@@ -94,9 +94,30 @@ describe("useDashboardChart", () => {
 
     await waitFor(() => expect(result.current.chartData).toHaveLength(1));
     expect(result.current.chartData[0]).toMatchObject({ date: timestamp, totalValue: 1000 });
-    const open = Date.parse(timestamp);
-    expect(result.current.timeDomain).toEqual([open, open + 6.5 * 60 * 60 * 1000]);
+    expect(result.current.timeDomain).toEqual([
+      Date.parse("2026-10-15T13:30:00Z"),
+      Date.parse("2026-10-15T20:00:00Z"),
+    ]);
     expect(result.current.referenceValue).toBe(998);
+  });
+
+  it.each([
+    ["2026-11-19T20:56:03Z", "2026-11-19T21:00:00Z"],
+    ["2026-11-19T21:06:05Z", "2026-11-19T21:06:05Z"],
+  ])("keeps market open on the axis when the first snapshot is late (%s)", async (last, end) => {
+    const first = "2026-11-19T18:36:07Z";
+    mockIntraday.mockResolvedValue([bar(first, 1000), bar(last, 1004)]);
+    const { result } = renderHook(() => useDashboardChart(input({ selectedInterval: "1D" })), {
+      wrapper,
+    });
+
+    await waitFor(() =>
+      expect(result.current.chartData.map((point) => point.date)).toEqual([first, last]),
+    );
+    expect(result.current.timeDomain).toEqual([
+      Date.parse("2026-11-19T14:30:00Z"),
+      Date.parse(end),
+    ]);
   });
 
   it("falls back to daily points when intraday has too few bars", async () => {
