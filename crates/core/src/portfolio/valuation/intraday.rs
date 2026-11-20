@@ -21,6 +21,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use super::DailyAccountValuation;
+use crate::accounts::Account;
 use crate::errors::Result;
 use crate::portfolio::holdings::{Holding, HoldingType};
 use crate::quotes::{Quote, QuoteServiceTrait};
@@ -86,10 +87,10 @@ pub struct ReconstructedIntradaySample {
     pub sample: IntradayAccountSample,
 }
 
-/// Sum only observations that include every account in the selected scope.
+/// Sum observations that cover every selected account already created at that time.
 /// The latest observed session supplies 1D; up to five sessions supply 1W.
 pub fn observed_intraday_series(
-    account_ids: &[String],
+    accounts: &[Account],
     samples: Vec<IntradayAccountSample>,
     range: IntradayRange,
 ) -> Vec<IntradayValuationPoint> {
@@ -108,13 +109,29 @@ pub fn observed_intraday_series(
         IntradayRange::Day => 1,
         IntradayRange::Week => 5,
     };
-    let expected: BTreeSet<_> = account_ids.iter().map(String::as_str).collect();
+    let created_at: HashMap<_, _> = accounts
+        .iter()
+        .map(|account| {
+            (
+                account.id.as_str(),
+                account.created_at.and_utc().timestamp(),
+            )
+        })
+        .collect();
     for (timestamp, samples) in by_time.into_iter().rev() {
         let observed: BTreeSet<_> = samples
             .iter()
             .map(|sample| sample.account_id.as_str())
             .collect();
-        if observed != expected || samples.len() != expected.len() {
+        // Samples are stored at second precision. Reconstructed observations can
+        // predate account creation and contribute when they are available.
+        let snapshot_second = timestamp.timestamp();
+        if observed.len() != samples.len()
+            || observed.iter().any(|id| !created_at.contains_key(id))
+            || created_at
+                .iter()
+                .any(|(id, created)| *created <= snapshot_second && !observed.contains(id))
+        {
             continue;
         }
         let session = timestamp
@@ -643,7 +660,10 @@ mod tests {
 
     #[test]
     fn observed_series_requires_the_whole_scope_and_sorts_by_session() {
-        let accounts = vec!["a".to_string(), "b".to_string()];
+        let accounts = ["a", "b"].map(|id| Account {
+            id: id.to_string(),
+            ..Account::default()
+        });
         let sample = |account_id: &str, timestamp, value| IntradayAccountSample {
             account_id: account_id.to_string(),
             point: IntradayValuationPoint {
@@ -674,6 +694,59 @@ mod tests {
         assert_eq!(week.len(), 6);
         assert_eq!(week[0].timestamp, at_day(2, 14, 30));
         assert_eq!(week[5].timestamp, latest);
+    }
+
+    #[test]
+    fn observed_series_keeps_the_morning_when_an_account_is_added_mid_session() {
+        let open = ny(6, 9, 30);
+        let later_morning = ny(6, 11, 30);
+        let created = ny(6, 13, 35);
+        let first_complete = ny(6, 13, 40);
+        let accounts = [
+            Account {
+                id: "existing".into(),
+                ..Account::default()
+            },
+            Account {
+                id: "new".into(),
+                created_at: created.naive_utc(),
+                ..Account::default()
+            },
+        ];
+        let sample = |account_id: &str, timestamp, value| IntradayAccountSample {
+            account_id: account_id.into(),
+            point: IntradayValuationPoint {
+                timestamp,
+                total_value_base: value,
+                net_contribution_base: dec!(25),
+            },
+        };
+        let samples = vec![
+            sample("existing", open, dec!(100)),
+            sample("existing", later_morning, dec!(97)),
+            sample("existing", created, dec!(101)), // The new account is already required.
+            sample("new", first_complete, dec!(25)),
+            sample("existing", first_complete, dec!(104)),
+        ];
+
+        for range in [IntradayRange::Day, IntradayRange::Week] {
+            let points = observed_intraday_series(&accounts, samples.clone(), range);
+            assert_eq!(
+                points
+                    .iter()
+                    .map(|point| (
+                        point.timestamp,
+                        point.total_value_base,
+                        point.net_contribution_base
+                    ))
+                    .collect::<Vec<_>>(),
+                [
+                    (open, dec!(100), dec!(25)),
+                    (later_morning, dec!(97), dec!(25)),
+                    (first_complete, dec!(129), dec!(50)),
+                ],
+            );
+        }
     }
 
     #[test]
@@ -740,7 +813,10 @@ mod tests {
 
     #[test]
     fn day_series_hands_off_a_singleton_latest_session() {
-        let accounts = vec!["a".to_string(), "b".to_string()];
+        let accounts = ["a", "b"].map(|id| Account {
+            id: id.to_string(),
+            ..Account::default()
+        });
         let sample = |account_id: &str, timestamp| IntradayAccountSample {
             account_id: account_id.to_string(),
             point: IntradayValuationPoint {
