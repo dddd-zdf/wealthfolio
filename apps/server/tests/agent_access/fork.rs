@@ -462,3 +462,100 @@ async fn fork_valuation_routes_answer_and_validate_the_range() {
         .unwrap();
     assert_eq!(rejected.status(), 400);
 }
+
+/// Both `initialize` and subsequent session `POST /mcp` requests (`tools/list`,
+/// `tools/call`) omit rmcp's empty-data SSE priming event so `2025-11-25`
+/// clients such as Gemini can parse every `data:` frame as JSON-RPC.
+#[tokio::test]
+async fn mcp_sse_responses_omit_empty_priming_frames() {
+    let server = spawn_server(true, false).await;
+    let cookie = login(&server).await;
+    let (status, token) = create_pat(
+        &server,
+        &cookie,
+        serde_json::json!({ "name": "gemini", "scopes": ["accounts:read", "holdings:read"] }),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let pat = token["token"].as_str().unwrap();
+
+    let assert_clean_sse = |sse: &str| -> serde_json::Value {
+        assert!(!sse.contains("retry:"), "unexpected SSE retry line: {sse}");
+        let data_lines: Vec<&str> = sse
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .map(str::trim)
+            .collect();
+        assert_eq!(data_lines.len(), 1, "expected single JSON-RPC event: {sse}");
+        assert!(
+            !data_lines[0].is_empty(),
+            "SSE stream must not start with empty priming frame: {sse}"
+        );
+        serde_json::from_str(data_lines[0]).unwrap()
+    };
+
+    let init_resp = mcp_post(
+        &server,
+        Some(pat),
+        None,
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": { "name": "mcp", "version": "0.1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(init_resp.status(), 200);
+    let session = init_resp
+        .headers()
+        .get("mcp-session-id")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    let init_json = assert_clean_sse(&init_resp.text().await.unwrap());
+    assert_eq!(init_json["result"]["protocolVersion"], "2025-11-25");
+
+    let notify = mcp_post(
+        &server,
+        Some(pat),
+        Some(&session),
+        serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+    )
+    .await;
+    assert_eq!(notify.status(), 202);
+
+    let list_resp = mcp_post(
+        &server,
+        Some(pat),
+        Some(&session),
+        serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+    )
+    .await;
+    assert_eq!(list_resp.status(), 200);
+    let list_json = assert_clean_sse(&list_resp.text().await.unwrap());
+    assert!(list_json["result"]["tools"]
+        .as_array()
+        .is_some_and(|tools| !tools.is_empty()));
+
+    let call_resp = mcp_post(
+        &server,
+        Some(pat),
+        Some(&session),
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": { "name": "get_accounts", "arguments": {} }
+        }),
+    )
+    .await;
+    assert_eq!(call_resp.status(), 200);
+    let call_json = assert_clean_sse(&call_resp.text().await.unwrap());
+    assert_eq!(call_json["result"]["isError"], false);
+}

@@ -9,6 +9,7 @@ mod fork_compat;
 pub mod oauth;
 
 pub(crate) use fork_compat::resource_challenge;
+pub(crate) use fork_compat::session_manager;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -30,8 +31,9 @@ Creating and updating accounts needs accounts:write; saving holdings snapshots a
 /// Builds the `/mcp` router: the Streamable HTTP MCP service behind PAT
 /// bearer authentication.
 pub fn router(state: Arc<AppState>, config: &Config) -> Router {
-    let http_config =
-        StreamableHttpServerConfig::default().with_sse_keep_alive(Some(Duration::from_secs(30)));
+    let http_config = fork_compat::configure_http(
+        StreamableHttpServerConfig::default().with_sse_keep_alive(Some(Duration::from_secs(30))),
+    );
     // Host header validation: explicit allowlist when configured, disabled
     // otherwise (rmcp's default is loopback-only, which breaks reverse
     // proxy deployments; PAT bearer auth is the security boundary here —
