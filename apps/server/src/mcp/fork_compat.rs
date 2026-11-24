@@ -102,6 +102,7 @@ mod tests {
         let req = axum::http::Request::builder()
             .method("POST")
             .uri("/mcp")
+            .header(header::HOST, "wealth.example.com")
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::ACCEPT, "application/json, text/event-stream")
             .body(Body::from(body.to_string()))
