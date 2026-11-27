@@ -226,8 +226,8 @@ impl ValuationRepositoryTrait for ValuationRepository {
                  )"
             );
             let mut query = sql_query(sql).into_boxed::<Sqlite>();
-            for id in chunk {
-                query = query.bind::<Text, _>(*id);
+            for &requested_id in chunk {
+                query = query.bind::<Text, _>(requested_id);
             }
             query = query.bind::<Date, _>(start_date);
             if let Some(end_date) = end_date {
