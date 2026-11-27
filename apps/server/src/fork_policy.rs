@@ -167,6 +167,9 @@ impl JobObserver for ServerJobObserver {
             self.prices_changed.load(Ordering::SeqCst),
         ) {
             CacheAction::InvalidateAndWarm => crate::perf_cache::invalidate_and_warm(),
+            CacheAction::InvalidateAndWarmDashboard => {
+                crate::perf_cache::invalidate_and_warm_dashboard()
+            }
             CacheAction::Invalidate => crate::perf_cache::invalidate(),
             CacheAction::Keep => {}
         }
@@ -189,15 +192,19 @@ enum CacheAction {
     Keep,
     Invalidate,
     InvalidateAndWarm,
+    InvalidateAndWarmDashboard,
 }
 
-/// What a finished job does to the performance cache. Edits warm it again.
+/// What a finished job does to the performance cache. Edits and price changes
+/// prepare dashboard presets for the new valuation.
 /// A background refresh whose price sync stored no new or changed close
 /// leaves valuations as they were, so the cached summaries stay valid.
 fn cache_action(background: bool, warm_after_update: bool, prices_changed: bool) -> CacheAction {
     if warm_after_update {
         CacheAction::InvalidateAndWarm
-    } else if background && !prices_changed {
+    } else if prices_changed {
+        CacheAction::InvalidateAndWarmDashboard
+    } else if background {
         CacheAction::Keep
     } else {
         CacheAction::Invalidate
@@ -293,7 +300,10 @@ mod tests {
     #[test]
     fn background_refresh_without_price_changes_keeps_the_cache() {
         assert_eq!(cache_action(true, false, false), CacheAction::Keep);
-        assert_eq!(cache_action(true, false, true), CacheAction::Invalidate);
+        assert_eq!(
+            cache_action(true, false, true),
+            CacheAction::InvalidateAndWarmDashboard
+        );
         assert_eq!(cache_action(false, false, false), CacheAction::Invalidate);
         assert_eq!(
             cache_action(false, true, false),

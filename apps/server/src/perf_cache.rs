@@ -9,14 +9,13 @@
 //! Results that also depend on live prices use [`put_with_ttl`] for a shorter
 //! lifetime.
 //!
-//! Every invalidation also schedules a background warm-up (see
-//! [`register_warm_target`]) so the dashboard's standard periods and the
-//! health check are ready before the next page view.
+//! Edits and price-changing refreshes schedule the dashboard warm-up. Edits
+//! also warm health status.
 
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{Hash, Hasher};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::OnceCell;
@@ -147,54 +146,76 @@ pub fn invalidate() {
     }
 }
 
-/// Invalidate and schedule a warm-up of the standard dashboard requests.
-/// Used after data edits only: the update job that runs on every app open
-/// would otherwise recompute every period each time, which saturates small hosts.
+/// Invalidate and warm the dashboard and health status after data edits.
 pub fn invalidate_and_warm() {
     invalidate();
-    schedule_warm_up();
+    schedule_warm_up(true);
 }
 
-static WARM_TARGETS: LazyLock<Mutex<Vec<Weak<AppState>>>> =
-    LazyLock::new(|| Mutex::new(Vec::new()));
-static WARMING: AtomicBool = AtomicBool::new(false);
-static WARM_AGAIN: AtomicBool = AtomicBool::new(false);
+/// A price refresh or a saved scope change only needs dashboard summaries.
+pub fn invalidate_and_warm_dashboard() {
+    invalidate();
+    warm_dashboard();
+}
 
-/// Register a profile runtime whose dashboard data is warmed after each
-/// invalidation. Held weakly so a closed profile is simply skipped.
+/// Warm the dashboard after a startup or currency rebuild has invalidated it.
+pub fn warm_dashboard() {
+    schedule_warm_up(false);
+}
+
+#[derive(Default)]
+struct WarmState {
+    targets: Vec<Weak<AppState>>,
+    running: bool,
+    pending_health: Option<bool>,
+}
+
+static WARM_STATE: LazyLock<Mutex<WarmState>> = LazyLock::new(|| Mutex::new(WarmState::default()));
+
+/// Register a profile runtime for the warm-up. Held weakly so a closed
+/// profile is simply skipped.
 pub fn register_warm_target(state: &Arc<AppState>) {
-    if let Ok(mut targets) = WARM_TARGETS.lock() {
-        targets.retain(|target| target.strong_count() > 0);
-        targets.push(Arc::downgrade(state));
+    if let Ok(mut warm) = WARM_STATE.lock() {
+        warm.targets.retain(|target| target.strong_count() > 0);
+        warm.targets.push(Arc::downgrade(state));
     }
 }
 
-fn schedule_warm_up() {
+fn schedule_warm_up(include_health: bool) {
     let Ok(handle) = tokio::runtime::Handle::try_current() else {
         return;
     };
-    // Coalesce bursts of invalidations into one running warm-up plus at most
-    // one follow-up pass.
-    if WARMING.swap(true, Ordering::SeqCst) {
-        WARM_AGAIN.store(true, Ordering::SeqCst);
-        return;
+    {
+        let Ok(mut warm) = WARM_STATE.lock() else {
+            return;
+        };
+        // Coalesce pending work and retain health warming requested by edits.
+        warm.pending_health = Some(warm.pending_health.unwrap_or(false) || include_health);
+        if warm.running {
+            return;
+        }
+        warm.running = true;
     }
     handle.spawn(async {
         loop {
-            WARM_AGAIN.store(false, Ordering::SeqCst);
-            let targets: Vec<Arc<AppState>> = WARM_TARGETS
-                .lock()
-                .map(|targets| targets.iter().filter_map(Weak::upgrade).collect())
-                .unwrap_or_default();
+            let (targets, include_health) = {
+                let Ok(mut warm) = WARM_STATE.lock() else {
+                    return;
+                };
+                let Some(include_health) = warm.pending_health.take() else {
+                    warm.running = false;
+                    return;
+                };
+                let targets: Vec<_> = warm.targets.iter().filter_map(Weak::upgrade).collect();
+                (targets, include_health)
+            };
             for state in targets {
-                crate::api::health::fork_refresh::warm_health_status(&state).await;
                 crate::api::performance::fork_cache::warm_dashboard_summaries(&state).await;
-            }
-            if !WARM_AGAIN.load(Ordering::SeqCst) {
-                break;
+                if include_health {
+                    crate::api::health::fork_refresh::warm_health_status(&state).await;
+                }
             }
         }
-        WARMING.store(false, Ordering::SeqCst);
     });
 }
 

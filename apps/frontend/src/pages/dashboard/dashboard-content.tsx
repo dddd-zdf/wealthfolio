@@ -175,7 +175,7 @@ export function DashboardContent({
         profile: "dashboard",
       }),
     enabled: loadDetails && datesReady && !isDayChange,
-    placeholderData: keepPreviousData,
+    placeholderData: isWeb ? undefined : keepPreviousData,
     staleTime: 30 * 1000,
     retry: 1,
   });

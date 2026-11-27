@@ -188,5 +188,6 @@ pub fn spawn_portfolio_update(state: Arc<AppState>) {
             .portfolio_coordinator
             .update_all(MarketSyncMode::Incremental { asset_ids: None }, &observer)
             .await;
+        crate::perf_cache::warm_dashboard();
     });
 }

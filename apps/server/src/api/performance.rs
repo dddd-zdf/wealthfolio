@@ -18,11 +18,12 @@ use wealthfolio_core::{
             performance_account_ids_from_map, performance_account_tracking_modes_from_map,
             performance_account_types_from_map, performance_tracking_composition,
             sync_performance_summary_quality, unique_account_ids, DataQualityStatus,
-            PerformanceResult, PerformanceSummaryBatchScope, PerformanceSummaryProfile,
-            SimplePerformanceMetrics, PERFORMANCE_SUMMARY_BATCH_PARALLELISM,
+            PerformancePeriod, PerformanceResult, PerformanceServiceTrait,
+            PerformanceSummaryBatchScope, PerformanceSummaryProfile, SimplePerformanceMetrics,
+            PERFORMANCE_SUMMARY_BATCH_PARALLELISM,
         },
     },
-    portfolios::AccountScope,
+    portfolios::{AccountScope, ResolvedAccountScope},
 };
 
 use super::shared::parse_date_optional;
@@ -140,6 +141,52 @@ fn performance_accounts_by_id(
         .collect())
 }
 
+struct ScopedPerformance {
+    resolved: ResolvedAccountScope,
+    accounts_by_id: HashMap<String, Account>,
+    account_ids: Vec<String>,
+}
+
+impl ScopedPerformance {
+    fn resolve(state: &AppState, filter: &AccountScope) -> ApiResult<Self> {
+        let resolved = state
+            .portfolio_service
+            .resolve_account_scope(filter, &state.base_currency()?)?;
+        let accounts_by_id = performance_accounts_by_id(state, &resolved.account_ids)?;
+        let account_ids = performance_account_ids_from_map(&accounts_by_id, &resolved.account_ids);
+        Ok(Self {
+            resolved,
+            accounts_by_id,
+            account_ids,
+        })
+    }
+
+    fn empty(&self, period: &PerformancePeriod) -> PerformanceResult {
+        let mut result = empty_performance_metrics(
+            &self.resolved.scope_id,
+            self.resolved.base_currency.clone(),
+            period.start_date,
+            period.end_date,
+        );
+        self.add_exclusion_warning(&mut result);
+        result
+    }
+
+    fn add_exclusion_warning(&self, result: &mut PerformanceResult) {
+        if self.account_ids.len() == self.resolved.account_ids.len() {
+            return;
+        }
+        let warning = if self.account_ids.is_empty() {
+            "Requested accounts were excluded because they are archived or not eligible for performance."
+        } else {
+            result.data_quality.status = DataQualityStatus::Partial;
+            "Some requested accounts were excluded because they are archived or not eligible for performance."
+        };
+        result.data_quality.warnings.push(warning.to_string());
+        sync_performance_summary_quality(result);
+    }
+}
+
 async fn calculate_performance_history(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
     Json(body): Json<PerfBody>,
@@ -242,43 +289,24 @@ async fn calculate_performance_summary(
     let summary_start = Instant::now();
     let metrics = if let (true, Some(filter)) = (body.item_type == "account", body.filter.as_ref())
     {
-        let base = state
-            .base_currency
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        let resolved = state
-            .portfolio_service
-            .resolve_account_scope(filter, &base)
-            .map_err(crate::error::ApiError::from)?;
-        let accounts_by_id = performance_accounts_by_id(&state, &resolved.account_ids)?;
-        let account_ids = performance_account_ids_from_map(&accounts_by_id, &resolved.account_ids);
+        let scope = ScopedPerformance::resolve(&state, filter)?;
+        let account_ids = &scope.account_ids;
         if account_ids.is_empty() {
-            let mut result = empty_performance_metrics(
-                &resolved.scope_id,
-                resolved.base_currency.clone(),
-                start,
-                end,
-            );
-            if !resolved.account_ids.is_empty() {
-                result.data_quality.warnings.push(
-                    "Requested accounts were excluded because they are archived or not eligible for performance."
-                        .to_string(),
-                );
-                sync_performance_summary_quality(&mut result);
-            }
-            return Ok(Json(result));
+            return Ok(Json(scope.empty(&PerformancePeriod {
+                start_date: start,
+                end_date: end,
+            })));
         }
         let tracking_modes =
-            performance_account_tracking_modes_from_map(&accounts_by_id, &account_ids);
-        let account_types = performance_account_types_from_map(&accounts_by_id, &account_ids);
-        let tracking_composition = performance_tracking_composition(&tracking_modes, &account_ids);
+            performance_account_tracking_modes_from_map(&scope.accounts_by_id, account_ids);
+        let account_types = performance_account_types_from_map(&scope.accounts_by_id, account_ids);
+        let tracking_composition = performance_tracking_composition(&tracking_modes, account_ids);
         let mut result = state
             .performance_service
             .calculate_performance_summary_for_accounts(
-                &resolved.scope_id,
-                &account_ids,
-                &resolved.base_currency,
+                &scope.resolved.scope_id,
+                account_ids,
+                &scope.resolved.base_currency,
                 &tracking_modes,
                 &account_types,
                 start,
@@ -288,7 +316,7 @@ async fn calculate_performance_summary(
             .await?;
         tracing::debug!(
             item_type = %body.item_type,
-            scope_id = %resolved.scope_id,
+            scope_id = %scope.resolved.scope_id,
             ?profile,
             account_count = account_ids.len(),
             tracking_composition = %tracking_composition,
@@ -297,14 +325,7 @@ async fn calculate_performance_summary(
             elapsed_ms = summary_start.elapsed().as_secs_f64() * 1000.0,
             "Performance summary timing"
         );
-        if account_ids.len() != resolved.account_ids.len() {
-            result.data_quality.warnings.push(
-                "Some requested accounts were excluded because they are archived or not eligible for performance."
-                    .to_string(),
-            );
-            result.data_quality.status = DataQualityStatus::Partial;
-            sync_performance_summary_quality(&mut result);
-        }
+        scope.add_exclusion_warning(&mut result);
         result
     } else {
         let (authoritative_tracking_mode, authoritative_account_type) =

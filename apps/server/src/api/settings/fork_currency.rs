@@ -119,6 +119,7 @@ async fn complete_transition(state: &AppState) {
     let refreshed_goals = state.goal_service.refresh_all_goal_summaries().await;
     state.health_service.clear_cache().await;
     state.currency_transition.finish(true);
+    crate::perf_cache::warm_dashboard();
     state.event_bus.publish(ServerEvent::with_payload(
         PORTFOLIO_UPDATE_COMPLETE,
         serde_json::json!({ "baseCurrencyChanged": true }),
