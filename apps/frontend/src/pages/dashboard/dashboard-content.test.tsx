@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculatePerformanceSummary, getIntradayValuations } from "@/adapters";
 import type { HistoryChartData } from "@/components/history-chart";
 import { AccountsSummary } from "./accounts-summary";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
@@ -623,7 +623,7 @@ describe("DashboardContent", () => {
       ([options]) => options.queryKey[0] === QueryKeys.PERFORMANCE_SUMMARY,
     )?.[0];
     expect(performanceQueryOptions?.enabled).toBe(true);
-    expect(performanceQueryOptions?.placeholderData).toBe(keepPreviousData);
+    expect(performanceQueryOptions?.placeholderData).toBeUndefined();
     expect(screen.getByText("accounts-summary")).toBeInTheDocument();
   });
 

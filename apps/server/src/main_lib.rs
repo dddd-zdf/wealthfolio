@@ -110,8 +110,7 @@ pub struct AppState {
     #[allow(dead_code)]
     pub snapshot_repository: Arc<SnapshotRepository>,
     pub lots_repository: Arc<dyn wealthfolio_core::lots::LotRepositoryTrait + Send + Sync>,
-    pub performance_service:
-        Arc<dyn wealthfolio_core::portfolio::performance::PerformanceServiceTrait + Send + Sync>,
+    pub performance_service: Arc<wealthfolio_core::portfolio::performance::PerformanceService>,
     pub income_service: Arc<dyn IncomeServiceTrait + Send + Sync>,
     pub goal_service: Arc<dyn GoalServiceTrait + Send + Sync>,
     pub limits_service: Arc<dyn ContributionLimitServiceTrait + Send + Sync>,

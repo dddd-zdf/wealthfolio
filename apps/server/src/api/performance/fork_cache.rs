@@ -1,19 +1,21 @@
 //! Fork: dashboard performance responses served from `perf_cache`.
 //!
-//! The wrappers parse the raw body, serve a cached response when the cache
-//! generation still matches, and otherwise call the unchanged upstream
-//! handler. `warm_dashboard_summaries` precomputes the dashboard's periods
-//! after edits (see `perf_cache::register_warm_target`).
+//! Common dashboard ranges use one cached set per reporting scope and day.
+//! Custom ranges and other callers use the ordinary single-request cache.
 
 use std::{sync::Arc, time::Instant};
 
-use super::{AccountScope, PerfBody, PerformanceSummariesBody, PerformanceSummaryProfile};
+use super::{
+    parse_date_optional, AccountScope, PerfBody, PerformancePeriod, PerformanceSummariesBody,
+    PerformanceSummaryProfile, ScopedPerformance,
+};
 use crate::{
     error::{ApiError, ApiResult},
     main_lib::AppState,
 };
 use axum::{Extension, Json};
 use chrono::{Datelike, Days, Months, NaiveDate};
+use wealthfolio_core::utils::time_utils::{parse_user_timezone_or_default, user_today};
 
 fn parse_cached_body<T: serde::de::DeserializeOwned>(body: &[u8]) -> ApiResult<T> {
     serde_json::from_slice(body)
@@ -40,6 +42,25 @@ pub(super) async fn calculate_performance_summary(
     body: axum::body::Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
     let parsed: PerfBody = parse_cached_body(&body)?;
+    if let Some(filter) = dashboard_preset_scope(&parsed) {
+        let today = dashboard_today(&state);
+        let periods = dashboard_period_ranges(today);
+        let requested = PerformancePeriod {
+            start_date: parse_date_optional(parsed.start_date.clone(), "startDate")?,
+            end_date: parse_date_optional(parsed.end_date.clone(), "endDate")?,
+        };
+        if let Some(index) = periods.iter().position(|period| period == &requested) {
+            let cached = dashboard_summaries(&state, filter, today, periods)
+                .await
+                .ok()
+                .and_then(|mut results| results.get_mut(index).map(serde_json::Value::take));
+            if let Some(value) = cached {
+                return Ok(Json(value));
+            }
+            // A failed preparation can still leave this particular window readable.
+            tracing::debug!("Dashboard preset preparation skipped for a single-period read");
+        }
+    }
     let key = summary_cache_key(&state, &parsed);
     crate::perf_cache::get_or_calculate(key, async {
         let Json(result) =
@@ -68,55 +89,132 @@ pub(super) async fn get_performance_summaries(
     .map(Json)
 }
 
-fn dashboard_period_ranges(today: NaiveDate) -> Vec<(Option<NaiveDate>, Option<NaiveDate>)> {
+fn dashboard_preset_scope(body: &PerfBody) -> Option<&AccountScope> {
+    if body.item_type != "account" || body.profile != Some(PerformanceSummaryProfile::Dashboard) {
+        return None;
+    }
+    match body.filter.as_ref()? {
+        scope @ (AccountScope::All | AccountScope::Portfolio { .. }) => Some(scope),
+        _ => None,
+    }
+}
+
+fn dashboard_period_ranges(today: NaiveDate) -> Vec<PerformancePeriod> {
     let months = |count| today.checked_sub_months(Months::new(count));
-    vec![
-        (today.checked_sub_days(Days::new(1)), Some(today)),
-        (today.checked_sub_days(Days::new(7)), Some(today)),
-        (months(1), Some(today)),
-        (months(3), Some(today)),
-        (months(6), Some(today)),
-        (today.with_ordinal(1), Some(today)),
-        (months(12), Some(today)),
-        (months(60), Some(today)),
-        (None, None),
+    [
+        today.checked_sub_days(Days::new(7)),
+        months(1),
+        months(3),
+        months(6),
+        today.with_ordinal(1),
+        months(12),
+        months(60),
     ]
+    .into_iter()
+    .flatten()
+    .map(|start| PerformancePeriod {
+        start_date: Some(start),
+        end_date: Some(today),
+    })
+    .chain([PerformancePeriod {
+        start_date: None,
+        end_date: None,
+    }])
+    .collect()
+}
+
+fn dashboard_today(state: &AppState) -> NaiveDate {
+    let timezone = state
+        .timezone
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    user_today(parse_user_timezone_or_default(&timezone))
+}
+
+async fn dashboard_summaries(
+    state: &Arc<AppState>,
+    filter: &AccountScope,
+    today: NaiveDate,
+    periods: Vec<PerformancePeriod>,
+) -> ApiResult<serde_json::Value> {
+    let profile_id = state.profile_binding.get().map(|(_, id)| *id);
+    let timezone = state
+        .timezone
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone();
+    let generation = crate::perf_cache::current_generation();
+    let key = crate::perf_cache::key(
+        "dashboard-presets",
+        Arc::as_ptr(state) as usize,
+        serde_json::json!([profile_id, today, timezone, state.base_currency()?, filter])
+            .to_string()
+            .as_bytes(),
+    );
+    let results = crate::perf_cache::get_or_calculate(key, async {
+        let started = Instant::now();
+        let scope = ScopedPerformance::resolve(state, filter)?;
+        let mut results = if scope.account_ids.is_empty() {
+            periods.iter().map(|period| scope.empty(period)).collect()
+        } else {
+            state
+                .performance_service
+                .calculate_dashboard_summaries_for_accounts(
+                    scope.resolved.scope_id.clone(),
+                    scope.account_ids.clone(),
+                    periods,
+                )
+                .await?
+        };
+        if !scope.account_ids.is_empty() {
+            for result in &mut results {
+                scope.add_exclusion_warning(result);
+            }
+        }
+        tracing::debug!(
+            presets = results.len(),
+            elapsed_ms = started.elapsed().as_millis(),
+            "Prepared dashboard performance presets"
+        );
+        serde_json::to_value(results).map_err(|error| {
+            ApiError::Internal(format!("Failed to serialize dashboard presets: {error}"))
+        })
+    })
+    .await?;
+    if generation != crate::perf_cache::current_generation() {
+        return Err(ApiError::Internal(
+            "Portfolio changed while preparing dashboard presets".into(),
+        ));
+    }
+    Ok(results)
 }
 
 pub(crate) async fn warm_dashboard_summaries(state: &Arc<AppState>) {
-    let today = {
-        let timezone = state
-            .timezone
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        wealthfolio_core::utils::time_utils::user_today(
-            wealthfolio_core::utils::time_utils::parse_user_timezone_or_default(&timezone),
-        )
-    };
+    let today = dashboard_today(state);
     let started = Instant::now();
-    for (start, end) in dashboard_period_ranges(today) {
-        let body = PerfBody {
-            item_type: "account".to_string(),
-            item_id: "portfolio:all".to_string(),
-            start_date: start.map(|date| date.format("%Y-%m-%d").to_string()),
-            end_date: end.map(|date| date.format("%Y-%m-%d").to_string()),
-            tracking_mode: None,
-            filter: Some(AccountScope::All),
-            profile: Some(PerformanceSummaryProfile::Dashboard),
-        };
-        let key = summary_cache_key(state, &body);
-        if crate::perf_cache::get(key).is_some() {
-            continue;
+    let generation = crate::perf_cache::current_generation();
+    let mut filters = vec![AccountScope::All];
+    match state.portfolio_service.list_portfolios() {
+        Ok(portfolios) => {
+            filters.extend(
+                portfolios
+                    .into_iter()
+                    .map(|portfolio| AccountScope::Portfolio {
+                        portfolio_id: portfolio.id,
+                    }),
+            )
         }
-        let generation = crate::perf_cache::current_generation();
-        match super::calculate_performance_summary(Extension(state.clone()), Json(body)).await {
-            Ok(Json(result)) => {
-                if let Ok(value) = serde_json::to_value(&result) {
-                    crate::perf_cache::put(key, generation, value);
-                }
-            }
-            Err(error) => tracing::debug!("Dashboard summary warm-up skipped a period: {error}"),
+        Err(_) => tracing::debug!("Saved portfolios unavailable during dashboard warm-up"),
+    }
+    for filter in filters {
+        if generation != crate::perf_cache::current_generation() {
+            break;
+        }
+        if dashboard_summaries(state, &filter, today, dashboard_period_ranges(today))
+            .await
+            .is_err()
+        {
+            tracing::debug!("Dashboard warm-up skipped a scope");
         }
     }
     tracing::info!(
@@ -134,9 +232,11 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 10, 16).expect("valid date");
         let day = |y, m, d| NaiveDate::from_ymd_opt(y, m, d);
         assert_eq!(
-            dashboard_period_ranges(today),
+            dashboard_period_ranges(today)
+                .into_iter()
+                .map(|period| (period.start_date, period.end_date))
+                .collect::<Vec<_>>(),
             vec![
-                (day(2026, 10, 15), Some(today)),
                 (day(2026, 10, 9), Some(today)),
                 (day(2026, 9, 16), Some(today)),
                 (day(2026, 7, 16), Some(today)),

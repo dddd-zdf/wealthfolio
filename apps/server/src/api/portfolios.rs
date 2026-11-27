@@ -24,6 +24,7 @@ async fn create_portfolio(
     Json(payload): Json<NewPortfolio>,
 ) -> ApiResult<Json<PortfolioWithAccounts>> {
     let created = state.portfolio_service.create_portfolio(payload).await?;
+    crate::perf_cache::invalidate_and_warm_dashboard();
     Ok(Json(created))
 }
 
@@ -34,6 +35,7 @@ async fn update_portfolio(
 ) -> ApiResult<Json<PortfolioWithAccounts>> {
     payload.id = id;
     let updated = state.portfolio_service.update_portfolio(payload).await?;
+    crate::perf_cache::invalidate_and_warm_dashboard();
     Ok(Json(updated))
 }
 
@@ -42,6 +44,7 @@ async fn delete_portfolio(
     axum::Extension(state): axum::Extension<Arc<AppState>>,
 ) -> ApiResult<StatusCode> {
     state.portfolio_service.delete_portfolio(&id).await?;
+    crate::perf_cache::invalidate_and_warm_dashboard();
     Ok(StatusCode::NO_CONTENT)
 }
 

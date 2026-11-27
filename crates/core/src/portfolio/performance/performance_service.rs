@@ -337,7 +337,53 @@ impl PerformanceService {
         profile: PerformanceSummaryProfile,
         include_series: bool,
     ) -> Result<PerformanceResult> {
-        Self::validate_window(start, end)?;
+        let mut results = self
+            .measure_periods(
+                target,
+                vec![PerformancePeriod {
+                    start_date: start,
+                    end_date: end,
+                }],
+                profile,
+                include_series,
+            )
+            .await?;
+        Ok(results.pop().expect("one period returns one result"))
+    }
+
+    /// Prepare the same stored data once, then let the engine apply its
+    /// opening-value, transfer and return rules to each period independently.
+    pub async fn calculate_dashboard_summaries_for_accounts(
+        &self,
+        scope_id: String,
+        account_ids: Vec<String>,
+        periods: Vec<PerformancePeriod>,
+    ) -> Result<Vec<PerformanceResult>> {
+        self.measure_periods(
+            MeasureTarget::Scope {
+                id: scope_id,
+                accounts: account_ids,
+            },
+            periods,
+            PerformanceSummaryProfile::Dashboard,
+            false,
+        )
+        .await
+    }
+
+    async fn measure_periods(
+        &self,
+        target: MeasureTarget,
+        periods: Vec<PerformancePeriod>,
+        profile: PerformanceSummaryProfile,
+        include_series: bool,
+    ) -> Result<Vec<PerformanceResult>> {
+        if periods.is_empty() {
+            return Ok(Vec::new());
+        }
+        for period in &periods {
+            Self::validate_window(period.start_date, period.end_date)?;
+        }
         let timezone = self.timezone();
         let settings = ReadSettings {
             base_currency: self.base_currency(),
@@ -349,8 +395,7 @@ impl PerformanceService {
         blocking(move || {
             handle.block_on(service.measure_rows(
                 &target,
-                start,
-                end,
+                &periods,
                 profile,
                 include_series,
                 &settings,
@@ -362,12 +407,11 @@ impl PerformanceService {
     async fn measure_rows(
         &self,
         target: &MeasureTarget,
-        start: Option<NaiveDate>,
-        end: Option<NaiveDate>,
+        periods: &[PerformancePeriod],
         profile: PerformanceSummaryProfile,
         include_series: bool,
         settings: &ReadSettings,
-    ) -> Result<PerformanceResult> {
+    ) -> Result<Vec<PerformanceResult>> {
         let account_ids: &[String] = match target {
             MeasureTarget::Account(id) => std::slice::from_ref(id),
             MeasureTarget::Scope { accounts, .. } => accounts,
@@ -380,6 +424,18 @@ impl PerformanceService {
             settings.as_of,
         )?;
 
+        // Read the union of the requested windows, keeping the inception row
+        // when the read starts later. An open bound stays open.
+        let start = periods
+            .iter()
+            .map(|period| period.start_date)
+            .min()
+            .flatten();
+        let end = if periods.iter().any(|period| period.end_date.is_none()) {
+            None
+        } else {
+            periods.iter().filter_map(|period| period.end_date).max()
+        };
         let valuation_rows = match (profile, start) {
             (PerformanceSummaryProfile::Dashboard, Some(start)) => self
                 .valuations
@@ -401,27 +457,40 @@ impl PerformanceService {
         let lots = rows::stored_lots(&lot_rows);
         let disposals = rows::stored_disposals(&disposal_rows);
         let rejected = rows::stored_rejections(&self.sources, &measured)?;
-        let window = engine::Window { start, end };
         let kernel_profile = match profile {
             PerformanceSummaryProfile::Full => engine::MeasureProfile::Full,
             PerformanceSummaryProfile::Summary => engine::MeasureProfile::Summary,
             PerformanceSummaryProfile::Dashboard => engine::MeasureProfile::Dashboard,
         };
         let inputs = measured.measure_inputs(&series, &lots, &disposals, &rejected, kernel_profile);
-        let result = match target {
-            MeasureTarget::Account(id) => engine::measure_account(
-                &inputs,
-                &AccountId::new(id),
-                window,
-                kernel_profile,
-                include_series,
-            )?,
-            MeasureTarget::Scope { id, accounts } => {
-                let scope: Vec<AccountId> = accounts.iter().map(AccountId::new).collect();
-                engine::measure_scope(&inputs, id, &scope, window, kernel_profile, include_series)?
-            }
-        };
-        Ok(from_kernel(result))
+        let scope: Vec<AccountId> = account_ids.iter().map(AccountId::new).collect();
+        periods
+            .iter()
+            .map(|period| {
+                let window = engine::Window {
+                    start: period.start_date,
+                    end: period.end_date,
+                };
+                let result = match target {
+                    MeasureTarget::Account(_) => engine::measure_account(
+                        &inputs,
+                        &scope[0],
+                        window,
+                        kernel_profile,
+                        include_series,
+                    )?,
+                    MeasureTarget::Scope { id, .. } => engine::measure_scope(
+                        &inputs,
+                        id,
+                        &scope,
+                        window,
+                        kernel_profile,
+                        include_series,
+                    )?,
+                };
+                Ok(from_kernel(result))
+            })
+            .collect()
     }
 
     async fn symbol_performance(
