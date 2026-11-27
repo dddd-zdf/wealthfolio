@@ -77,6 +77,11 @@ To see the full divergence:
 - **Dashboard dates.** Investments and Net Worth share a saved date range and
   default to 1D. Spending opens on This month unless the link specifies a
   period. Its links to Spending Insights carry the selected period.
+- **Dashboard gains.** The web server prepares 1W through All Time together from
+  one read per scope for All Accounts and saved portfolios. Startup, portfolio
+  edits, and refreshes with changed prices prepare these ranges. The first
+  request on a cold scope can also prepare them. The 1D gain uses the last
+  trading session's holdings moves.
 - **Background updates (#15).** The server refreshes prices every 5 minutes
   during NYSE/TSX hours and hourly otherwise. The first scheduled opening
   refresh targets 09:30:30 New York to allow opening prices to arrive. It skips
