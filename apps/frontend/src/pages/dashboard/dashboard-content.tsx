@@ -102,6 +102,7 @@ export function DashboardContent({
   const { valuationHistory, isLoading: isValuationHistoryLoading } = useValuationHistory(
     valuationHistoryRange,
     scope,
+    { keepPrevious: false },
   );
 
   const {
@@ -133,7 +134,6 @@ export function DashboardContent({
     totalValue,
     baseCurrency,
     dailyChartData: chartData,
-    isAllTime,
   });
 
   const isInitialHistoryLoading = !valuationHistory && isValuationHistoryLoading;
@@ -163,7 +163,11 @@ export function DashboardContent({
   const endDate = !isAllTime && dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
   const datesReady = isAllTime || (!!startDate && !!endDate);
 
-  const { data: portfolioPerformance, isLoading: isPortfolioPerformanceLoading } = useQuery({
+  const {
+    data: portfolioPerformance,
+    isLoading: isPortfolioPerformanceLoading,
+    isPlaceholderData: isPerformancePlaceholder,
+  } = useQuery({
     queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", scopeKey, startDate, endDate],
     queryFn: () =>
       calculatePerformanceSummary({
@@ -208,20 +212,58 @@ export function DashboardContent({
       ? valuationHistory?.[valuationHistory.length - 1]?.calculatedAt
       : undefined);
 
-  const referenceValue =
-    isDayChange && forkChart.timeDomain && dayChange
-      ? totalValue - dayChange.amount
-      : forkChart.referenceValue;
+  const performancePeriod = !isPerformancePlaceholder ? portfolioPerformance?.period : undefined;
+  // The weekly intraday curve can start days after the performance period opens.
+  const openingPoint = isDayChange
+    ? forkChart.chartData[0]
+    : performancePeriod?.startDate
+      ? chartData.find((point) => point.date === performancePeriod.startDate)
+      : chartData[0];
+  const lastChartPoint = forkChart.chartData.at(-1);
+  const dayReturnBase =
+    dayChange && portfolioCurrentValuation ? totalValue - dayChange.amount : undefined;
+  // The live balance includes cash added since the first observation.
+  const referenceValue = isDayChange
+    ? dayReturnBase !== undefined && openingPoint && lastChartPoint && forkChart.timeDomain
+      ? dayReturnBase - (lastChartPoint.netContribution - openingPoint.netContribution)
+      : undefined
+    : !isAllTime && forkChart.chartData.length > 1 && !openingPoint?.isUnavailable
+      ? openingPoint?.totalValue
+      : undefined;
   const [activePoint, setActivePoint] = useState<HistoryChartData | null>(null);
   const hoveredPoint =
     activePoint && !isChartLoading && forkChart.chartData.includes(activePoint)
       ? activePoint
       : null;
-  const hoveredGain = hoveredPoint
-    ? hasIncompleteHistory && forkChart.chartData === chartData
-      ? { amount: null, percent: null }
-      : getDashboardChartGain(hoveredPoint, forkChart.chartData[0], referenceValue)
-    : null;
+  let hoveredGain = null;
+  if (hoveredPoint) {
+    const hoveredDate = hoveredPoint.date.slice(0, 10);
+    const endPoint = chartData.at(-1);
+    const isPerformanceEnd =
+      !isDayChange &&
+      hoveredDate === performancePeriod?.endDate &&
+      hoveredDate === endPoint?.date &&
+      hoveredPoint.currency === endPoint.currency &&
+      hoveredPoint.totalValue === endPoint.totalValue &&
+      hoveredPoint.netContribution === endPoint.netContribution;
+    if (isPerformanceEnd) {
+      hoveredGain = { amount: gainLossAmount, percent: simpleReturn };
+    } else if (
+      openingPoint &&
+      hoveredDate >= openingPoint.date.slice(0, 10) &&
+      !hasIncompleteHistory &&
+      (!isDayChange || referenceValue !== undefined)
+    ) {
+      hoveredGain = getDashboardChartGain(
+        hoveredPoint,
+        openingPoint,
+        referenceValue,
+        dayReturnBase,
+      );
+    } else if (!isGainLoading) {
+      hoveredGain = { amount: null, percent: null };
+    }
+  }
   const displayedCurrency = hoveredPoint?.currency ?? baseCurrency;
   const displayedGain = hoveredGain ? hoveredGain.amount : gainLossAmount;
   const displayedReturn = hoveredGain ? hoveredGain.percent : simpleReturn;

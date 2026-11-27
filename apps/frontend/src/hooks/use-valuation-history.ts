@@ -6,6 +6,7 @@ import { format } from "date-fns";
 
 interface UseValuationHistoryOptions {
   enabled?: boolean;
+  keepPrevious?: boolean;
 }
 
 export function useValuationHistory(
@@ -41,7 +42,7 @@ export function useValuationHistory(
       return getHistoricalValuations(filter, startDate, endDate);
     },
     enabled: isEnabled && (dateRangeMode === "all" || (!!startDate && !!endDate)),
-    placeholderData: keepPreviousData,
+    placeholderData: options.keepPrevious === false ? undefined : keepPreviousData,
   });
 
   return {
