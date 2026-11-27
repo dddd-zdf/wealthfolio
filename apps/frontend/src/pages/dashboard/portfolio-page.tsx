@@ -1,3 +1,4 @@
+import { isWeb } from "@/adapters";
 import { HealthStatusIndicator } from "@/components/health-status-icon";
 import { SwipablePage, SwipablePageView } from "@/components/page";
 import { AlternativeAssetQuickAddModal } from "@/pages/asset/alternative-assets/components";
@@ -157,9 +158,9 @@ export default function PortfolioPage() {
         value: "net-worth",
         label: t("dashboard:tabs.net_worth"),
         icon: NetWorthTabIcon,
-        content: (
+        content: (active) => (
           <Suspense fallback={<PageLoader />}>
-            <NetWorthContent />
+            <NetWorthContent isActive={active || !isWeb} />
           </Suspense>
         ),
         actions: netWorthActions,

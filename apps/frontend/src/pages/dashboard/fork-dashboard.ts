@@ -19,7 +19,6 @@ import { useMemo } from "react";
 const REGULAR_SESSION_MS = 6.5 * 60 * 60 * 1000;
 
 type PerformanceSummary = Parameters<typeof performancePeriodPnl>[0];
-type DayChange = ReturnType<typeof summarizeDayChange>;
 
 export function getDashboardChartGain(
   point: HistoryChartData,
@@ -90,7 +89,6 @@ interface DashboardChartInput {
   totalValue: number;
   baseCurrency: string;
   dailyChartData: HistoryChartData[];
-  dayChange: DayChange | null;
   isAllTime: boolean;
 }
 
@@ -101,14 +99,13 @@ export function useDashboardChart({
   totalValue,
   baseCurrency,
   dailyChartData,
-  dayChange,
   isAllTime,
 }: DashboardChartInput) {
   // The web 1D chart can show one observed point as a dot.
   const intradayRange =
     selectedInterval === "1D" || selectedInterval === "1W" ? selectedInterval : null;
   const minimumPoints = isWeb && intradayRange === "1D" ? 1 : 2;
-  const { data: intradayPoints } = useQuery({
+  const { data: intradayPoints, isLoading: isIntradayLoading } = useQuery({
     // Include the display/base currency so a settings transition cannot reuse
     // a curve calculated for the previous currency and merely relabel it.
     queryKey: [
@@ -160,20 +157,17 @@ export function useDashboardChart({
     return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
   }, [selectedInterval, intradayPoints, minimumPoints]);
 
-  // Faint guide at where the period started: yesterday's close on 1D (live
-  // total minus today's move), the first point otherwise. ALL starts near zero.
+  // The dashboard supplies the previous-close guide on 1D.
   const referenceValue =
-    selectedInterval === "1D"
-      ? timeDomain && dayChange
-        ? totalValue - dayChange.amount
-        : undefined
-      : !isAllTime && chartData.length > 1 && !chartData[0].isUnavailable
-        ? chartData[0].totalValue
-        : undefined;
+    selectedInterval !== "1D" && !isAllTime && chartData.length > 1 && !chartData[0].isUnavailable
+      ? chartData[0].totalValue
+      : undefined;
 
   return {
     chartData,
     timeDomain,
     referenceValue,
+    isIntradayLoading,
+    hasIntradayData: chartData !== dailyChartData,
   };
 }

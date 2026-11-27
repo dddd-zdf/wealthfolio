@@ -41,15 +41,19 @@ vi.mock("@/components/history-chart", () => ({
   HistoryChart: ({
     data,
     timeDomain,
+    referenceValue,
     onActivePointChange,
   }: {
     data: HistoryChartData[];
     timeDomain?: [number, number];
+    referenceValue?: number;
     onActivePointChange: (point: HistoryChartData | null) => void;
   }) => (
     <div
       data-testid="history-chart"
       data-time-domain={JSON.stringify(timeDomain ?? null)}
+      data-chart-values={JSON.stringify(data.map((point) => point.totalValue))}
+      data-reference-value={referenceValue}
       onMouseEnter={() => onActivePointChange(data[1] ?? null)}
       onMouseLeave={() => onActivePointChange(null)}
     >
@@ -544,6 +548,7 @@ describe("DashboardContent", () => {
       "data-time-domain",
       JSON.stringify([open, open + 6.5 * 60 * 60 * 1000]),
     );
+    expect(screen.getByTestId("history-chart")).toHaveAttribute("data-reference-value", "1000");
 
     const completeHoldings = mockUseHoldings.mock.results.at(-1)?.value;
     mockUseHoldings.mockReturnValue({
@@ -584,7 +589,7 @@ describe("DashboardContent", () => {
     expect(mockUseValuationHistory).toHaveBeenCalledWith(undefined, { type: "all" });
   });
 
-  it("starts dashboard performance queries while valuation history is loading", () => {
+  it("starts performance queries immediately when the chart has cached history", () => {
     mockCurrentValuation(125);
     mockUseHoldings.mockReturnValue({
       holdings: [],
@@ -614,9 +619,9 @@ describe("DashboardContent", () => {
 
     render(<DashboardContent />);
 
-    const performanceQueryOptions = mockUseQuery.mock.calls[0]?.[0] as
-      | { enabled?: boolean; placeholderData?: unknown }
-      | undefined;
+    const performanceQueryOptions = mockUseQuery.mock.calls.find(
+      ([options]) => options.queryKey[0] === QueryKeys.PERFORMANCE_SUMMARY,
+    )?.[0];
     expect(performanceQueryOptions?.enabled).toBe(true);
     expect(performanceQueryOptions?.placeholderData).toBe(keepPreviousData);
     expect(screen.getByText("accounts-summary")).toBeInTheDocument();
@@ -704,7 +709,7 @@ describe("DashboardContent", () => {
       mockUseQuery.mockReturnValue({ data: null, isLoading: false } as ReturnType<typeof useQuery>);
       const scope = { type: "portfolio", portfolioId: "retirement" } as const;
       render(<DashboardContent scope={scope} scopeLabel="Retirement" accountIds={["account-1"]} />);
-      expect(mockUseHoldings).toHaveBeenCalledWith(scope);
+      expect(mockUseHoldings).toHaveBeenCalledWith(scope, { enabled: true });
       expect(mockUseCurrentValuation).toHaveBeenCalledWith(scope, { includeAccounts: true });
       expect(mockUseValuationHistory.mock.calls.at(-1)?.[1]).toEqual(scope);
       expect(vi.mocked(AccountsSummary).mock.calls.at(-1)?.[0]).toMatchObject({
@@ -730,6 +735,68 @@ describe("DashboardContent", () => {
       expect(screen.getByText("Retirement")).toBeInTheDocument();
     },
   );
+
+  it.each(["1D", "3M"] as const)("prioritizes the cold %s chart for a new scope", (interval) => {
+    uiMocks.intervalCode = interval;
+    mockCurrentValuation();
+    mockUseSettingsContext.mockReturnValue({ settings: { baseCurrency: "USD" } } as ReturnType<
+      typeof useSettingsContext
+    >);
+    mockUseHoldings.mockReturnValue({ holdings: [], isLoading: false } as unknown as ReturnType<
+      typeof useHoldings
+    >);
+    const scope = { type: "portfolio", portfolioId: "next" } as const;
+    const view = <DashboardContent scope={scope} />;
+    const performanceQuery = () =>
+      mockUseQuery.mock.calls
+        .filter(([options]) => options.queryKey[0] === QueryKeys.PERFORMANCE_SUMMARY)
+        .at(-1)?.[0];
+
+    mockUseValuationHistory.mockReturnValue({ valuationHistory: undefined, isLoading: true });
+    mockUseQuery.mockImplementation(
+      (options) =>
+        ({
+          isLoading: options.queryKey[1] === "intraday" && interval === "1D",
+          data: undefined,
+        }) as ReturnType<typeof useQuery>,
+    );
+    const { rerender } = render(view);
+    expect(screen.getByTestId("history-chart")).toHaveAttribute("data-chart-values", "[]");
+    expect(mockUseCurrentValuation).toHaveBeenLastCalledWith(scope, { includeAccounts: true });
+    expect(mockUseHoldings).toHaveBeenLastCalledWith(scope, { enabled: false });
+    expect(performanceQuery()?.enabled).toBe(false);
+    expect(vi.mocked(AccountsSummary).mock.calls.at(-1)?.[0].loadDetails).toBe(false);
+
+    if (interval === "1D") {
+      // Recorded points can paint while the daily fallback is still pending.
+      mockUseQuery.mockImplementation(
+        (options) =>
+          ({
+            isLoading: false,
+            data:
+              options.queryKey[1] === "intraday"
+                ? [
+                    {
+                      timestamp: "2026-06-01T13:30:00Z",
+                      totalValueBase: 450,
+                      netContributionBase: 0,
+                    },
+                  ]
+                : undefined,
+          }) as ReturnType<typeof useQuery>,
+      );
+    } else {
+      mockUseValuationHistory.mockReturnValue({
+        valuationHistory: [{ valuationDate: "2026-06-01", totalValueBase: 450 }],
+        isLoading: false,
+      } as ReturnType<typeof useValuationHistory>);
+    }
+    rerender(<DashboardContent scope={scope} />);
+    expect(screen.getByTestId("history-chart")).toHaveAttribute("data-chart-values", "[450]");
+    expect(mockUseHoldings).toHaveBeenLastCalledWith(scope, { enabled: true });
+    expect(performanceQuery()?.enabled).toBe(interval !== "1D");
+    expect(vi.mocked(AccountsSummary).mock.calls.at(-1)?.[0].loadDetails).toBe(true);
+  });
 
   it("keeps privacy keyboard focus and activation separate from the update hover card", async () => {
     mockCurrentValuation();

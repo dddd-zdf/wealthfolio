@@ -417,6 +417,29 @@ describe("AccountsSummary", () => {
     queryMocks.holdingsByScope = [];
   });
 
+  it("waits for the dashboard valuation before using its independent fallback", () => {
+    const { rerender } = renderAccountsSummary({
+      accounts: [createAccount({ id: "account-1" })],
+      valuations: [],
+    });
+    rerender(
+      <MemoryRouter>
+        <AccountsSummary isLoadingCurrentValuations />
+      </MemoryRouter>,
+    );
+    expect(mockUseCurrentAccountValuations).toHaveBeenLastCalledWith(["account-1"], {
+      enabled: false,
+    });
+    rerender(
+      <MemoryRouter>
+        <AccountsSummary isLoadingCurrentValuations={false} />
+      </MemoryRouter>,
+    );
+    expect(mockUseCurrentAccountValuations).toHaveBeenLastCalledWith(["account-1"], {
+      enabled: true,
+    });
+  });
+
   it("shows each row's summed holding day changes on 1D", () => {
     queryMocks.holdingsByScope = [
       {
