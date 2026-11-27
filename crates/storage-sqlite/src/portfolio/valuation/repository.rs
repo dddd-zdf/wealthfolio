@@ -3,7 +3,7 @@ use chrono::NaiveDate;
 use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sql_query;
-use diesel::sql_types::Text;
+use diesel::sql_types::{Date, Text};
 use diesel::sqlite::Sqlite;
 use diesel::sqlite::SqliteConnection;
 use std::collections::{HashMap, HashSet};
@@ -14,6 +14,7 @@ use crate::db::{get_connection, WriteHandle};
 use crate::errors::StorageError;
 use crate::schema::daily_account_valuation;
 use crate::schema::daily_account_valuation::dsl::*;
+use crate::utils::chunk_for_sqlite;
 use wealthfolio_core::errors::Result;
 use wealthfolio_core::portfolio::valuation::{
     DailyAccountValuation, DailyCashBalance, NegativeBalanceInfo, ValuationRepositoryTrait,
@@ -187,6 +188,64 @@ impl ValuationRepositoryTrait for ValuationRepository {
             .into_iter()
             .map(DailyAccountValuation::from)
             .collect())
+    }
+
+    fn get_valuations_with_inception_for_accounts(
+        &self,
+        input_account_ids: &[String],
+        start_date: NaiveDate,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<DailyAccountValuation>> {
+        if input_account_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut ids: Vec<&str> = input_account_ids.iter().map(String::as_str).collect();
+        ids.sort_unstable();
+        ids.dedup();
+
+        let mut conn = get_connection(&self.pool)?;
+        let mut rows = Vec::new();
+        for chunk in chunk_for_sqlite(&ids) {
+            let requested = std::iter::repeat_n("(?)", chunk.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let end_filter = end_date.map_or("", |_| "AND v.valuation_date <= ?");
+            // One statement per batch keeps the period and inception rows on
+            // the same SQLite snapshot.
+            let sql = format!(
+                "WITH requested(account_id) AS (VALUES {requested})
+                 SELECT v.* FROM requested r
+                 JOIN daily_account_valuation v ON v.account_id = r.account_id
+                 WHERE v.valuation_date >= ? {end_filter}
+                 UNION ALL
+                 SELECT v.* FROM requested r
+                 JOIN daily_account_valuation v ON v.id = (
+                     SELECT first.id FROM daily_account_valuation first
+                     WHERE first.account_id = r.account_id AND first.valuation_date < ?
+                     ORDER BY first.valuation_date LIMIT 1
+                 )"
+            );
+            let mut query = sql_query(sql).into_boxed::<Sqlite>();
+            for &requested_id in chunk {
+                query = query.bind::<Text, _>(requested_id);
+            }
+            query = query.bind::<Date, _>(start_date);
+            if let Some(end_date) = end_date {
+                query = query.bind::<Date, _>(end_date);
+            }
+            rows.extend(
+                query
+                    .bind::<Date, _>(start_date)
+                    .load::<DailyAccountValuationDB>(&mut conn)
+                    .map_err(StorageError::from)?,
+            );
+        }
+        rows.sort_unstable_by(|left, right| {
+            left.valuation_date
+                .cmp(&right.valuation_date)
+                .then_with(|| left.account_id.cmp(&right.account_id))
+        });
+        Ok(rows.into_iter().map(DailyAccountValuation::from).collect())
     }
 
     fn get_max_calculated_at_for_accounts(
@@ -472,6 +531,56 @@ mod tests {
             basis_status: BasisStatus::Complete,
             calculated_at: Utc::now(),
         }
+    }
+
+    #[tokio::test]
+    async fn performance_window_retains_inception_and_skips_other_out_of_range_rows() {
+        std::env::set_var("CONNECT_API_URL", "http://test.local");
+        let dir = TestDir::new();
+        let db_path = dir.path().join("test.db").to_string_lossy().to_string();
+        run_migrations(&db_path).unwrap();
+        let pool = create_pool(&db_path).unwrap();
+        sql_query(
+            "INSERT INTO accounts (id, name, account_type, currency, is_default, is_active, \
+             created_at, updated_at, tracking_mode, is_archived) \
+             VALUES ('brokerage', 'brokerage', 'SECURITIES', 'USD', 0, 1, datetime('now'), \
+                     datetime('now'), 'TRANSACTIONS', 0),
+                    ('savings', 'savings', 'CASH', 'USD', 0, 1, datetime('now'), \
+                     datetime('now'), 'TRANSACTIONS', 0)",
+        )
+        .execute(&mut get_connection(&pool).unwrap())
+        .unwrap();
+        let writer = spawn_writer((*pool).clone()).unwrap();
+        let repository = ValuationRepository::new(pool, writer);
+        for (account, days) in [("brokerage", &[1, 2, 4, 6, 7][..]), ("savings", &[5, 6])] {
+            let rows: Vec<_> = days.iter().map(|&d| valuation(account, d, 1, 1)).collect();
+            repository
+                .replace_valuations_for_account(account, None, &rows)
+                .await
+                .unwrap();
+        }
+
+        let rows = repository
+            .get_valuations_with_inception_for_accounts(
+                &["savings".into(), "brokerage".into(), "brokerage".into()],
+                date(4),
+                Some(date(6)),
+            )
+            .unwrap();
+        let actual: Vec<_> = rows
+            .iter()
+            .map(|row| (row.account_id.as_str(), row.valuation_date))
+            .collect();
+        assert_eq!(
+            actual,
+            [
+                ("brokerage", date(1)),
+                ("brokerage", date(4)),
+                ("savings", date(5)),
+                ("brokerage", date(6)),
+                ("savings", date(6)),
+            ]
+        );
     }
 
     #[tokio::test]

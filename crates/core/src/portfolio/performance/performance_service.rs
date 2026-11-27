@@ -380,14 +380,20 @@ impl PerformanceService {
             settings.as_of,
         )?;
 
-        let mut valuation_rows: Vec<DailyAccountValuation> = Vec::new();
+        let valuation_rows = match (profile, start) {
+            (PerformanceSummaryProfile::Dashboard, Some(start)) => self
+                .valuations
+                .get_valuations_with_inception_for_accounts(account_ids, start, end)?,
+            (PerformanceSummaryProfile::Dashboard, None) => self
+                .valuations
+                .get_historical_valuations_for_accounts(account_ids, None, end)?,
+            _ => self
+                .valuations
+                .get_historical_valuations_for_accounts(account_ids, None, None)?,
+        };
         let mut lot_rows = Vec::new();
         let mut disposal_rows = Vec::new();
         for account_id in account_ids {
-            valuation_rows.extend(
-                self.valuations
-                    .get_historical_valuations(account_id, None, None)?,
-            );
             lot_rows.extend(self.lots.get_all_lots_for_account(account_id).await?);
             disposal_rows.extend(self.lots.get_lot_disposals_for_account(account_id).await?);
         }

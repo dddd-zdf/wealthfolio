@@ -54,6 +54,19 @@ pub trait ValuationRepositoryTrait: Send + Sync {
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<DailyAccountValuation>>;
 
+    /// Read the performance period and retain each account's first stored
+    /// valuation when it precedes the period. The engine needs that row to
+    /// distinguish a period return from a return measured at inception.
+    /// Implementations can also return intervening rows before the window.
+    fn get_valuations_with_inception_for_accounts(
+        &self,
+        account_ids: &[String],
+        _start_date: NaiveDate,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<DailyAccountValuation>> {
+        self.get_historical_valuations_for_accounts(account_ids, None, end_date)
+    }
+
     /// Returns the latest calculation timestamp for a scoped history read.
     ///
     /// Implementations can answer this with a cheap aggregate query so callers can

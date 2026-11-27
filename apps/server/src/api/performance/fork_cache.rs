@@ -41,15 +41,14 @@ pub(super) async fn calculate_performance_summary(
 ) -> ApiResult<Json<serde_json::Value>> {
     let parsed: PerfBody = parse_cached_body(&body)?;
     let key = summary_cache_key(&state, &parsed);
-    if let Some(hit) = crate::perf_cache::get(key) {
-        return Ok(Json(hit));
-    }
-    let generation = crate::perf_cache::current_generation();
-    let Json(result) = super::calculate_performance_summary(Extension(state), Json(parsed)).await?;
-    let value = serde_json::to_value(&result)
-        .map_err(|error| ApiError::Internal(format!("Failed to serialize summary: {error}")))?;
-    crate::perf_cache::put(key, generation, value.clone());
-    Ok(Json(value))
+    crate::perf_cache::get_or_calculate(key, async {
+        let Json(result) =
+            super::calculate_performance_summary(Extension(state), Json(parsed)).await?;
+        serde_json::to_value(&result)
+            .map_err(|error| ApiError::Internal(format!("Failed to serialize summary: {error}")))
+    })
+    .await
+    .map(Json)
 }
 
 /// POST /performance/summaries
@@ -58,16 +57,15 @@ pub(super) async fn get_performance_summaries(
     body: axum::body::Bytes,
 ) -> ApiResult<Json<serde_json::Value>> {
     let key = crate::perf_cache::key("summaries", Arc::as_ptr(&state) as usize, &body);
-    if let Some(hit) = crate::perf_cache::get(key) {
-        return Ok(Json(hit));
-    }
-    let generation = crate::perf_cache::current_generation();
-    let parsed: PerformanceSummariesBody = parse_cached_body(&body)?;
-    let Json(results) = super::get_performance_summaries(Extension(state), Json(parsed)).await?;
-    let value = serde_json::to_value(&results)
-        .map_err(|error| ApiError::Internal(format!("Failed to serialize summaries: {error}")))?;
-    crate::perf_cache::put(key, generation, value.clone());
-    Ok(Json(value))
+    crate::perf_cache::get_or_calculate(key, async {
+        let parsed: PerformanceSummariesBody = parse_cached_body(&body)?;
+        let Json(results) =
+            super::get_performance_summaries(Extension(state), Json(parsed)).await?;
+        serde_json::to_value(&results)
+            .map_err(|error| ApiError::Internal(format!("Failed to serialize summaries: {error}")))
+    })
+    .await
+    .map(Json)
 }
 
 fn dashboard_period_ranges(today: NaiveDate) -> Vec<(Option<NaiveDate>, Option<NaiveDate>)> {
