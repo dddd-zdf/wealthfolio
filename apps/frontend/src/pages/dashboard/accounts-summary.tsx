@@ -413,6 +413,7 @@ export const AccountsSummary = React.memo(
     dateRange,
     isAllTime,
     isDayChange = false,
+    loadDetails = true,
     currentAccountValuations: currentAccountValuationsProp,
     isLoadingCurrentValuations: isLoadingCurrentValuationsProp,
   }: {
@@ -421,6 +422,7 @@ export const AccountsSummary = React.memo(
     isAllTime?: boolean;
     /** 1D: sum each holding's last-session move instead of period performance. */
     isDayChange?: boolean;
+    loadDetails?: boolean;
     currentAccountValuations?: CurrentAccountValuation[];
     isLoadingCurrentValuations?: boolean;
   }) => {
@@ -447,9 +449,12 @@ export const AccountsSummary = React.memo(
 
     const accountIds = useMemo(() => accounts?.map((acc) => acc.id) ?? [], [accounts]);
 
-    const managedByAccount = useManagedHoldingsByAccount(accounts);
+    const managedByAccount = useManagedHoldingsByAccount(accounts, loadDetails);
 
-    const shouldFetchCurrentValuations = currentAccountValuationsProp === undefined;
+    // The parent request includes account values. Use the independent read
+    // only if the parent finishes without them or the cards are used on their own.
+    const shouldFetchCurrentValuations =
+      loadDetails && currentAccountValuationsProp === undefined && !isLoadingCurrentValuationsProp;
     const {
       currentAccountValuations: fetchedCurrentAccountValuations,
       isLoading: isLoadingFetchedCurrentValuations,
@@ -459,7 +464,7 @@ export const AccountsSummary = React.memo(
     const currentAccountValuations =
       currentAccountValuationsProp ?? fetchedCurrentAccountValuations;
     const isLoadingCurrentValuations =
-      isLoadingCurrentValuationsProp ?? isLoadingFetchedCurrentValuations;
+      isLoadingCurrentValuationsProp || isLoadingFetchedCurrentValuations;
 
     const startDate =
       !isAllTime && dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
@@ -486,7 +491,7 @@ export const AccountsSummary = React.memo(
       ],
       queryFn: () =>
         calculatePerformanceSummaries(performanceScopes, startDate, endDate, "dashboard"),
-      enabled: shouldFetchPerformance && !isDayChange,
+      enabled: loadDetails && shouldFetchPerformance && !isDayChange,
       placeholderData: keepPreviousData,
       staleTime: 30 * 1000,
       retry: 1,
@@ -494,6 +499,7 @@ export const AccountsSummary = React.memo(
 
     const { periodGains, isLoadingPerformanceQueries } = useAccountPeriodGains({
       isDayChange,
+      loadDetails,
       performanceScopes,
       performanceSummaries,
       isLoadingPerformanceSummaries,

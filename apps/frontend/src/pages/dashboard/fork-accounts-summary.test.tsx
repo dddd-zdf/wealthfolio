@@ -42,10 +42,11 @@ describe("useAccountPeriodGains", () => {
           : { holdings: [{ dayChange: null }], incompleteAccounts: [] }
       ) as never;
     });
-    const { result } = renderHook(
-      () =>
+    const { result, rerender } = renderHook(
+      (loadDetails: boolean) =>
         useAccountPeriodGains({
           isDayChange: true,
+          loadDetails,
           performanceScopes: scopes,
           performanceSummaries: undefined,
           isLoadingPerformanceSummaries: false,
@@ -54,9 +55,12 @@ describe("useAccountPeriodGains", () => {
             { accountId: "b", totalValueBase: 500 },
           ] as GainsInput["currentAccountValuations"],
         }),
-      { wrapper },
+      { wrapper, initialProps: false },
     );
 
+    expect(result.current.isLoadingPerformanceQueries).toBe(true);
+    expect(mockHoldings).not.toHaveBeenCalled();
+    rerender(true);
     await waitFor(() => expect(result.current.isLoadingPerformanceQueries).toBe(false));
     expect(result.current.periodGains.a.amount).toBe(20);
     expect(result.current.periodGains.a.percent).toBeCloseTo(20 / 1000);

@@ -35,6 +35,7 @@ function combineDayChangeHoldings(results: { data?: HoldingsListResponse; isLoad
 
 interface AccountPeriodGainsInput {
   isDayChange: boolean;
+  loadDetails?: boolean;
   performanceScopes: PerformanceSummaryScope[];
   performanceSummaries: PerformanceSummaryMap | undefined;
   isLoadingPerformanceSummaries: boolean;
@@ -44,13 +45,14 @@ interface AccountPeriodGainsInput {
 /** Gains keyed by `performanceSummaryScopeKey`. */
 export function useAccountPeriodGains({
   isDayChange,
+  loadDetails = true,
   performanceScopes,
   performanceSummaries,
   isLoadingPerformanceSummaries,
   currentAccountValuations,
 }: AccountPeriodGainsInput) {
   const dayChangeHoldings = useQueries({
-    queries: (isDayChange ? performanceScopes : []).map((scope) => {
+    queries: (loadDetails && isDayChange ? performanceScopes : []).map((scope) => {
       const filter: AccountScope = { type: "accounts", accountIds: scope.accountIds };
       return {
         queryKey: [QueryKeys.HOLDINGS, filter, { includeClosed: false }],
@@ -59,9 +61,8 @@ export function useAccountPeriodGains({
     }),
     combine: combineDayChangeHoldings,
   });
-  const isLoadingPerformanceQueries = isDayChange
-    ? dayChangeHoldings.isLoading
-    : isLoadingPerformanceSummaries;
+  const isLoadingPerformanceQueries =
+    !loadDetails || (isDayChange ? dayChangeHoldings.isLoading : isLoadingPerformanceSummaries);
 
   const periodGains = useMemo((): Record<string, PeriodGain> => {
     const gains: Record<string, PeriodGain> = {};
@@ -108,8 +109,8 @@ export function useAccountPeriodGains({
 }
 
 /** Manually priced holdings per managed account id. */
-export function useManagedHoldingsByAccount(accounts: Account[]) {
-  const { holdings: allHoldings } = useHoldings({ type: "all" });
+export function useManagedHoldingsByAccount(accounts: Account[], enabled = true) {
+  const { holdings: allHoldings } = useHoldings({ type: "all" }, { enabled });
   return useMemo(
     () =>
       new Map(

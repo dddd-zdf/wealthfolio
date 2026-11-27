@@ -44,7 +44,7 @@ import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 
 const MS_PER_DAY = 86_400_000;
 
-export function NetWorthContent() {
+export function NetWorthContent({ isActive = true }: { isActive?: boolean }) {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
   const { settings } = useSettingsContext();
@@ -56,6 +56,7 @@ export function NetWorthContent() {
     error,
   } = useNetWorth({
     date: currentDateISO,
+    enabled: isActive,
   });
   const isMobile = useIsMobileViewport();
 
@@ -91,13 +92,13 @@ export function NetWorthContent() {
   const { data: historyData, isLoading: isHistoryLoading } = useNetWorthHistory({
     startDate: historyDates?.startDate ?? "",
     endDate: historyDates?.endDate ?? "",
-    enabled: !!historyDates,
+    enabled: isActive && !!historyDates,
   });
 
   const { data: longHistoryData } = useNetWorthHistory({
     startDate: longHistoryDates?.startDate ?? "",
     endDate: longHistoryDates?.endDate ?? "",
-    enabled: !!longHistoryDates,
+    enabled: isActive && !!longHistoryDates,
   });
 
   const parsedData = useMemo((): ParsedNetWorth | null => {
@@ -192,7 +193,7 @@ export function NetWorthContent() {
   // Breakdown row → detail drawer. Investments open the existing asset-class
   // allocation sheet; every other row opens the category detail sheet.
   const [selected, setSelected] = useState<SelectedCategory | null>(null);
-  const { allocations } = usePortfolioAllocations({ type: "all" });
+  const { allocations } = usePortfolioAllocations({ type: "all" }, { enabled: isActive });
   const investmentsAlloc = useMemo(
     () => investmentAllocation(allocations?.assetClasses),
     [allocations],
@@ -245,7 +246,7 @@ export function NetWorthContent() {
                 </span>
               )}
               <Balance
-                isLoading={isLoading}
+                isLoading={isLoading || (!isActive && !netWorthData)}
                 isUnavailable={
                   !!netWorthData?.valueStatus && netWorthData.valueStatus !== "complete"
                 }
@@ -259,7 +260,7 @@ export function NetWorthContent() {
               <HealthStatusIndicator />
             </div>
             <div className="text-md flex min-h-5 flex-wrap items-center gap-x-3">
-              {isHistoryLoading ? (
+              {isHistoryLoading || (!isActive && !!historyDates && !historyData) ? (
                 <div className="flex items-center gap-3 pt-1">
                   <Skeleton className="h-4 w-24" />
                   <div className="border-secondary my-1 border-e pe-2" />

@@ -151,6 +151,16 @@ describe("NetWorthContent current-date queries", () => {
     vi.clearAllMocks();
   });
 
+  it("waits for the dashboard tab to become active before reading Net Worth", () => {
+    const { rerender } = render(<NetWorthContent isActive={false} />);
+    expect(queryMocks.useNetWorth.mock.lastCall?.[0]?.enabled).toBe(false);
+    expect(latestEnabledHistoryCall()).toBeUndefined();
+
+    rerender(<NetWorthContent isActive />);
+    expect(queryMocks.useNetWorth.mock.lastCall?.[0]?.enabled).toBe(true);
+    expect(latestEnabledHistoryCalls(2)).toHaveLength(2);
+  });
+
   it.each([
     { current: "unavailable", history: "complete", attention: true },
     { current: "partialUnpriced", history: "complete", attention: true },
@@ -220,7 +230,7 @@ describe("NetWorthContent current-date queries", () => {
         endDate: day,
         enabled: true,
       });
-      expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: day });
+      expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: day, enabled: true });
     },
   );
 
@@ -231,7 +241,10 @@ describe("NetWorthContent current-date queries", () => {
     const timers = vi.getTimerCount();
     vi.setSystemTime(new Date("2026-09-16T00:00:01+08:00"));
     rerender(<NetWorthContent />);
-    expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: "2026-09-16" });
+    expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({
+      date: "2026-09-16",
+      enabled: true,
+    });
     expect(latestEnabledHistoryCalls(2)[0]).toMatchObject({
       startDate: "2026-08-16",
       endDate: "2026-09-16",
@@ -272,7 +285,10 @@ describe("NetWorthContent current-date queries", () => {
     const { rerender } = render(<NetWorthContent />);
     settingsMock.timezone = "America/Los_Angeles";
     rerender(<NetWorthContent />);
-    expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({ date: "2026-09-15" });
+    expect(queryMocks.useNetWorth).toHaveBeenLastCalledWith({
+      date: "2026-09-15",
+      enabled: true,
+    });
     expect(latestEnabledHistoryCall()?.endDate).toBe("2026-09-15");
     expect(vi.getTimerCount()).toBe(0);
   });

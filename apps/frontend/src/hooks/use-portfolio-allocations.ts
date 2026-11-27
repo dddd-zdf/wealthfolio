@@ -4,6 +4,7 @@ import { getPortfolioAllocations } from "@/adapters";
 import { QueryKeys } from "@/lib/query-keys";
 
 interface UsePortfolioAllocationsOptions {
+  enabled?: boolean;
   keepPreviousData?: boolean;
 }
 
@@ -11,7 +12,9 @@ export function usePortfolioAllocations(
   accountFilter: AccountScope,
   options: UsePortfolioAllocationsOptions = {},
 ) {
-  const isEnabled = accountFilter.type !== "account" || accountFilter.accountId.trim().length > 0;
+  const isEnabled =
+    (options.enabled ?? true) &&
+    (accountFilter.type !== "account" || accountFilter.accountId.trim().length > 0);
 
   const {
     data: allocations,

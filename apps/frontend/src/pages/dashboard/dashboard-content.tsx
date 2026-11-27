@@ -1,7 +1,7 @@
 import { isValuationComplete } from "@/lib/valuation";
 import { useTranslation } from "react-i18next";
 import { formatZonedDateKey } from "@/features/spending/lib/timezone";
-import { calculatePerformanceSummary } from "@/adapters";
+import { calculatePerformanceSummary, isWeb } from "@/adapters";
 import { HistoryChart, type HistoryChartData } from "@/components/history-chart";
 import { useHapticFeedback } from "@/hooks";
 import { useCurrentValuation } from "@/hooks/use-current-account-valuations";
@@ -98,18 +98,53 @@ export function DashboardContent({
   // totals, which stay flat over weekends and holidays.
   const isDayChange = selectedInterval === "1D";
 
-  const holdingsQuery = useHoldings(scope);
-  const {
-    holdings: allHoldings,
-    isLoading: isHoldingsLoading,
-    isComplete: isHoldingsComplete,
-  } = holdingsQuery;
+  const valuationHistoryRange = isAllTime ? undefined : dateRange;
+  const { valuationHistory, isLoading: isValuationHistoryLoading } = useValuationHistory(
+    valuationHistoryRange,
+    scope,
+  );
+
   const {
     currentValuation: portfolioCurrentValuation,
     isLoading: isCurrentValuationLoading,
     error: currentValuationError,
   } = useCurrentValuation(scope, { includeAccounts: true });
   const { triggerHaptic } = useHapticFeedback();
+  const baseCurrency = settings?.baseCurrency ?? "USD";
+  const scopeKey = accountScopeKey(scope);
+  const totalValue = portfolioCurrentValuation?.summary.totalValueBase ?? 0;
+
+  const chartData = useMemo(
+    () =>
+      valuationHistory?.map((item) => ({
+        // The chart skips partial values on days with missing conversion data.
+        isUnavailable: !isValuationComplete(item.valueStatus),
+        date: item.valuationDate,
+        totalValue: item.totalValueBase,
+        netContribution: item.netContributionBase,
+        currency: item.baseCurrency ?? baseCurrency,
+      })) ?? [],
+    [valuationHistory, baseCurrency],
+  );
+  const forkChart = useDashboardChart({
+    selectedInterval,
+    scope,
+    scopeKey,
+    totalValue,
+    baseCurrency,
+    dailyChartData: chartData,
+    isAllTime,
+  });
+
+  const isInitialHistoryLoading = !valuationHistory && isValuationHistoryLoading;
+  const isChartLoading =
+    forkChart.isIntradayLoading || (!forkChart.hasIntradayData && isInitialHistoryLoading);
+  // On a cold web scope, account cards can issue several costly reads. Give
+  // the chart's selected data source and the main balance a head start.
+  const loadDetails = !isWeb || !isChartLoading;
+  const holdingsQuery = useHoldings(scope, { enabled: loadDetails });
+  const { holdings: allHoldings, isComplete: isHoldingsComplete } = holdingsQuery;
+  const isHoldingsLoading = !loadDetails || holdingsQuery.isLoading;
 
   // Filter holdings for display (exclude alternative assets and cash for TopHoldings)
   const holdings = useMemo(() => {
@@ -123,22 +158,11 @@ export function DashboardContent({
     });
   }, [allHoldings]);
 
-  const totalValue = portfolioCurrentValuation?.summary.totalValueBase ?? 0;
-
-  const valuationHistoryRange = isAllTime ? undefined : dateRange;
-  const { valuationHistory, isLoading: isValuationHistoryLoading } = useValuationHistory(
-    valuationHistoryRange,
-    scope,
-  );
-
-  const baseCurrency = settings?.baseCurrency ?? "USD";
-
   const startDate =
     !isAllTime && dateRange?.from ? format(dateRange.from, "yyyy-MM-dd") : undefined;
   const endDate = !isAllTime && dateRange?.to ? format(dateRange.to, "yyyy-MM-dd") : undefined;
   const datesReady = isAllTime || (!!startDate && !!endDate);
 
-  const scopeKey = accountScopeKey(scope);
   const { data: portfolioPerformance, isLoading: isPortfolioPerformanceLoading } = useQuery({
     queryKey: [QueryKeys.PERFORMANCE_SUMMARY, "dashboard", scopeKey, startDate, endDate],
     queryFn: () =>
@@ -150,7 +174,7 @@ export function DashboardContent({
         filter: scope,
         profile: "dashboard",
       }),
-    enabled: datesReady && !isDayChange,
+    enabled: loadDetails && datesReady && !isDayChange,
     placeholderData: keepPreviousData,
     staleTime: 30 * 1000,
     retry: 1,
@@ -169,7 +193,7 @@ export function DashboardContent({
       holdings: allHoldings,
       totalValue,
       performance: portfolioPerformance,
-      isPerformanceLoading: isPortfolioPerformanceLoading,
+      isPerformanceLoading: !loadDetails || isPortfolioPerformanceLoading,
       isHoldingsLoading,
       isHoldingsComplete,
       isCurrentValuationLoading,
@@ -184,39 +208,19 @@ export function DashboardContent({
       ? valuationHistory?.[valuationHistory.length - 1]?.calculatedAt
       : undefined);
 
-  const chartData = useMemo(() => {
-    return (
-      valuationHistory
-        // A day the engine could not fully convert carries a partial value;
-        // it is not plotted rather than drawn as if it were complete.
-        ?.map((item) => ({
-          isUnavailable: !isValuationComplete(item.valueStatus),
-          date: item.valuationDate,
-          totalValue: item.totalValueBase,
-          netContribution: item.netContributionBase,
-          currency: item.baseCurrency ?? baseCurrency,
-        })) ?? []
-    );
-  }, [valuationHistory, baseCurrency]);
-  const forkChart = useDashboardChart({
-    selectedInterval,
-    scope,
-    scopeKey,
-    totalValue,
-    baseCurrency,
-    dailyChartData: chartData,
-    dayChange,
-    isAllTime,
-  });
+  const referenceValue =
+    isDayChange && forkChart.timeDomain && dayChange
+      ? totalValue - dayChange.amount
+      : forkChart.referenceValue;
   const [activePoint, setActivePoint] = useState<HistoryChartData | null>(null);
   const hoveredPoint =
-    activePoint && !isValuationHistoryLoading && forkChart.chartData.includes(activePoint)
+    activePoint && !isChartLoading && forkChart.chartData.includes(activePoint)
       ? activePoint
       : null;
   const hoveredGain = hoveredPoint
     ? hasIncompleteHistory && forkChart.chartData === chartData
       ? { amount: null, percent: null }
-      : getDashboardChartGain(hoveredPoint, forkChart.chartData[0], forkChart.referenceValue)
+      : getDashboardChartGain(hoveredPoint, forkChart.chartData[0], referenceValue)
     : null;
   const displayedCurrency = hoveredPoint?.currency ?? baseCurrency;
   const displayedGain = hoveredGain ? hoveredGain.amount : gainLossAmount;
@@ -334,24 +338,24 @@ export function DashboardContent({
         <div className="h-70">
           <HistoryChart
             data={forkChart.chartData}
-            isLoading={isValuationHistoryLoading}
+            isLoading={isChartLoading}
             scaleMode="fit-visible"
             minDomainSpanRatio={chartMinDomainSpanRatio}
             netContributionMaxDomainSpanRatio={chartNetContributionMaxDomainSpanRatio}
             timeDomain={forkChart.timeDomain}
-            referenceValue={forkChart.referenceValue}
+            referenceValue={referenceValue}
             onActivePointChange={setActivePoint}
             keepTooltipWithinChart
             color="var(--investments)"
           />
-          {valuationHistory && forkChart.chartData.length > 0 && (
+          {forkChart.chartData.length > 0 && (
             <div className="flex w-full justify-center">
               <div className="pointer-events-auto relative z-20 flex w-full max-w-screen-sm min-w-0 items-center justify-center gap-1.5 pe-4 sm:max-w-screen-md md:max-w-2xl md:pe-0 lg:max-w-3xl">
                 <IntervalSelector
                   className="w-auto"
                   onIntervalSelect={period.selectPreset}
                   onHaptic={triggerHaptic}
-                  isLoading={isValuationHistoryLoading}
+                  isLoading={isChartLoading}
                   value={period.selectedPreset}
                 />
                 <SpendingDatePicker
@@ -382,6 +386,7 @@ export function DashboardContent({
                 dateRange={dateRange}
                 isAllTime={isAllTime}
                 isDayChange={isDayChange}
+                loadDetails={loadDetails}
                 currentAccountValuations={portfolioCurrentValuation?.accounts}
                 isLoadingCurrentValuations={isCurrentValuationLoading}
               />
