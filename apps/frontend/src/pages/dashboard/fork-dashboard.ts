@@ -24,12 +24,16 @@ export function getDashboardChartGain(
   point: HistoryChartData,
   first: HistoryChartData,
   referenceValue: number | undefined,
+  returnBase?: number,
 ): { amount: number | null; percent: number | null } {
-  if (point.currency !== first.currency) return { amount: null, percent: null };
+  if (first.isUnavailable || point.currency !== first.currency) {
+    return { amount: null, percent: null };
+  }
   const startValue = referenceValue ?? first.totalValue;
   const netDeposits = point.netContribution - first.netContribution;
   const amount = point.totalValue - startValue - netDeposits;
-  return { amount, percent: startValue > 0 ? amount / startValue : null };
+  const denominator = returnBase ?? startValue;
+  return { amount, percent: denominator > 0 ? amount / denominator : null };
 }
 
 interface DashboardGainInput {
@@ -57,10 +61,17 @@ export function useDashboardGain({
 }: DashboardGainInput) {
   const dayChange = useMemo(
     () =>
-      isDayChange && isHoldingsComplete && !hasIncompletePeriod
+      isDayChange && isHoldingsComplete && !isCurrentValuationLoading && !hasIncompletePeriod
         ? summarizeDayChange(holdings ?? [], totalValue)
         : null,
-    [isDayChange, isHoldingsComplete, hasIncompletePeriod, holdings, totalValue],
+    [
+      isDayChange,
+      isHoldingsComplete,
+      isCurrentValuationLoading,
+      hasIncompletePeriod,
+      holdings,
+      totalValue,
+    ],
   );
   return {
     dayChange,
@@ -89,7 +100,6 @@ interface DashboardChartInput {
   totalValue: number;
   baseCurrency: string;
   dailyChartData: HistoryChartData[];
-  isAllTime: boolean;
 }
 
 export function useDashboardChart({
@@ -99,7 +109,6 @@ export function useDashboardChart({
   totalValue,
   baseCurrency,
   dailyChartData,
-  isAllTime,
 }: DashboardChartInput) {
   // The web 1D chart can show one observed point as a dot.
   const intradayRange =
@@ -157,16 +166,9 @@ export function useDashboardChart({
     return [open, Math.max(open + REGULAR_SESSION_MS, lastPoint)];
   }, [selectedInterval, intradayPoints, minimumPoints]);
 
-  // The dashboard supplies the previous-close guide on 1D.
-  const referenceValue =
-    selectedInterval !== "1D" && !isAllTime && chartData.length > 1 && !chartData[0].isUnavailable
-      ? chartData[0].totalValue
-      : undefined;
-
   return {
     chartData,
     timeDomain,
-    referenceValue,
     isIntradayLoading,
     hasIntradayData: chartData !== dailyChartData,
   };

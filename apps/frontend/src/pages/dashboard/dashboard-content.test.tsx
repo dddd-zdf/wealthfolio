@@ -15,7 +15,7 @@ import { DashboardContent } from "./dashboard-content";
 
 const uiMocks = vi.hoisted(() => ({
   realIntervals: false,
-  intervalCode: "3M" as "1D" | "3M" | "ALL" | null,
+  intervalCode: "3M" as "1D" | "1W" | "3M" | "ALL" | null,
   togglePrivacy: vi.fn(),
 }));
 
@@ -461,6 +461,7 @@ describe("DashboardContent", () => {
       valuationHistory: [
         { valuationDate: "2026-05-01", totalValueBase: 100, netContributionBase: 80 },
         { valuationDate: "2026-05-02", totalValueBase: 130, netContributionBase: 100 },
+        { valuationDate: "2026-05-03", totalValueBase: 160, netContributionBase: 100 },
       ],
       isLoading: false,
     } as unknown as ReturnType<typeof useValuationHistory>);
@@ -470,7 +471,7 @@ describe("DashboardContent", () => {
     mockUseQuery.mockReturnValue({
       isLoading: false,
       data: {
-        period: { startDate: "2026-05-01", endDate: "2026-05-02" },
+        period: { startDate: "2026-05-01", endDate: "2026-05-03" },
         summary: { amount: 40, amountStatus: "complete", percent: 0.4, percentStatus: "complete" },
       },
     } as unknown as ReturnType<typeof useQuery>);
@@ -478,6 +479,7 @@ describe("DashboardContent", () => {
     render(<DashboardContent />);
     const user = userEvent.setup();
     const chart = screen.getByTestId("history-chart");
+    expect(chart).toHaveAttribute("data-reference-value", "100");
     await user.hover(chart);
     expect(screen.getByText("balance:130")).toBeInTheDocument();
     expect(screen.getByText("gain-amount:10")).toBeInTheDocument();
@@ -487,6 +489,131 @@ describe("DashboardContent", () => {
     expect(screen.getByText("balance:160")).toBeInTheDocument();
     expect(screen.getByText("gain-amount:40")).toBeInTheDocument();
     expect(screen.getByText("gain-percent:0.4")).toBeInTheDocument();
+  });
+
+  it("uses the performance summary on its final daily point", async () => {
+    mockCurrentValuation(130);
+    mockUseHoldings.mockReturnValue({ holdings: [], isLoading: false } as unknown as ReturnType<
+      typeof useHoldings
+    >);
+    mockUseSettingsContext.mockReturnValue({ settings: { baseCurrency: "USD" } } as ReturnType<
+      typeof useSettingsContext
+    >);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [
+        { valuationDate: "2026-05-01", totalValueBase: 100, netContributionBase: 80 },
+        { valuationDate: "2026-05-02", totalValueBase: 130, netContributionBase: 100 },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useValuationHistory>);
+    mockUseQuery.mockReturnValue({
+      isLoading: false,
+      data: {
+        period: { startDate: "2026-05-01", endDate: "2026-05-02" },
+        summary: { amount: 30, amountStatus: "complete", percent: 0.25, percentStatus: "complete" },
+      },
+    } as ReturnType<typeof useQuery>);
+
+    render(<DashboardContent />);
+    await userEvent.hover(screen.getByTestId("history-chart"));
+    expect(screen.getByText("gain-amount:30")).toBeInTheDocument();
+    expect(screen.getByText("gain-percent:0.25")).toBeInTheDocument();
+  });
+
+  it("uses the 1W period opening value when intraday observations begin later", async () => {
+    uiMocks.intervalCode = "1W";
+    mockCurrentValuation(170);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [
+        { valuationDate: "2026-05-01", totalValueBase: 100, netContributionBase: 90 },
+        { valuationDate: "2026-05-06", totalValueBase: 170, netContributionBase: 110 },
+      ],
+      isLoading: false,
+    } as ReturnType<typeof useValuationHistory>);
+    const intradayPoints = [
+      {
+        timestamp: "2026-05-04T14:00:00Z",
+        totalValueBase: 140,
+        netContributionBase: 110,
+      },
+      {
+        timestamp: "2026-05-05T14:00:00Z",
+        totalValueBase: 160,
+        netContributionBase: 110,
+      },
+    ];
+    mockUseQuery.mockImplementation(
+      (options) =>
+        ({
+          isLoading: false,
+          data:
+            options.queryKey[1] === "intraday"
+              ? intradayPoints
+              : {
+                  period: { startDate: "2026-05-01", endDate: "2026-05-06" },
+                  summary: {
+                    amount: 50,
+                    amountStatus: "complete",
+                    percent: 0.5,
+                    percentStatus: "complete",
+                  },
+                },
+        }) as ReturnType<typeof useQuery>,
+    );
+
+    render(<DashboardContent />);
+    const chart = screen.getByTestId("history-chart");
+    expect(chart).toHaveAttribute("data-reference-value", "100");
+    await userEvent.hover(chart);
+    expect(screen.getByText("gain-amount:40")).toBeInTheDocument();
+    expect(screen.getByText("gain-percent:0.4")).toBeInTheDocument();
+  });
+
+  it("waits for the 1D baseline before showing hover gains", async () => {
+    uiMocks.intervalCode = "1D";
+    mockCurrentValuation(1130);
+    mockUseHoldings.mockReturnValue({
+      holdings: [],
+      isLoading: true,
+      isComplete: false,
+    } as unknown as ReturnType<typeof useHoldings>);
+    mockUseValuationHistory.mockReturnValue({ valuationHistory: [], isLoading: false });
+    const intradayPoints = [
+      {
+        timestamp: "2026-10-02T13:30:00Z",
+        totalValueBase: 1020,
+        netContributionBase: 900,
+      },
+      {
+        timestamp: "2026-10-02T16:45:00Z",
+        totalValueBase: 1125,
+        netContributionBase: 1000,
+      },
+    ];
+    mockUseQuery.mockImplementation(
+      (options) =>
+        ({
+          isLoading: false,
+          data: options.queryKey[1] === "intraday" ? intradayPoints : undefined,
+        }) as ReturnType<typeof useQuery>,
+    );
+
+    const { rerender } = render(<DashboardContent />);
+    const chart = screen.getByTestId("history-chart");
+    await userEvent.hover(chart);
+    expect(screen.getByText("balance:1125")).toBeInTheDocument();
+    expect(screen.queryByText(/^gain-amount:/)).toBeNull();
+    expect(chart).not.toHaveAttribute("data-reference-value");
+
+    mockUseHoldings.mockReturnValue({
+      holdings: [{ holdingType: "security", dayChange: { local: 30, base: 30 } }],
+      isLoading: false,
+      isComplete: true,
+    } as unknown as ReturnType<typeof useHoldings>);
+    rerender(<DashboardContent />);
+    expect(chart).toHaveAttribute("data-reference-value", "1000");
+    expect(screen.getByText("gain-amount:25")).toBeInTheDocument();
+    expect(screen.getByText(`gain-percent:${25 / 1100}`)).toBeInTheDocument();
   });
 
   it("sums holdings' last-session moves for 1D instead of the flat weekend period", () => {
@@ -572,7 +699,10 @@ describe("DashboardContent", () => {
       error: null,
     } as unknown as ReturnType<typeof useHoldings>);
     mockUseValuationHistory.mockReturnValue({
-      valuationHistory: [],
+      valuationHistory: [
+        { valuationDate: "2026-05-01", totalValueBase: 100, netContributionBase: 80 },
+        { valuationDate: "2026-05-02", totalValueBase: 125, netContributionBase: 80 },
+      ],
       isLoading: false,
       error: null,
     } as unknown as ReturnType<typeof useValuationHistory>);
@@ -585,8 +715,13 @@ describe("DashboardContent", () => {
     } as unknown as ReturnType<typeof useQuery>);
 
     render(<DashboardContent />);
+    expect(screen.getByTestId("history-chart")).not.toHaveAttribute("data-reference-value");
 
-    expect(mockUseValuationHistory).toHaveBeenCalledWith(undefined, { type: "all" });
+    expect(mockUseValuationHistory).toHaveBeenCalledWith(
+      undefined,
+      { type: "all" },
+      { keepPrevious: false },
+    );
   });
 
   it("starts performance queries immediately when the chart has cached history", () => {
@@ -689,6 +824,7 @@ describe("DashboardContent", () => {
           to: new Date(2027, 0, 1),
         },
         { type: "all" },
+        { keepPrevious: false },
       );
     } finally {
       vi.useRealTimers();

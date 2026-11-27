@@ -40,7 +40,6 @@ function input(overrides: Partial<ChartInput>): ChartInput {
     totalValue: 1020,
     baseCurrency: "CAD",
     dailyChartData: daily,
-    isAllTime: false,
     ...overrides,
   } as ChartInput;
 }
@@ -117,25 +116,17 @@ describe("useDashboardChart", () => {
     await waitFor(() => expect(mockIntraday).toHaveBeenCalled());
     expect(result.current.chartData).toBe(daily);
     expect(result.current.timeDomain).toBeUndefined();
-    expect(result.current.referenceValue).toBe(1000);
   });
 
-  it("marks the period start on longer periods without fetching intraday bars", () => {
-    const { result } = renderHook(() => useDashboardChart(input({ selectedInterval: "3M" })), {
-      wrapper,
-    });
+  it.each(["3M", "ALL"] as const)(
+    "uses daily points for %s without fetching intraday bars",
+    (selectedInterval) => {
+      const { result } = renderHook(() => useDashboardChart(input({ selectedInterval })), {
+        wrapper,
+      });
 
-    expect(result.current.chartData).toBe(daily);
-    expect(result.current.referenceValue).toBe(1000);
-    expect(mockIntraday).not.toHaveBeenCalled();
-  });
-
-  it("draws no period-start line for all time", () => {
-    const { result } = renderHook(
-      () => useDashboardChart(input({ selectedInterval: "ALL", isAllTime: true })),
-      { wrapper },
-    );
-
-    expect(result.current.referenceValue).toBeUndefined();
-  });
+      expect(result.current.chartData).toBe(daily);
+      expect(mockIntraday).not.toHaveBeenCalled();
+    },
+  );
 });
